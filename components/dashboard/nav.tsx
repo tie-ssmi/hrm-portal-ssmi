@@ -1,12 +1,18 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
+import { useTheme } from 'next-themes'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Separator } from '@/components/ui/separator'
+
+//Themes
+import TheThemes from '@/components/themes'
+
 import {
   LayoutDashboard,
   User,
@@ -26,21 +32,36 @@ const navItems = [
 ]
 
 export function DashboardNav() {
+  const [mounted, setMounted] = useState(false)
   const pathname = usePathname()
   const { user, logout } = useAuth()
+  const { theme } = useTheme()
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const initials = user 
     ? `${user.firstName[0]}${user.lastName[0]}`.toUpperCase()
     : 'U'
 
+ 
+
   return (
     <div className="flex flex-col h-full bg-sidebar text-sidebar-foreground">
       {/* Logo */}
       <div className="flex items-center gap-3 px-6 h-16 border-b border-sidebar-border">
-        <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-          <Building2 className="w-5 h-5" />
+        <div className="flex items-center justify-center w-9 h-9 rounded-lg  text-sidebar-primary-foreground">
+          {mounted && theme === 'light' ? (
+            <img src="/SSMI.png" alt="SSMI Logo" className="w-10 h-10" />
+          ) : (
+            <img src="/SSMI2.png" alt="SSMI Logo" className="w-10 h-10" />
+          )}
         </div>
         <span className="font-semibold">HRM Portal</span>
+        <div className="ml-auto">
+          <TheThemes />
+        </div>
       </div>
 
       {/* User info */}

@@ -1,7 +1,7 @@
 {
   "hosting": {
-    "target": "portal",
-    "public": "public",
+    "site": "hrm-portal-ssmi",
+    "public": "out",
     "ignore": [
       "firebase.json",
       "**/.*",
@@ -13,5 +13,8 @@
         "destination": "/index.html"
       }
     ]
+  },
+  "storage": {
+    "rules": "storage.rules"
   }
 }

@@ -10,6 +10,35 @@ export interface Employee {
   phone: string
   joinDate: string
   manager?: string
+  // Extended employee data from Firestore
+  uid?: string
+  firstNameEn?: string
+  firstNameLo?: string
+  lastNameEn?: string
+  lastNameLo?: string
+  tel?: string
+  dateOfBirth?: string
+  gender?: string
+  bloodType?: string
+  maritalStatus?: string
+  religion?: string
+  ethnicity?: string
+  placeOfBirth?: string
+  cityOfBirth?: string
+  provinceOfBirth?: string
+  numberOfFamilyMembers?: string
+  emergencyContactNumber?: string
+  education?: string
+  graduatedFrom?: string
+  major?: string
+  drivingLicenseType?: string
+  jobTitle?: string
+  role?: string
+  employeeType?: string
+  workLocation?: string
+  profileImage?: string
+  photo3x4Url?: string
+  createdAt?: any
 }
 
 export interface AttendanceRecord {

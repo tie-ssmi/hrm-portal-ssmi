@@ -32,7 +32,7 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-bold text-foreground">
-          Welcome back, {user?.firstName}
+          ຍີນດີຕ້ອນຮັບ, {user?.firstName}
         </h1>
         <p className="text-muted-foreground">
           {format(new Date(), 'EEEE, MMMM d, yyyy')}

@@ -1,12 +1,19 @@
 import type { Metadata, Viewport } from 'next'
-import { Inter } from 'next/font/google'
+import { Inter, Noto_Sans_Lao } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { AuthProvider } from '@/lib/auth-context'
 import { HRMProvider } from '@/lib/hrm-context'
+import { ThemeProvider } from '@/components/theme-provider'
+import { QueryProvider } from '@/components/query-provider'
 import { Toaster } from '@/components/ui/sonner'
 import './globals.css'
 
 const inter = Inter({ subsets: ["latin"], variable: '--font-inter' });
+const notoSansLao = Noto_Sans_Lao({ 
+  subsets: ["lao"], 
+  variable: '--font-noto-sans-lao',
+  weight: ['100', '200', '300', '400', '500', '600', '700', '800', '900']
+});
 
 export const metadata: Metadata = {
   title: 'Employee HRM Portal',
@@ -28,14 +35,23 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
-      <body className={`${inter.variable} font-sans antialiased`}>
-        <AuthProvider>
-          <HRMProvider>
-            {children}
-            <Toaster position="top-center" />
-          </HRMProvider>
-        </AuthProvider>
+    <html lang="en" suppressHydrationWarning>
+      <body className={`${inter.variable} ${notoSansLao.variable} font-sans antialiased`}>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <QueryProvider>
+            <AuthProvider>
+              <HRMProvider>
+                {children}
+                <Toaster position="top-center" />
+              </HRMProvider>
+            </AuthProvider>
+          </QueryProvider>
+        </ThemeProvider>
         <Analytics />
       </body>
     </html>
