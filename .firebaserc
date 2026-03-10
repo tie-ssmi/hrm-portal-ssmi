@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "hrm-ssmi"
+  },
+  "targets": {
+    "hrm-ssmi": {
+      "hosting": {
+        "portal": [
+          "hrm-portal-ssmi"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}
