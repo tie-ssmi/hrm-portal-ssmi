@@ -5,6 +5,7 @@ import { useHRM } from '@/lib/hrm-context'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
+import HomeSkeleton from '@/components/skeletons/homeSkeleton'
 import { 
   Calendar, 
   Clock, 
@@ -18,8 +19,12 @@ import {
 import { format } from 'date-fns'
 
 export default function DashboardPage() {
-  const { user } = useAuth()
+  const { user, isLoading } = useAuth()
   const { leaveBalance, lateRecords, totalFines, leaveRequests, todayAttendance } = useHRM()
+
+  if (isLoading) {
+    return <HomeSkeleton />
+  }
 
   const annualRemaining = leaveBalance.annual - leaveBalance.annualUsed
   const sickRemaining = leaveBalance.sick - leaveBalance.sickUsed

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/lib/auth-context'
 import { useHRM } from '@/lib/hrm-context'
+import ProfileSkeleton from '@/components/skeletons/profileSkeleton'
 import { fetchEmployeeByUid } from '@/lib/employees'
 import type { Employee } from '@/lib/types'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -143,11 +144,7 @@ export default function ProfilePage() {
   ]
 
   if (!profileUser || isEmployeeLoading) {
-    return (
-      <main className="min-h-[300px] flex items-center justify-center">
-        <Spinner className="w-6 h-6" />
-      </main>
-    )
+    return <ProfileSkeleton />
   }
 
   return (

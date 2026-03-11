@@ -1,7 +1,9 @@
 'use client'
 
 import { useState } from 'react'
+import { useAuth } from '@/lib/auth-context'
 import { useHRM } from '@/lib/hrm-context'
+import FormsSkeleton from '@/components/skeletons/formsSkeleton'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -28,6 +30,7 @@ import { cn } from '@/lib/utils'
 import type { LeaveRequest, OffsiteRequest } from '@/lib/types'
 
 export default function FormsPage() {
+  const { isLoading } = useAuth()
   const { 
     leaveRequests, 
     offsiteRequests, 
@@ -142,6 +145,10 @@ export default function FormsPage() {
   const annualRemaining = leaveBalance.annual - leaveBalance.annualUsed
   const sickRemaining = leaveBalance.sick - leaveBalance.sickUsed
   const personalRemaining = leaveBalance.personal - leaveBalance.personalUsed
+
+  if (isLoading) {
+    return <FormsSkeleton />
+  }
 
   return (
     <div className="space-y-6">

@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useAuth } from '@/lib/auth-context'
 import { useHRM } from '@/lib/hrm-context'
+import AttendanceSkeleton from '@/components/skeletons/attendanceSkeleton'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -28,6 +30,7 @@ interface LocationState {
 }
 
 export default function AttendancePage() {
+  const { isLoading } = useAuth()
   const { todayAttendance, checkIn, checkOut, isWithinGeofence, attendanceHistory } = useHRM()
   const [location, setLocation] = useState<LocationState | null>(null)
   const [isLoadingLocation, setIsLoadingLocation] = useState(false)
@@ -120,6 +123,10 @@ export default function AttendancePage() {
     : null
 
   const recentHistory = attendanceHistory.slice(0, 5)
+
+  if (isLoading) {
+    return <AttendanceSkeleton />
+  }
 
   return (
     <div className="space-y-6">

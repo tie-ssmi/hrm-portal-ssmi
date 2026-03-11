@@ -1,7 +1,9 @@
 'use client'
 
 import { useState } from 'react'
+import { useAuth } from '@/lib/auth-context'
 import { useHRM } from '@/lib/hrm-context'
+import HistorySkeleton from '@/components/skeletons/historySkeleton'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -21,6 +23,7 @@ import {
 import { format } from 'date-fns'
 
 export default function HistoryPage() {
+  const { isLoading } = useAuth()
   const { 
     attendanceHistory, 
     leaveRequests, 
@@ -53,6 +56,10 @@ export default function HistoryPage() {
       default:
         return <Clock className="w-3 h-3" />
     }
+  }
+
+  if (isLoading) {
+    return <HistorySkeleton />
   }
 
   return (
