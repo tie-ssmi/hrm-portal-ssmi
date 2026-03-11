@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
 import type { AttendanceRecord, LeaveRequest, OffsiteRequest, ProfileUpdateRequest, LeaveBalance, LateRecord } from './types'
-import { mockAttendanceHistory, mockLeaveRequests, mockOffsiteRequests, mockLeaveBalance, mockLateRecords, mockGeoFence } from './mock-data'
+import { mockAttendanceHistory, mockLeaveRequests, mockOffsiteRequests, mockLeaveBalance, mockLateRecords, mockGeoFenceLPB } from './mock-data'
 
 interface HRMContextType {
   // Attendance
@@ -59,8 +59,8 @@ export function HRMProvider({ children }: { children: ReactNode }) {
   const [lateRecords] = useState<LateRecord[]>(mockLateRecords)
 
   const isWithinGeofence = useCallback((lat: number, lng: number) => {
-    const distance = calculateDistance(lat, lng, mockGeoFence.lat, mockGeoFence.lng)
-    return distance <= mockGeoFence.radius
+    const distance = calculateDistance(lat, lng, mockGeoFenceLPB.lat, mockGeoFenceLPB.lng)
+    return distance <= mockGeoFenceLPB.radius
   }, [])
 
   const checkIn = useCallback(async (location?: { lat: number; lng: number }) => {

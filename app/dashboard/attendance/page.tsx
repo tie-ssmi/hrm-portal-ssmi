@@ -1,9 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useAuth } from '@/lib/auth-context'
 import { useHRM } from '@/lib/hrm-context'
-import AttendanceSkeleton from '@/components/skeletons/attendanceSkeleton'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -30,7 +28,6 @@ interface LocationState {
 }
 
 export default function AttendancePage() {
-  const { isLoading } = useAuth()
   const { todayAttendance, checkIn, checkOut, isWithinGeofence, attendanceHistory } = useHRM()
   const [location, setLocation] = useState<LocationState | null>(null)
   const [isLoadingLocation, setIsLoadingLocation] = useState(false)
@@ -124,10 +121,6 @@ export default function AttendancePage() {
 
   const recentHistory = attendanceHistory.slice(0, 5)
 
-  if (isLoading) {
-    return <AttendanceSkeleton />
-  }
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -173,7 +166,7 @@ export default function AttendancePage() {
                 ) : (
                   <Navigation className="w-4 h-4 mr-2" />
                 )}
-                Get Location
+                ຮັບຕຳແໜ່ງ
               </Button>
             </div>
             {location && !location.error && (
@@ -184,12 +177,12 @@ export default function AttendancePage() {
                 {isWithinOffice ? (
                   <>
                     <Shield className="w-3 h-3" />
-                    Within Office
+                    ຢູ່ໃນຫ້ອງການ
                   </>
                 ) : (
                   <>
                     <ShieldX className="w-3 h-3" />
-                    Outside Office
+                    ຢູ່ນອກຫ້ອງການ
                   </>
                 )}
               </Badge>
@@ -197,12 +190,13 @@ export default function AttendancePage() {
           </div>
           {location && !location.error && (
             <p className="text-xs text-muted-foreground mt-2">
-              Accuracy: {Math.round(location.accuracy)}m
+              ໄກຈາກຫ້ອງການ {Math.round(location.accuracy)} ແມັດ
             </p>
           )}
           {location?.error && (
             <p className="text-xs text-destructive mt-2">
-              {location.error}
+              {/* {location.error} */}
+              ກະລຸນາເປິດ GPS ແລະ ອານຸມາດເວັບໄຊເຂົ້າເຖີງຕຳແໜ່ງ
             </p>
           )}
         </CardContent>
@@ -242,17 +236,17 @@ export default function AttendancePage() {
               {todayAttendance?.checkOut ? (
                 <>
                   <CheckCircle className="w-4 h-4 mr-2" />
-                  Day Completed
+                  ກັບບ້ານແລ້ວ
                 </>
               ) : todayAttendance?.checkIn ? (
                 <>
                   <Clock className="w-4 h-4 mr-2" />
-                  Working {todayAttendance.status === 'late' && '(Late)'}
+                  ການມາວຽກ {todayAttendance.status === 'late' && '(ມາຊ້າ)'}
                 </>
               ) : (
                 <>
                   <AlertTriangle className="w-4 h-4 mr-2" />
-                  Not Checked In
+                  ຍັງບໍ່ກົດເຂົ້າວຽກ
                 </>
               )}
             </Badge>

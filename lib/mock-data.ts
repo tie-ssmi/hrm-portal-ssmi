@@ -93,9 +93,9 @@ export const mockOffsiteRequests: OffsiteRequest[] = [
   }
 ]
 
-export const mockGeoFence: GeoFence = {
-  lat: 13.7563,
-  lng: 100.5018,
-  radius: 100,
-  name: 'Main Office'
-}
+export const mockGeoFenceLPB: GeoFence = {
+  lat: 19.897718807272657,
+  lng: 102.15378424680168,
+  radius: 100, // ໄລຍະສະແກນ 100 ແມັດ
+  name: 'SSMI LPB'
+};
