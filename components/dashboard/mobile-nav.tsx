@@ -29,6 +29,16 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet"
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 const navItems = [
   { href: '/dashboard', label: 'Home', icon: LayoutDashboard },
   { href: '/dashboard/attendance', label: 'Check-In', icon: Clock },
@@ -82,7 +92,35 @@ export function MobileNav() {
               </SheetHeader>
               <div className="grid flex-1 auto-rows-min gap-6 px-4">
                 <TheThemes />
-                <Button onClick={() => logout()}> <LogOut className="w-5 h-5" />ອອກຈາກລະບົບ</Button>
+                    <Dialog>
+      
+        <DialogTrigger asChild>
+           <Button
+          variant="outline"
+          className="w-full justify-start gap-3  text-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
+          
+        >
+          <LogOut className="w-5 h-5" />
+          ອອກຈາກລະບົບ
+        </Button>
+        </DialogTrigger>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>ອອກຈາກລະບົບ</DialogTitle>
+            <DialogDescription>
+              ທ່ານແນ່ໃຈບໍ່? ທີຈະອອກຈາກລະບົບ
+            </DialogDescription>
+          </DialogHeader>
+        
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline" >ຍົກເລີກ</Button>
+            </DialogClose>
+            <Button onClick={() => logout()}>ອອກຈາກລະບົບ</Button>
+          </DialogFooter>
+        </DialogContent>
+      
+    </Dialog>
               </div>
               <SheetFooter>
 

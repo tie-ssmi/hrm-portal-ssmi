@@ -9,7 +9,19 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Separator } from '@/components/ui/separator'
-
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { Field, FieldGroup } from "@/components/ui/field"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 //Themes
 import TheThemes from '@/components/themes'
 
@@ -19,8 +31,7 @@ import {
   Clock,
   FileText,
   History,
-  LogOut,
-  Building2
+  LogOut
 } from 'lucide-react'
 
 const navItems = [
@@ -96,9 +107,9 @@ export function DashboardNav() {
               key={item.href}
               href={item.href}
               className={cn(
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                'flex w-full items-center justify-start gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                 isActive
-                  ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                  ? 'bg-sidebar-accent text-sidebar-accent-foreground shadow-sm'
                   : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
               )}
             >
@@ -111,14 +122,36 @@ export function DashboardNav() {
 
       {/* Logout */}
       <div className="px-3 py-4 border-t border-sidebar-border">
-        <Button
+       
+        <Dialog>
+      
+        <DialogTrigger asChild>
+           <Button
           variant="ghost"
           className="w-full justify-start gap-3 text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
-          onClick={() => logout()}
+          
         >
           <LogOut className="w-5 h-5" />
-          Sign Out
+          ອອກຈາກລະບົບ
         </Button>
+        </DialogTrigger>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>ອອກຈາກລະບົບ</DialogTitle>
+            <DialogDescription>
+              ທ່ານແນ່ໃຈບໍ່? ທີຈະອອກຈາກລະບົບ
+            </DialogDescription>
+          </DialogHeader>
+        
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline" >ຍົກເລີກ</Button>
+            </DialogClose>
+            <Button onClick={() => logout()}>ອອກຈາກລະບົບ</Button>
+          </DialogFooter>
+        </DialogContent>
+      
+    </Dialog>
       </div>
     </div>
   )
