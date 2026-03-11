@@ -1,8 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
 import { useTheme } from 'next-themes'
 import { cn } from '@/lib/utils'
@@ -45,6 +44,7 @@ const navItems = [
 export function DashboardNav() {
   const [mounted, setMounted] = useState(false)
   const pathname = usePathname()
+  const router = useRouter()
   const { user, logout } = useAuth()
   const { theme } = useTheme()
 
@@ -103,9 +103,11 @@ export function DashboardNav() {
             (item.href !== '/dashboard' && pathname.startsWith(item.href))
           
           return (
-            <Link
+            <button
+              type="button"
               key={item.href}
-              href={item.href}
+              onClick={() => router.push(item.href)}
+              aria-current={isActive ? 'page' : undefined}
               className={cn(
                 'flex w-full items-center justify-start gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                 isActive
@@ -115,7 +117,7 @@ export function DashboardNav() {
             >
               <item.icon className="w-5 h-5" />
               {item.label}
-            </Link>
+            </button>
           )
         })}
       </nav>

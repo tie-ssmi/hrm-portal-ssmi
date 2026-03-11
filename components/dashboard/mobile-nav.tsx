@@ -1,7 +1,6 @@
 'use client'
 
-import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import {
   LayoutDashboard,
@@ -50,20 +49,23 @@ const navItems = [
 
 export function MobileNav() {
   const pathname = usePathname()
+  const router = useRouter()
   const { user, logout } = useAuth()
   return (
-    <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border pointer-events-auto touch-none select-none">
+    <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border pointer-events-auto select-none cursor-auto" style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}>
       <div className="flex items-center justify-around h-16 px-2">
         {navItems.map((item) => {
           const isActive = pathname === item.href ||
             (item.href !== '/dashboard' && pathname.startsWith(item.href))
 
           return (
-            <Link
+            <button
+              type="button"
               key={item.href}
-              href={item.href}
+              onClick={() => router.push(item.href)}
+              aria-current={isActive ? 'page' : undefined}
               className={cn(
-                'flex flex-col items-center justify-center gap-1 px-2 py-2 rounded-lg transition-colors min-h-[44px] min-w-[44px] touch-none select-none',
+                'flex flex-col items-center justify-center gap-1 px-2 py-2 rounded-lg transition-colors min-h-[44px] min-w-[44px] select-none cursor-pointer',
                 isActive
                   ? 'text-primary'
                   : 'text-muted-foreground hover:text-foreground focus:text-foreground'
@@ -71,15 +73,15 @@ export function MobileNav() {
             >
               <item.icon className="w-5 h-5" />
               <span className="text-[10px] font-medium text-center">{item.label}</span>
-            </Link>
+            </button>
           )
         })}
-        <div className="pointer-events-auto touch-none select-none flex items-center justify-center min-h-[44px] min-w-[44px]">
+        <div className="pointer-events-auto select-none flex items-center justify-center min-h-[44px] min-w-[44px]">
           <Sheet>
             <SheetTrigger asChild>
               <button
                 type="button"
-                className="flex flex-col items-center justify-center gap-1 px-2 py-2 rounded-lg transition-colors min-h-[44px] min-w-[44px] touch-none select-none text-muted-foreground hover:text-foreground focus:text-foreground"
+                className="flex flex-col items-center justify-center gap-1 px-2 py-2 rounded-lg transition-colors min-h-[44px] min-w-[44px] select-none cursor-pointer text-muted-foreground hover:text-foreground focus:text-foreground"
               >
                 <Settings className="w-5 h-5" />
                 <span className="text-[10px] font-medium text-center">Settings</span>

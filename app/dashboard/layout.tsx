@@ -20,13 +20,13 @@ export default function DashboardLayout({
     }
   }, [isAuthenticated, isLoading, router])
 
-  if (isLoading || !isAuthenticated) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="loader"></div>
-      </div>
-    )
-  }
+  // if (isLoading || !isAuthenticated) {
+  //   return (
+  //     <div className="min-h-screen flex items-center justify-center bg-background">
+  //       <div className="loader"></div>
+  //     </div>
+  //   )
+  // }
 
   return (
     <div className="min-h-screen bg-background">
