@@ -56,11 +56,11 @@ export default function FormsPage() {
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="leave" className="gap-2">
             <Palmtree className="w-4 h-4" />
-            Leave Request
+            ຟອມຂໍລາພັກ
           </TabsTrigger>
           <TabsTrigger value="offsite" className="gap-2">
             <MapPin className="w-4 h-4" />
-            Off-site Work
+            ຟອມອອກວຽກນອກສະຖານທີ່
           </TabsTrigger>
         </TabsList>
 

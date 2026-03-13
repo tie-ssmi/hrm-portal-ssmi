@@ -5,6 +5,8 @@ import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/lib/auth-context'
 import { useHRM } from '@/lib/hrm-context'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
@@ -15,9 +17,10 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Calendar as CalendarIcon, Send, Clock, CheckCircle, XCircle, Sun, Sunset } from 'lucide-react'
 import { toast } from 'sonner'
-import { format, differenceInCalendarDays } from 'date-fns'
+import { format, isWeekend } from 'date-fns'
 import { cn } from '@/lib/utils'
 import { getLeaveApproverRuleText } from '@/services/leave-approval'
+import { fetchLeavesByUserUuidFromToday } from '@/services/leaves'
 import { fetchPoliciesForGender } from '@/services/policies'
 import type { LeaveRequest } from '@/lib/types'
 
@@ -26,16 +29,48 @@ type LeaveTypeOption = {
   value: string
   requestType: string
   policyUuid: string | undefined
+  policyId: string
   policyName: string | undefined
   label: string
 }
 
 function calcDuration(startDate?: Date, startPeriod: Period = 'morning', endDate?: Date, endPeriod: Period = 'afternoon'): number | null {
   if (!startDate || !endDate) return null
-  const days = differenceInCalendarDays(endDate, startDate)
-  const startHalf = days * 2 + (endPeriod === 'morning' ? 0 : 1) - (startPeriod === 'morning' ? 0 : 1) + 1
-  if (startHalf <= 0) return null
-  return startHalf / 2
+
+  const start = new Date(startDate)
+  const end = new Date(endDate)
+  start.setHours(0, 0, 0, 0)
+  end.setHours(0, 0, 0, 0)
+
+  if (start > end) return null
+
+  let halfDays = 0
+  const cursor = new Date(start)
+
+  while (cursor <= end) {
+    if (!isWeekend(cursor)) {
+      const isStartDay = cursor.getTime() === start.getTime()
+      const isEndDay = cursor.getTime() === end.getTime()
+
+      if (isStartDay && isEndDay) {
+        const startIndex = startPeriod === 'morning' ? 0 : 1
+        const endIndex = endPeriod === 'morning' ? 0 : 1
+        const sameDayHalfDays = endIndex - startIndex + 1
+        if (sameDayHalfDays <= 0) return null
+        halfDays += sameDayHalfDays
+      } else if (isStartDay) {
+        halfDays += startPeriod === 'morning' ? 2 : 1
+      } else if (isEndDay) {
+        halfDays += endPeriod === 'afternoon' ? 2 : 1
+      } else {
+        halfDays += 2
+      }
+    }
+
+    cursor.setDate(cursor.getDate() + 1)
+  }
+
+  return halfDays > 0 ? halfDays / 2 : null
 }
 
 function formatDuration(d: number): string {
@@ -80,9 +115,14 @@ function getStatusVariant(status: string) {
   }
 }
 
+function isWeekendDate(date: Date): boolean {
+  return isWeekend(date)
+}
+
 export default function LeaveRequestForm() {
   const { user } = useAuth()
-  const { leaveRequests, submitLeaveRequest, leaveBalance } = useHRM()
+  const { submitLeaveRequest, leaveBalance } = useHRM()
+  const loggedInUserUuid = user?.uid || user?.id || ''
 
   const [selectedPolicyValue, setSelectedPolicyValue] = useState('annual')
   const [leaveStartDate, setLeaveStartDate] = useState<Date>()
@@ -91,6 +131,7 @@ export default function LeaveRequestForm() {
   const [endPeriod, setEndPeriod] = useState<Period>('afternoon')
   const [leaveReason, setLeaveReason] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [selectedLeave, setSelectedLeave] = useState<typeof myCurrentLeaveRequests[number] | null>(null)
 
   const annualRemaining = leaveBalance.annual - leaveBalance.annualUsed
   const sickRemaining = leaveBalance.sick - leaveBalance.sickUsed
@@ -110,12 +151,22 @@ export default function LeaveRequestForm() {
     queryFn: () => fetchPoliciesForGender(user?.gender),
   })
 
+  const {
+    data: myCurrentLeaveRequests = [],
+    refetch: refetchMyCurrentLeaves,
+    error: myCurrentLeavesError,
+  } = useQuery({
+    queryKey: ['leaves', 'my-current', loggedInUserUuid],
+    queryFn: () => fetchLeavesByUserUuidFromToday(loggedInUserUuid),
+    enabled: !!loggedInUserUuid,
+  })
+
   const leaveTypeOptions = useMemo(() => {
     const fallback: LeaveTypeOption[] = [
-      { value: 'annual', requestType: 'annual', policyUuid: undefined, policyName: 'Annual Leave', label: `Annual Leave (ສູງສຸດ ${annualRemaining} ມື້)` },
-      { value: 'sick', requestType: 'sick', policyUuid: undefined, policyName: 'Sick Leave', label: `Sick Leave (ສູງສຸດ ${sickRemaining} ມື້)` },
-      { value: 'personal', requestType: 'personal', policyUuid: undefined, policyName: 'Personal Leave', label: `Personal Leave (ສູງສຸດ ${personalRemaining} ມື້)` },
-      { value: 'unpaid', requestType: 'unpaid', policyUuid: undefined, policyName: 'Unpaid Leave', label: 'Unpaid Leave' },
+      { value: 'annual', requestType: 'annual', policyUuid: undefined, policyId: '', policyName: 'Annual Leave', label: `Annual Leave (ສູງສຸດ ${annualRemaining} ມື້)` },
+      { value: 'sick', requestType: 'sick', policyUuid: undefined, policyId: '', policyName: 'Sick Leave', label: `Sick Leave (ສູງສຸດ ${sickRemaining} ມື້)` },
+      { value: 'personal', requestType: 'personal', policyUuid: undefined, policyId: '', policyName: 'Personal Leave', label: `Personal Leave (ສູງສຸດ ${personalRemaining} ມື້)` },
+      { value: 'unpaid', requestType: 'unpaid', policyUuid: undefined, policyId: '', policyName: 'Unpaid Leave', label: 'Unpaid Leave' },
     ]
 
     const seen = new Set<string>()
@@ -135,6 +186,7 @@ export default function LeaveRequestForm() {
           value,
           requestType: policy.requestType,
           policyUuid: policy.uuid,
+          policyId: policy.id,
           policyName: policy.name,
           label: limitLabel ? `${baseLabel} (${limitLabel})` : baseLabel,
         }
@@ -155,6 +207,13 @@ export default function LeaveRequestForm() {
     }
     setSelectedPolicyValue(selectedPolicy.value)
   }, [selectedPolicy, selectedPolicyValue])
+
+  useEffect(() => {
+    if (myCurrentLeavesError) {
+      toast.error('Failed to load leave requests')
+      console.error('Failed to load leave requests:', myCurrentLeavesError)
+    }
+  }, [myCurrentLeavesError])
 
   function handleStartDateSelect(date?: Date) {
     setLeaveStartDate(date)
@@ -180,6 +239,11 @@ export default function LeaveRequestForm() {
       return
     }
 
+    if (isWeekendDate(leaveStartDate) || isWeekendDate(leaveEndDate)) {
+      toast.error('Weekend dates are not allowed')
+      return
+    }
+
     if (!duration || duration <= 0) {
       toast.error('End must be after start')
       return
@@ -192,10 +256,17 @@ export default function LeaveRequestForm() {
 
     setIsSubmitting(true)
     try {
+      const createdBy = [user?.firstNameLo || user?.firstName, user?.lastNameLo || user?.lastName]
+        .filter(Boolean)
+        .join(' ') || undefined
+
       await submitLeaveRequest({
+        userUuid: loggedInUserUuid || undefined,
         type: selectedPolicy?.requestType || 'annual',
         policyUuid: selectedPolicy?.policyUuid,
+        policyId: selectedPolicy?.policyId || undefined,
         policyName: selectedPolicy?.policyName || selectedPolicy?.label,
+        createdBy,
         startDate: format(leaveStartDate, 'yyyy-MM-dd'),
         startPeriod,
         endDate: format(leaveEndDate, 'yyyy-MM-dd'),
@@ -203,6 +274,7 @@ export default function LeaveRequestForm() {
         duration: duration ?? undefined,
         reason: leaveReason,
       })
+      await refetchMyCurrentLeaves()
       toast.success('Leave request submitted successfully')
       setSelectedPolicyValue(leaveTypeOptions[0]?.value || 'annual')
       setLeaveStartDate(undefined)
@@ -258,7 +330,13 @@ export default function LeaveRequestForm() {
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0">
-                      <Calendar mode="single" selected={leaveStartDate} onSelect={handleStartDateSelect} initialFocus />
+                      <Calendar
+                        mode="single"
+                        selected={leaveStartDate}
+                        onSelect={handleStartDateSelect}
+                        disabled={isWeekendDate}
+                        initialFocus
+                      />
                     </PopoverContent>
                   </Popover>
                   <div className="flex gap-1 mt-1.5">
@@ -309,7 +387,7 @@ export default function LeaveRequestForm() {
                         mode="single"
                         selected={leaveEndDate}
                         onSelect={setLeaveEndDate}
-                        disabled={(d) => !!leaveStartDate && d < leaveStartDate}
+                        disabled={(d) => isWeekendDate(d) || (!!leaveStartDate && d < leaveStartDate)}
                         initialFocus
                       />
                     </PopoverContent>
@@ -351,7 +429,7 @@ export default function LeaveRequestForm() {
 
               {duration !== null && (
                 <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-muted/50 text-sm">
-                  <span className="text-muted-foreground">Duration:</span>
+                  <span className="text-muted-foreground">ຈຳນວນມື້:</span>
                   <Badge variant="secondary" className="font-semibold">
                     {formatDuration(duration)}
                   </Badge>
@@ -363,9 +441,9 @@ export default function LeaveRequestForm() {
               </p>
 
               <Field>
-                <FieldLabel>Reason</FieldLabel>
+                <FieldLabel>ເຫດຜົນ</FieldLabel>
                 <Textarea
-                  placeholder="Describe your reason for leave..."
+                  placeholder="ອະທິບາຍເຫດຜົນການລາ..."
                   value={leaveReason}
                   onChange={(e) => setLeaveReason(e.target.value)}
                   rows={3}
@@ -375,7 +453,7 @@ export default function LeaveRequestForm() {
 
             <Button type="submit" className="w-full" disabled={isSubmitting}>
               {isSubmitting ? <Spinner className="mr-2" /> : <Send className="w-4 h-4 mr-2" />}
-              Submit Request
+              ສົ່ງຄໍາຮ້ອງຂໍ
             </Button>
           </form>
         </CardContent>
@@ -383,17 +461,19 @@ export default function LeaveRequestForm() {
 
       <Card className="mt-4">
         <CardHeader>
-          <CardTitle className="text-base">Recent Requests</CardTitle>
+          <CardTitle className="text-base">ຄໍາຮ້ອງຂໍລາພັກລ່າສຸດ</CardTitle>
         </CardHeader>
         <CardContent>
-          {leaveRequests.length === 0 ? (
+          {myCurrentLeaveRequests.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-4">No leave requests yet</p>
           ) : (
             <div className="space-y-3">
-              {leaveRequests.slice(0, 5).map((request) => (
-                <div
+              {myCurrentLeaveRequests.slice(0, 5).map((request) => (
+                <button
                   key={request.id}
-                  className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
+                  type="button"
+                  onClick={() => setSelectedLeave(request)}
+                  className="w-full flex items-center justify-between p-3 rounded-lg bg-muted/50 text-left hover:bg-muted transition-colors"
                 >
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium">{request.policyName || request.type}</p>
@@ -406,12 +486,92 @@ export default function LeaveRequestForm() {
                     {getStatusIcon(request.status)}
                     {request.status}
                   </Badge>
-                </div>
+                </button>
               ))}
             </div>
           )}
         </CardContent>
       </Card>
+      <Dialog open={!!selectedLeave} onOpenChange={(open) => { if (!open) setSelectedLeave(null) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{selectedLeave?.policyName || selectedLeave?.type}</DialogTitle>
+          </DialogHeader>
+
+          {selectedLeave && (
+            <div className="space-y-3 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">ສະຖານະ</span>
+                <Badge variant={getStatusVariant(selectedLeave.status)} className="flex items-center gap-1">
+                  {getStatusIcon(selectedLeave.status)}
+                  {selectedLeave.status}
+                </Badge>
+              </div>
+
+              <Separator />
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <p className="text-xs text-muted-foreground">ວັນເລີ່ມຕົ້ນ</p>
+                  <p className="font-medium">{format(new Date(selectedLeave.startDate), 'MMM d, yyyy')}</p>
+                  <p className="text-xs text-muted-foreground capitalize">{selectedLeave.startPeriod}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">ວັນສິ້ນສຸດ</p>
+                  <p className="font-medium">{format(new Date(selectedLeave.endDate), 'MMM d, yyyy')}</p>
+                  <p className="text-xs text-muted-foreground capitalize">{selectedLeave.endPeriod}</p>
+                </div>
+              </div>
+
+              {selectedLeave.duration !== undefined && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">ຈຳນວນມື້</span>
+                  <span className="font-medium">{formatDuration(selectedLeave.duration)}</span>
+                </div>
+              )}
+
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">ວັນທີຍື່ນ</span>
+                <span>{selectedLeave.createdAt}</span>
+              </div>
+
+              {selectedLeave.policyId && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Policy ID</span>
+                  <span>{selectedLeave.policyId}</span>
+                </div>
+              )}
+
+              <Separator />
+
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">ເຫດຜົນ</p>
+                <p className="text-sm">{selectedLeave.reason}</p>
+              </div>
+
+              {selectedLeave.approvals && selectedLeave.approvals.length > 0 && (
+                <>
+                  <Separator />
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-2">ການອານຸມັດ</p>
+                    <div className="space-y-1.5">
+                      {selectedLeave.approvals.map((approval, i) => (
+                        <div key={i} className="flex items-center justify-between">
+                          <span className="text-xs capitalize">{approval.role}</span>
+                          <Badge variant={getStatusVariant(approval.decision)} className="flex items-center gap-1 text-xs">
+                            {getStatusIcon(approval.decision)}
+                            {approval.decision}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

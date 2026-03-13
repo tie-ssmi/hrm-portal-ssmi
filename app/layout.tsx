@@ -11,7 +11,8 @@ import './globals.css'
 const notoSansLao = Noto_Sans_Lao({ 
   subsets: ["lao", "latin"], 
   variable: '--font-noto-sans-lao',
-  weight: ['100', '200', '300', '400', '500', '600', '700', '800', '900']
+  weight: ['400', '500', '600', '700'],
+  display: 'swap',
 });
 
 export const metadata: Metadata = {

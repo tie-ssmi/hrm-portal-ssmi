@@ -1,26 +1,6 @@
 import { collection, getDocs, limit, query, where } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import type { LeaveRequest } from '@/lib/types'
-
-export type LeavePolicy = {
-  annual: number
-  sick: number
-  personal: number
-}
-
-export type PolicyRecord = {
-  id: string
-  uuid?: string
-  role?: string | null
-  name?: string
-  description?: string
-  note?: string
-  days?: number
-  limitDay?: number
-  limitType?: string
-  requestType: string
-  leavePolicy: LeavePolicy
-}
+import type { LeavePolicy, LeaveRequest, PolicyRecord } from '@/lib/types'
 
 const LEAVE_TYPE_ALIASES: Record<string, LeaveRequest['type']> = {
   annual: 'annual',
@@ -85,6 +65,12 @@ function parsePolicyType(data: Record<string, unknown>): LeaveRequest['type'] | 
 
 function toPolicyRecord(id: string, data: Record<string, unknown>): PolicyRecord {
   const role = typeof data.role === 'string' ? data.role : data.role === null ? null : undefined
+  const businessId =
+    typeof data.id === 'string'
+      ? data.id
+      : typeof data.uuid === 'string'
+        ? data.uuid
+        : id
   const name =
     typeof data.name === 'string'
       ? data.name
@@ -94,11 +80,11 @@ function toPolicyRecord(id: string, data: Record<string, unknown>): PolicyRecord
           ? data.type
           : undefined
   const parsedType = parsePolicyType(data)
-  const requestType = parsedType ?? name ?? (typeof data.uuid === 'string' ? data.uuid : id)
+  const requestType = parsedType ?? name ?? businessId
 
   return {
-    id,
-    uuid: typeof data.uuid === 'string' ? data.uuid : undefined,
+    id: businessId,
+    uuid: id,
     role,
     name,
     description: typeof data.description === 'string' ? data.description : undefined,

@@ -1,44 +1,11 @@
 'use client'
 
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
-import type { AttendanceRecord, LeaveRequest, OffsiteRequest, ProfileUpdateRequest, LeaveBalance, LateRecord, LeaveApproverRole } from './types'
+import type { AttendanceRecord, HRMContextType, LeaveRequest, OffsiteRequest, ProfileUpdateRequest, LeaveBalance, LateRecord, LeaveApproverRole } from './types'
 import { mockAttendanceHistory, mockLeaveRequests, mockOffsiteRequests, mockLeaveBalance, mockLateRecords, mockGeoFenceLPB } from './mock-data'
 import { buildInitialLeaveApprovals, getRequiredLeaveApprovers, resolveLeaveRequestStatus } from '@/services/leave-approval'
 import { createLeaveRequest } from '@/services/leaves'
-
-interface HRMContextType {
-  // Attendance
-  todayAttendance: AttendanceRecord | null
-  attendanceHistory: AttendanceRecord[]
-  checkIn: (location?: { lat: number; lng: number }) => Promise<{ success: boolean; message: string }>
-  checkOut: (location?: { lat: number; lng: number }) => Promise<{ success: boolean; message: string }>
-  
-  // Leave
-  leaveBalance: LeaveBalance
-  leaveRequests: LeaveRequest[]
-  submitLeaveRequest: (request: Omit<LeaveRequest, 'id' | 'status' | 'createdAt'>) => Promise<void>
-  reviewLeaveRequest: (
-    requestId: string,
-    role: LeaveApproverRole,
-    decision: 'approved' | 'rejected',
-    reviewedBy?: string
-  ) => Promise<void>
-  
-  // Offsite
-  offsiteRequests: OffsiteRequest[]
-  submitOffsiteRequest: (request: Omit<OffsiteRequest, 'id' | 'status' | 'createdAt'>) => Promise<void>
-  
-  // Profile Updates
-  profileUpdateRequests: ProfileUpdateRequest[]
-  submitProfileUpdate: (request: Omit<ProfileUpdateRequest, 'id' | 'status' | 'createdAt'>) => Promise<void>
-  
-  // Late & Fines
-  lateRecords: LateRecord[]
-  totalFines: number
-
-  // Geo-fencing
-  isWithinGeofence: (lat: number, lng: number) => boolean
-}
+import { useAuth } from './auth-context'
 
 const HRMContext = createContext<HRMContextType | undefined>(undefined)
 
@@ -58,6 +25,7 @@ function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: numbe
 }
 
 export function HRMProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth()
   const [todayAttendance, setTodayAttendance] = useState<AttendanceRecord | null>(null)
   const [attendanceHistory, setAttendanceHistory] = useState<AttendanceRecord[]>(mockAttendanceHistory)
   const [leaveBalance] = useState<LeaveBalance>(mockLeaveBalance)
@@ -130,6 +98,9 @@ export function HRMProvider({ children }: { children: ReactNode }) {
     const requiredApprovers = getRequiredLeaveApprovers(request.duration)
     const approvals = buildInitialLeaveApprovals(request.duration)
     const createdAt = new Date().toISOString().split('T')[0]
+    const createdBy = [user?.firstNameLo || user?.firstName, user?.lastNameLo || user?.lastName]
+      .filter(Boolean)
+      .join(' ') || undefined
 
     const payload: Omit<LeaveRequest, 'id'> = {
       ...request,
@@ -137,6 +108,7 @@ export function HRMProvider({ children }: { children: ReactNode }) {
       requiredApprovers,
       approvals,
       createdAt,
+      createdBy,
     }
 
     const id = await createLeaveRequest(payload)
@@ -147,7 +119,7 @@ export function HRMProvider({ children }: { children: ReactNode }) {
     }
     
     setLeaveRequests(prev => [newRequest, ...prev])
-  }, [])
+  }, [user])
 
   const reviewLeaveRequest = useCallback(async (
     requestId: string,

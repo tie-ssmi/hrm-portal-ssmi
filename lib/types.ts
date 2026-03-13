@@ -1,3 +1,5 @@
+import type { User as FirebaseUser } from 'firebase/auth'
+
 export interface DepartmentInfo {
   department?: string
   title?: string
@@ -80,8 +82,10 @@ export interface LeaveApprovalStep {
 
 export interface LeaveRequest {
   id: string
+  userUuid?: string
   type: string
   policyUuid?: string
+  policyId?: string
   policyName?: string
   startDate: string
   startPeriod?: 'morning' | 'afternoon'
@@ -93,6 +97,7 @@ export interface LeaveRequest {
   reason: string
   status: 'pending' | 'approved' | 'rejected'
   createdAt: string
+  createdBy?: string
   reviewedBy?: string
   reviewedAt?: string
 }
@@ -106,6 +111,7 @@ export interface OffsiteRequest {
   createdAt: string
   reviewedBy?: string
   reviewedAt?: string
+  createdBy?: string
 }
 
 export interface ProfileUpdateRequest {
@@ -128,6 +134,26 @@ export interface LeaveBalance {
   personalUsed: number
 }
 
+export interface LeavePolicy {
+  annual: number
+  sick: number
+  personal: number
+}
+
+export interface PolicyRecord {
+  id: string
+  uuid?: string
+  role?: string | null
+  name?: string
+  description?: string
+  note?: string
+  days?: number
+  limitDay?: number
+  limitType?: string
+  requestType: string
+  leavePolicy: LeavePolicy
+}
+
 export interface LateRecord {
   date: string
   minutes: number
@@ -139,4 +165,38 @@ export interface GeoFence {
   lng: number
   radius: number // in meters
   name: string
+}
+
+export interface AuthContextType {
+  user: Employee | null
+  firebaseUser: FirebaseUser | null
+  isAuthenticated: boolean
+  isLoading: boolean
+  login: (email: string, password: string) => Promise<boolean>
+  loginWithGoogle: () => Promise<boolean>
+  logout: () => void
+  updateProfile: (updates: Partial<Employee>) => void
+}
+
+export interface HRMContextType {
+  todayAttendance: AttendanceRecord | null
+  attendanceHistory: AttendanceRecord[]
+  checkIn: (location?: { lat: number; lng: number }) => Promise<{ success: boolean; message: string }>
+  checkOut: (location?: { lat: number; lng: number }) => Promise<{ success: boolean; message: string }>
+  leaveBalance: LeaveBalance
+  leaveRequests: LeaveRequest[]
+  submitLeaveRequest: (request: Omit<LeaveRequest, 'id' | 'status' | 'createdAt'>) => Promise<void>
+  reviewLeaveRequest: (
+    requestId: string,
+    role: LeaveApproverRole,
+    decision: 'approved' | 'rejected',
+    reviewedBy?: string
+  ) => Promise<void>
+  offsiteRequests: OffsiteRequest[]
+  submitOffsiteRequest: (request: Omit<OffsiteRequest, 'id' | 'status' | 'createdAt'>) => Promise<void>
+  profileUpdateRequests: ProfileUpdateRequest[]
+  submitProfileUpdate: (request: Omit<ProfileUpdateRequest, 'id' | 'status' | 'createdAt'>) => Promise<void>
+  lateRecords: LateRecord[]
+  totalFines: number
+  isWithinGeofence: (lat: number, lng: number) => boolean
 }

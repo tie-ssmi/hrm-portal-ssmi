@@ -11,18 +11,7 @@ import {
 } from 'firebase/auth'
 import { auth } from './firebase'
 import { fetchEmployeeByUid } from './employees'
-import type { Employee } from './types'
-
-interface AuthContextType {
-  user: Employee | null
-  firebaseUser: FirebaseUser | null
-  isAuthenticated: boolean
-  isLoading: boolean
-  login: (email: string, password: string) => Promise<boolean>
-  loginWithGoogle: () => Promise<boolean>
-  logout: () => void
-  updateProfile: (updates: Partial<Employee>) => void
-}
+import type { AuthContextType, Employee } from './types'
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
