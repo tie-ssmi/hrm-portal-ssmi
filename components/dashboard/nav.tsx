@@ -33,6 +33,19 @@ import {
   LogOut
 } from 'lucide-react'
 
+function formatDepartment(value: unknown): string {
+  if (!value) return '-'
+  if (typeof value === 'string') return value
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>
+    const department = typeof obj.department === 'string' ? obj.department : ''
+    const title = typeof obj.title === 'string' ? obj.title : ''
+    if (department && title) return `${department} (${title})`
+    return department || title || '-'
+  }
+  return String(value)
+}
+
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/dashboard/profile', label: 'My Profile', icon: User },
@@ -88,7 +101,7 @@ export function DashboardNav() {
               {user?.firstName} {user?.lastName}
             </p>
             <p className="text-xs text-sidebar-foreground/70 truncate">
-              {user?.position}
+              {formatDepartment(user?.department)}
             </p>
           </div>
         </div>

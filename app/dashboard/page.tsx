@@ -2,10 +2,12 @@
 
 import { useAuth } from '@/lib/auth-context'
 import { useHRM } from '@/lib/hrm-context'
+import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import HomeSkeleton from '@/components/skeletons/homeSkeleton'
+import { fetchPolicyByUuid } from '@/services/policies'
 import { 
   Calendar, 
   Clock, 
@@ -22,13 +24,25 @@ export default function DashboardPage() {
   const { user, isLoading } = useAuth()
   const { leaveBalance, lateRecords, totalFines, leaveRequests, todayAttendance } = useHRM()
 
+  const { data: policyData } = useQuery({
+    queryKey: ['policy', 'POL-001'],
+    queryFn: () => fetchPolicyByUuid('POL-001'),
+  })
+
   if (isLoading) {
     return <HomeSkeleton />
   }
 
-  const annualRemaining = leaveBalance.annual - leaveBalance.annualUsed
-  const sickRemaining = leaveBalance.sick - leaveBalance.sickUsed
-  const personalRemaining = leaveBalance.personal - leaveBalance.personalUsed
+  const effectiveLeaveBalance = {
+    ...leaveBalance,
+    annual: policyData?.leavePolicy.annual ?? leaveBalance.annual,
+    sick: policyData?.leavePolicy.sick ?? leaveBalance.sick,
+    personal: policyData?.leavePolicy.personal ?? leaveBalance.personal,
+  }
+
+  const annualRemaining = effectiveLeaveBalance.annual - leaveBalance.annualUsed
+  const sickRemaining = effectiveLeaveBalance.sick - leaveBalance.sickUsed
+  const personalRemaining = effectiveLeaveBalance.personal - leaveBalance.personalUsed
   
   const recentLeaves = leaveRequests.slice(0, 3)
 
@@ -56,18 +70,18 @@ export default function DashboardPage() {
                 <p className="text-sm text-muted-foreground">Today&apos;s Status</p>
                 <p className="text-lg font-semibold text-foreground">
                   {todayAttendance?.checkIn 
-                    ? `Checked in at ${todayAttendance.checkIn}`
-                    : 'Not checked in yet'
+                    ? `ກົດເຊັກ-ອິນ ຕອນ ${todayAttendance.checkIn}`
+                    : 'ຍັງບໍ່ໄດ້ເຊັກ-ອິນ'
                   }
                 </p>
               </div>
             </div>
             <Badge variant={todayAttendance?.checkIn ? 'default' : 'secondary'}>
               {todayAttendance?.checkOut 
-                ? 'Completed' 
+                ? 'ກັບບ້ານແລ້ວ' 
                 : todayAttendance?.checkIn 
-                  ? 'Working' 
-                  : 'Pending'
+                  ? 'ເຂົ້າເຮັດວຽກແລ້ວ' 
+                  : 'ຍັງບໍ່ໄດ້ເຊັກ-ອິນ'
               }
             </Badge>
           </div>
@@ -84,7 +98,7 @@ export default function DashboardPage() {
                 <AlertTriangle className="w-5 h-5 text-chart-3" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Late Count</p>
+                <p className="text-xs text-muted-foreground">ມາຊ້າ</p>
                 <p className="text-xl font-bold text-foreground">{lateRecords.length}</p>
               </div>
             </div>
@@ -99,7 +113,7 @@ export default function DashboardPage() {
                 <DollarSign className="w-5 h-5 text-destructive" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Total Fines</p>
+                <p className="text-xs text-muted-foreground">ຄ່າປັນ</p>
                 <p className="text-xl font-bold text-foreground">${totalFines}</p>
               </div>
             </div>
@@ -114,8 +128,8 @@ export default function DashboardPage() {
                 <Palmtree className="w-5 h-5 text-chart-2" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Annual Leave</p>
-                <p className="text-xl font-bold text-foreground">{annualRemaining}/{leaveBalance.annual}</p>
+                <p className="text-xs text-muted-foreground">ວັນພັກປະຈຳປີ</p>
+                <p className="text-xl font-bold text-foreground">{annualRemaining}/{effectiveLeaveBalance.annual}</p>
               </div>
             </div>
           </CardContent>
@@ -130,7 +144,7 @@ export default function DashboardPage() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Sick Leave</p>
-                <p className="text-xl font-bold text-foreground">{sickRemaining}/{leaveBalance.sick}</p>
+                <p className="text-xl font-bold text-foreground">{sickRemaining}/{effectiveLeaveBalance.sick}</p>
               </div>
             </div>
           </CardContent>
@@ -153,10 +167,10 @@ export default function DashboardPage() {
                 Annual Leave
               </span>
               <span className="text-muted-foreground">
-                {leaveBalance.annualUsed} used / {leaveBalance.annual} days
+                {leaveBalance.annualUsed} used / {effectiveLeaveBalance.annual} days
               </span>
             </div>
-            <Progress value={(leaveBalance.annualUsed / leaveBalance.annual) * 100} className="h-2" />
+            <Progress value={(leaveBalance.annualUsed / effectiveLeaveBalance.annual) * 100} className="h-2" />
           </div>
           
           <div className="space-y-2">
@@ -166,10 +180,10 @@ export default function DashboardPage() {
                 Sick Leave
               </span>
               <span className="text-muted-foreground">
-                {leaveBalance.sickUsed} used / {leaveBalance.sick} days
+                {leaveBalance.sickUsed} used / {effectiveLeaveBalance.sick} days
               </span>
             </div>
-            <Progress value={(leaveBalance.sickUsed / leaveBalance.sick) * 100} className="h-2" />
+            <Progress value={(leaveBalance.sickUsed / effectiveLeaveBalance.sick) * 100} className="h-2" />
           </div>
           
           <div className="space-y-2">
@@ -179,10 +193,10 @@ export default function DashboardPage() {
                 Personal Leave
               </span>
               <span className="text-muted-foreground">
-                {leaveBalance.personalUsed} used / {leaveBalance.personal} days
+                {leaveBalance.personalUsed} used / {effectiveLeaveBalance.personal} days
               </span>
             </div>
-            <Progress value={(leaveBalance.personalUsed / leaveBalance.personal) * 100} className="h-2" />
+            <Progress value={(leaveBalance.personalUsed / effectiveLeaveBalance.personal) * 100} className="h-2" />
           </div>
         </CardContent>
       </Card>
@@ -208,8 +222,8 @@ export default function DashboardPage() {
                   className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
                 >
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium capitalize">
-                      {leave.type} Leave
+                    <p className="text-sm font-medium">
+                      {leave.policyName || leave.type}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {format(new Date(leave.startDate), 'MMM d')} - {format(new Date(leave.endDate), 'MMM d, yyyy')}

@@ -1,8 +1,10 @@
 'use client'
 
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
-import type { AttendanceRecord, LeaveRequest, OffsiteRequest, ProfileUpdateRequest, LeaveBalance, LateRecord } from './types'
+import type { AttendanceRecord, LeaveRequest, OffsiteRequest, ProfileUpdateRequest, LeaveBalance, LateRecord, LeaveApproverRole } from './types'
 import { mockAttendanceHistory, mockLeaveRequests, mockOffsiteRequests, mockLeaveBalance, mockLateRecords, mockGeoFenceLPB } from './mock-data'
+import { buildInitialLeaveApprovals, getRequiredLeaveApprovers, resolveLeaveRequestStatus } from '@/services/leave-approval'
+import { createLeaveRequest } from '@/services/leaves'
 
 interface HRMContextType {
   // Attendance
@@ -15,6 +17,12 @@ interface HRMContextType {
   leaveBalance: LeaveBalance
   leaveRequests: LeaveRequest[]
   submitLeaveRequest: (request: Omit<LeaveRequest, 'id' | 'status' | 'createdAt'>) => Promise<void>
+  reviewLeaveRequest: (
+    requestId: string,
+    role: LeaveApproverRole,
+    decision: 'approved' | 'rejected',
+    reviewedBy?: string
+  ) => Promise<void>
   
   // Offsite
   offsiteRequests: OffsiteRequest[]
@@ -119,16 +127,76 @@ export function HRMProvider({ children }: { children: ReactNode }) {
   }, [todayAttendance])
 
   const submitLeaveRequest = useCallback(async (request: Omit<LeaveRequest, 'id' | 'status' | 'createdAt'>) => {
-    await new Promise(resolve => setTimeout(resolve, 500))
+    const requiredApprovers = getRequiredLeaveApprovers(request.duration)
+    const approvals = buildInitialLeaveApprovals(request.duration)
+    const createdAt = new Date().toISOString().split('T')[0]
+
+    const payload: Omit<LeaveRequest, 'id'> = {
+      ...request,
+      status: 'pending',
+      requiredApprovers,
+      approvals,
+      createdAt,
+    }
+
+    const id = await createLeaveRequest(payload)
     
     const newRequest: LeaveRequest = {
-      ...request,
-      id: Date.now().toString(),
-      status: 'pending',
-      createdAt: new Date().toISOString().split('T')[0]
+      ...payload,
+      id,
     }
     
     setLeaveRequests(prev => [newRequest, ...prev])
+  }, [])
+
+  const reviewLeaveRequest = useCallback(async (
+    requestId: string,
+    role: LeaveApproverRole,
+    decision: 'approved' | 'rejected',
+    reviewedBy?: string
+  ) => {
+    await new Promise(resolve => setTimeout(resolve, 500))
+
+    setLeaveRequests((prev) => prev.map((request) => {
+      if (request.id !== requestId) {
+        return request
+      }
+
+      const baseRequired = request.requiredApprovers && request.requiredApprovers.length > 0
+        ? request.requiredApprovers
+        : getRequiredLeaveApprovers(request.duration)
+
+      const baseApprovals = baseRequired.map((requiredRole) => {
+        const existing = request.approvals?.find((a) => a.role === requiredRole)
+        if (existing) {
+          return existing
+        }
+        return { role: requiredRole, decision: 'pending' as const }
+      })
+
+      const now = new Date().toISOString()
+      const updatedApprovals = baseApprovals.map((approval) => {
+        if (approval.role !== role) {
+          return approval
+        }
+        return {
+          ...approval,
+          decision,
+          reviewedBy: reviewedBy || approval.reviewedBy,
+          reviewedAt: now,
+        }
+      })
+
+      const status = resolveLeaveRequestStatus(updatedApprovals)
+      return {
+        ...request,
+        requiredApprovers: baseRequired,
+        approvals: updatedApprovals,
+        status,
+        reviewedBy: reviewedBy || request.reviewedBy,
+        reviewedAt: status !== 'pending' ? now : request.reviewedAt,
+      }
+    }))
   }, [])
 
   const submitOffsiteRequest = useCallback(async (request: Omit<OffsiteRequest, 'id' | 'status' | 'createdAt'>) => {
@@ -168,6 +236,7 @@ export function HRMProvider({ children }: { children: ReactNode }) {
       leaveBalance,
       leaveRequests,
       submitLeaveRequest,
+      reviewLeaveRequest,
       offsiteRequests,
       submitOffsiteRequest,
       profileUpdateRequests,

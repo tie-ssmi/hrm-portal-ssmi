@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next'
-import { Inter, Noto_Sans_Lao } from 'next/font/google'
+import { Noto_Sans_Lao } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { AuthProvider } from '@/lib/auth-context'
 import { HRMProvider } from '@/lib/hrm-context'
@@ -8,9 +8,8 @@ import { QueryProvider } from '@/components/query-provider'
 import { Toaster } from '@/components/ui/sonner'
 import './globals.css'
 
-const inter = Inter({ subsets: ["latin"], variable: '--font-inter' });
 const notoSansLao = Noto_Sans_Lao({ 
-  subsets: ["lao"], 
+  subsets: ["lao", "latin"], 
   variable: '--font-noto-sans-lao',
   weight: ['100', '200', '300', '400', '500', '600', '700', '800', '900']
 });
@@ -18,7 +17,10 @@ const notoSansLao = Noto_Sans_Lao({
 export const metadata: Metadata = {
   title: 'Employee HRM Portal',
   description: 'Human Resource Management System for Employees',
-  generator: 'v0.app',
+  generator: 'SSIM',
+  icons: {
+    icon: '/SSMI.svg',
+  },
 }
 
 export const viewport: Viewport = {
@@ -35,8 +37,8 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.variable} ${notoSansLao.variable} font-sans antialiased`}>
+    <html lang="lo" suppressHydrationWarning>
+      <body className={`${notoSansLao.variable} font-sans antialiased`}>
         <ThemeProvider
           attribute="class"
           defaultTheme="system"

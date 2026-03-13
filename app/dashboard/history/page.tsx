@@ -223,8 +223,8 @@ export default function HistoryPage() {
                       >
                         <div className="flex items-start justify-between">
                           <div>
-                            <p className="text-sm font-medium capitalize">
-                              {request.type} Leave
+                            <p className="text-sm font-medium">
+                              {request.policyName || request.type}
                             </p>
                             <p className="text-xs text-muted-foreground mt-1">
                               {format(new Date(request.startDate), 'MMM d')} - {format(new Date(request.endDate), 'MMM d, yyyy')}
