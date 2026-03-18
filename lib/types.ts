@@ -25,6 +25,7 @@ export interface Employee {
   joinDate: string
   manager?: string
   // Extended employee data from Firestore
+  uuid?: string
   uid?: string
   firstNameEn?: string
   firstNameLo?: string
@@ -173,7 +174,14 @@ export interface AuthContextType {
   isAuthenticated: boolean
   isLoading: boolean
   login: (email: string, password: string) => Promise<boolean>
-  loginWithGoogle: () => Promise<boolean>
+  loginWithGoogle: (linkPassword?: string) => Promise<{
+    success: boolean
+    error?: string
+    requiresPasswordLink?: boolean
+    requiresPasswordSetup?: boolean
+    email?: string
+  }>
+  setupPasswordForCurrentUser: (password: string) => Promise<{ success: boolean; error?: string }>
   logout: () => void
   updateProfile: (updates: Partial<Employee>) => void
 }

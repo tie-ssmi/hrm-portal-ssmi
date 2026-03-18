@@ -1,9 +1,10 @@
 'use client'
 
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
 import type { AttendanceRecord, HRMContextType, LeaveRequest, OffsiteRequest, ProfileUpdateRequest, LeaveBalance, LateRecord, LeaveApproverRole } from './types'
-import { mockAttendanceHistory, mockLeaveRequests, mockOffsiteRequests, mockLeaveBalance, mockLateRecords, mockGeoFenceLPB } from './mock-data'
+import { mockLeaveRequests, mockOffsiteRequests, mockLeaveBalance, mockLateRecords, mockGeoFenceLPB } from './mock-data'
 import { buildInitialLeaveApprovals, getRequiredLeaveApprovers, resolveLeaveRequestStatus } from '@/services/leave-approval'
+import { fetchAttendanceByUserThisMonth, formatAttendanceDocumentDate, updateAttendanceCheckInTime, updateAttendanceCheckOutTime } from '@/services/attendance'
 import { createLeaveRequest } from '@/services/leaves'
 import { useAuth } from './auth-context'
 
@@ -24,15 +25,121 @@ function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: numbe
   return R * c // Distance in meters
 }
 
+function formatLocalIsoDate(date: Date): string {
+  const year = date.getFullYear()
+  const month = (date.getMonth() + 1).toString().padStart(2, '0')
+  const day = date.getDate().toString().padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function toDepartmentPayload(department: unknown): { name: string; uid: string } | undefined {
+  if (!department) {
+    return undefined
+  }
+
+  if (typeof department === 'string') {
+    return { name: department, uid: '' }
+  }
+
+  if (typeof department === 'object') {
+    const value = department as Record<string, unknown>
+    const name = typeof value.nameLo === 'string'
+      ? value.nameLo
+      : typeof value.name === 'string'
+        ? value.name
+        : typeof value.department === 'string'
+          ? value.department
+          : ''
+
+    if (!name) {
+      return undefined
+    }
+
+    return {
+      name,
+      uid: typeof value.uid === 'string' ? value.uid : '',
+    }
+  }
+
+  return undefined
+}
+
+function toWorkLocationPayload(workLocation: unknown): { code?: string; name: string; uid?: string } | undefined {
+  if (!workLocation) {
+    return undefined
+  }
+
+  if (typeof workLocation === 'string') {
+    return { name: workLocation }
+  }
+
+  if (typeof workLocation === 'object') {
+    const value = workLocation as Record<string, unknown>
+    const name = typeof value.name === 'string' ? value.name : ''
+
+    if (!name) {
+      return undefined
+    }
+
+    return {
+      name,
+      ...(typeof value.code === 'string' ? { code: value.code } : {}),
+      ...(typeof value.uid === 'string' ? { uid: value.uid } : {}),
+    }
+  }
+
+  return undefined
+}
+
 export function HRMProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
   const [todayAttendance, setTodayAttendance] = useState<AttendanceRecord | null>(null)
-  const [attendanceHistory, setAttendanceHistory] = useState<AttendanceRecord[]>(mockAttendanceHistory)
+  const [attendanceHistory, setAttendanceHistory] = useState<AttendanceRecord[]>([])
   const [leaveBalance] = useState<LeaveBalance>(mockLeaveBalance)
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>(mockLeaveRequests)
   const [offsiteRequests, setOffsiteRequests] = useState<OffsiteRequest[]>(mockOffsiteRequests)
   const [profileUpdateRequests, setProfileUpdateRequests] = useState<ProfileUpdateRequest[]>([])
   const [lateRecords] = useState<LateRecord[]>(mockLateRecords)
+
+  useEffect(() => {
+    let isMounted = true
+
+    async function loadAttendance() {
+      if (!user?.uuid) {
+        if (isMounted) {
+          setTodayAttendance(null)
+          setAttendanceHistory([])
+        }
+        return
+      }
+
+      try {
+        const records = await fetchAttendanceByUserThisMonth(user.uuid)
+
+        if (!isMounted) {
+          return
+        }
+
+        setAttendanceHistory(records)
+
+        const todayIso = formatLocalIsoDate(new Date())
+        const todayRecord = records.find((record) => record.date === todayIso) || null
+        setTodayAttendance(todayRecord)
+      } catch (error) {
+        console.error('Error loading attendance history:', error)
+        if (isMounted) {
+          setTodayAttendance(null)
+          setAttendanceHistory([])
+        }
+      }
+    }
+
+    loadAttendance()
+
+    return () => {
+      isMounted = false
+    }
+  }, [user?.uuid])
 
   const isWithinGeofence = useCallback((lat: number, lng: number) => {
     const distance = calculateDistance(lat, lng, mockGeoFenceLPB.lat, mockGeoFenceLPB.lng)
@@ -46,12 +153,34 @@ export function HRMProvider({ children }: { children: ReactNode }) {
       return { success: false, message: 'Already checked in today' }
     }
 
+    if (!user?.uuid) {
+      return { success: false, message: 'User uuid is missing. Unable to update attendance.' }
+    }
+
     const now = new Date()
+    const attendanceDate = formatAttendanceDocumentDate(now)
     const checkInTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`
     const isLate = now.getHours() >= 9 && now.getMinutes() > 0
+
+    await updateAttendanceCheckInTime({
+      userUuid: user.uuid,
+      uid: user.uid || user.uuid,
+      date: attendanceDate,
+      checkInTime,
+      status: isLate ? 'late' : 'present',
+      location,
+      createdBy: 'system',
+      fullNameEn: `${user.firstNameEn || user.firstName} ${user.lastNameEn || user.lastName}`.trim(),
+      fullNameLo: `${user.firstNameLo || ''} ${user.lastNameLo || ''}`.trim() || undefined,
+      jobTitle: user.jobTitle || user.position,
+      employeeImage: user.profileImage || user.photo3x4Url || user.avatar,
+      note: null,
+      department: toDepartmentPayload(user.department),
+      workLocation: toWorkLocationPayload(user.workLocation),
+    })
     
     const newAttendance: AttendanceRecord = {
-      id: Date.now().toString(),
+      id: `${user.uuid}_${attendanceDate}`,
       date: now.toISOString().split('T')[0],
       checkIn: checkInTime,
       status: isLate ? 'late' : 'present',
@@ -65,7 +194,7 @@ export function HRMProvider({ children }: { children: ReactNode }) {
       success: true, 
       message: isLate ? `Checked in late at ${checkInTime}` : `Checked in at ${checkInTime}` 
     }
-  }, [todayAttendance])
+  }, [todayAttendance, user])
 
   const checkOut = useCallback(async (location?: { lat: number; lng: number }) => {
     await new Promise(resolve => setTimeout(resolve, 500))
@@ -78,21 +207,42 @@ export function HRMProvider({ children }: { children: ReactNode }) {
       return { success: false, message: 'Already checked out today' }
     }
 
+    if (!user?.uuid) {
+      return { success: false, message: 'User uuid is missing. Unable to update attendance.' }
+    }
+
     const now = new Date()
+    const attendanceDate = formatAttendanceDocumentDate(now)
     const checkOutTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`
+    const workHours = 8
+
+    await updateAttendanceCheckOutTime({
+      userUuid: user.uuid,
+      uid: user.uid || user.uuid,
+      date: attendanceDate,
+      checkOutTime,
+      workHours,
+      location: location || todayAttendance.location,
+      fullNameEn: `${user.firstNameEn || user.firstName} ${user.lastNameEn || user.lastName}`.trim(),
+      fullNameLo: `${user.firstNameLo || ''} ${user.lastNameLo || ''}`.trim() || undefined,
+      jobTitle: user.jobTitle || user.position,
+      employeeImage: user.profileImage || user.photo3x4Url || user.avatar,
+      department: toDepartmentPayload(user.department),
+      workLocation: toWorkLocationPayload(user.workLocation),
+    })
     
     const updatedAttendance: AttendanceRecord = {
       ...todayAttendance,
       checkOut: checkOutTime,
       location: location || todayAttendance.location,
-      workHours: 8 // Simplified calculation
+      workHours // Simplified calculation
     }
     
     setTodayAttendance(updatedAttendance)
     setAttendanceHistory(prev => prev.map(a => a.id === updatedAttendance.id ? updatedAttendance : a))
     
     return { success: true, message: `Checked out at ${checkOutTime}` }
-  }, [todayAttendance])
+  }, [todayAttendance, user])
 
   const submitLeaveRequest = useCallback(async (request: Omit<LeaveRequest, 'id' | 'status' | 'createdAt'>) => {
     const requiredApprovers = getRequiredLeaveApprovers(request.duration)

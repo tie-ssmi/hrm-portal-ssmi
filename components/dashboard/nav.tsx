@@ -6,7 +6,7 @@ import { useAuth } from '@/lib/auth-context'
 import { useTheme } from 'next-themes'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback,AvatarImage } from '@/components/ui/avatar'
 import { Separator } from '@/components/ui/separator'
 import {
   Dialog,
@@ -68,6 +68,7 @@ export function DashboardNav() {
   const initials = user 
     ? `${user.firstName[0]}${user.lastName[0]}`.toUpperCase()
     : 'U'
+const profileImage = user?.profileImage || user?.photo3x4Url || user?.avatar || (String(user?.gender).toLowerCase() === 'male' ? '/info/ma.jpg' : '/info/woman.jpg')
 
  
 
@@ -91,7 +92,9 @@ export function DashboardNav() {
       {/* User info */}
       <div className="px-6 py-4">
         <div className="flex items-center gap-3">
-          <Avatar className="w-10 h-10">
+          <Avatar  className="w-10 h-10">
+                      <AvatarImage src={profileImage} alt="@shadcn" />
+
             <AvatarFallback className="bg-sidebar-accent text-sidebar-accent-foreground">
               {initials}
             </AvatarFallback>

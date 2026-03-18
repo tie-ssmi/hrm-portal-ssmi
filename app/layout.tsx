@@ -4,7 +4,7 @@ import { Analytics } from '@vercel/analytics/next'
 import { AuthProvider } from '@/lib/auth-context'
 import { HRMProvider } from '@/lib/hrm-context'
 import { ThemeProvider } from '@/components/theme-provider'
-import { QueryProvider } from '@/components/query-provider'
+import { TanstackQueryProvider } from '@/components/query-provider-tanstack'
 import { Toaster } from '@/components/ui/sonner'
 import './globals.css'
 
@@ -46,14 +46,14 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <QueryProvider>
+          <TanstackQueryProvider>
             <AuthProvider>
               <HRMProvider>
                 {children}
                 <Toaster position="top-center" />
               </HRMProvider>
             </AuthProvider>
-          </QueryProvider>
+          </TanstackQueryProvider>
         </ThemeProvider>
         <Analytics />
       </body>
