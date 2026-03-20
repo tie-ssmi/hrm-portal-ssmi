@@ -41,7 +41,7 @@ import {
 const navItems = [
   { href: '/dashboard', label: 'Home', icon: LayoutDashboard },
   { href: '/dashboard/attendance', label: 'Check-In', icon: Clock },
-  { href: '/dashboard/forms', label: 'Forms', icon: FileText },
+  { href: '/dashboard/request', label: 'Forms', icon: FileText },
   { href: '/dashboard/history', label: 'History', icon: History },
   { href: '/dashboard/profile', label: 'Profile', icon: User },
 

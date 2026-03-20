@@ -31,7 +31,7 @@ import {
   ShieldX,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { format } from 'date-fns'
+import { addDays, format, startOfWeek } from 'date-fns'
 
 type LocationState = {
   lat: number
@@ -169,7 +169,19 @@ export default function AttendancePage() {
     return isWithinGeofence(location.lat, location.lng)
   }, [isWithinGeofence, location])
 
-  const recentHistory = useMemo(() => attendanceHistory.slice(0, 5), [attendanceHistory])
+  const weeklyHistory = useMemo(() => {
+    const weekStart = startOfWeek(currentTime, { weekStartsOn: 1 })
+    const weekEnd = addDays(weekStart, 6)
+    const weekStartIso = format(weekStart, 'yyyy-MM-dd')
+    const weekEndIso = format(weekEnd, 'yyyy-MM-dd')
+
+    return attendanceHistory
+      .filter((record) => {
+        const normalizedDate = record.date.slice(0, 10)
+        return normalizedDate >= weekStartIso && normalizedDate <= weekEndIso
+      })
+      .sort((left, right) => left.date.localeCompare(right.date))
+  }, [attendanceHistory, currentTime])
 
   return (
     <div className="space-y-6">
@@ -326,7 +338,7 @@ export default function AttendancePage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {recentHistory.map((record) => (
+              {weeklyHistory.map((record) => (
                 <div key={record.id} className="flex items-center justify-between rounded-lg bg-muted/50 p-3">
                   <div>
                     <p className="text-sm font-medium">{format(new Date(record.date), 'EEE, MMM d')}</p>

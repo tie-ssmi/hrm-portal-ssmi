@@ -1,7 +1,6 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useState, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/lib/auth-context'
 import { useHRM } from '@/lib/hrm-context'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -23,6 +22,8 @@ import { getLeaveApproverRuleText } from '@/services/leave-approval'
 import { fetchLeavesByUserUuidFromToday } from '@/services/leaves'
 import { fetchPoliciesForGender } from '@/services/policies'
 import type { LeaveRequest } from '@/lib/types'
+import { getEmployees } from '@/services/employees'
+import { useQuery } from '@tanstack/react-query'
 
 type Period = 'morning' | 'afternoon'
 type LeaveTypeOption = {
@@ -123,8 +124,13 @@ export default function LeaveRequestForm() {
   const { user } = useAuth()
   const { submitLeaveRequest, leaveBalance } = useHRM()
   const loggedInUserUuid = user?.uid || user?.id || ''
+  const departmentUuid = typeof user?.department === 'object' ? user.department?.uuid : undefined
+  const workLocationUuid = typeof user?.workLocation === 'object' && user.workLocation !== null
+    ? (user.workLocation as { uuid?: string }).uuid
+    : undefined
 
   const [selectedPolicyValue, setSelectedPolicyValue] = useState('annual')
+  const [selectedSuccessorUid, setSelectedSuccessorUid] = useState('')
   const [leaveStartDate, setLeaveStartDate] = useState<Date>()
   const [startPeriod, setStartPeriod] = useState<Period>('morning')
   const [leaveEndDate, setLeaveEndDate] = useState<Date>()
@@ -159,6 +165,16 @@ export default function LeaveRequestForm() {
     queryKey: ['leaves', 'my-current', loggedInUserUuid],
     queryFn: () => fetchLeavesByUserUuidFromToday(loggedInUserUuid),
     enabled: !!loggedInUserUuid,
+  })
+
+  const { data: employeesData = [] } = useQuery({
+    queryKey: ['employees', departmentUuid ?? null, workLocationUuid ?? null, loggedInUserUuid],
+    queryFn: () => getEmployees({
+      departmentUuid,
+      workLocationUuid,
+      excludeUid: loggedInUserUuid,
+    }),
+    enabled: !!departmentUuid && !!workLocationUuid && !!loggedInUserUuid,
   })
 
   const leaveTypeOptions = useMemo(() => {
@@ -277,6 +293,7 @@ export default function LeaveRequestForm() {
       await refetchMyCurrentLeaves()
       toast.success('Leave request submitted successfully')
       setSelectedPolicyValue(leaveTypeOptions[0]?.value || 'annual')
+      setSelectedSuccessorUid('')
       setLeaveStartDate(undefined)
       setStartPeriod('morning')
       setLeaveEndDate(undefined)
@@ -448,6 +465,24 @@ export default function LeaveRequestForm() {
                   onChange={(e) => setLeaveReason(e.target.value)}
                   rows={3}
                 />
+              </Field>
+                 <Field>
+                <FieldLabel>ຜູ້ຮັບວຽກຕໍ່</FieldLabel>
+                  <Select value={selectedSuccessorUid} onValueChange={setSelectedSuccessorUid}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="ເລືອກຜູ້ຮັບວຽກຕໍ່" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">ບໍ່ລະບຸ</SelectItem>
+                    {employeesData?.map((employee) => (
+                        <SelectItem key={employee.uid} value={employee.uid}>
+                          {[employee.firstNameLo || employee.firstNameEn, employee.lastNameLo || employee.lastNameEn]
+                            .filter(Boolean)
+                            .join(' ') || employee.email || employee.uid} ({employee.jobTitle})
+                        </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </Field>
             </FieldGroup>
 

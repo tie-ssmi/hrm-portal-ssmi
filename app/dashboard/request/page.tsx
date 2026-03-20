@@ -60,7 +60,7 @@ export default function FormsPage() {
           </TabsTrigger>
           <TabsTrigger value="offsite" className="gap-2">
             <MapPin className="w-4 h-4" />
-            ຟອມອອກວຽກນອກສະຖານທີ່
+            ຟອມອອກວຽກນອກ
           </TabsTrigger>
         </TabsList>
 

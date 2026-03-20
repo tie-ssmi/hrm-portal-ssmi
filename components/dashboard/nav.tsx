@@ -30,7 +30,7 @@ import {
   Clock,
   FileText,
   History,
-  LogOut
+  LogOut,Newspaper 
 } from 'lucide-react'
 
 function formatDepartment(value: unknown): string {
@@ -50,7 +50,9 @@ const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/dashboard/profile', label: 'My Profile', icon: User },
   { href: '/dashboard/attendance', label: 'Check-In/Out', icon: Clock },
-  { href: '/dashboard/forms', label: 'Request Forms', icon: FileText },
+  { href: '/dashboard/news', label: 'News', icon: Newspaper  },
+
+  { href: '/dashboard/request', label: 'Request Forms', icon: FileText },
   { href: '/dashboard/history', label: 'History', icon: History },
 ]
 
