@@ -180,7 +180,8 @@ export default function AttendancePage() {
         const normalizedDate = record.date.slice(0, 10)
         return normalizedDate >= weekStartIso && normalizedDate <= weekEndIso
       })
-      .sort((left, right) => left.date.localeCompare(right.date))
+      // .sort((left, right) => left.date.localeCompare(right.date)) // Old go to new
+      .sort((left, right) => right.date.localeCompare(left.date)) // New go to old
   }, [attendanceHistory, currentTime])
 
   return (

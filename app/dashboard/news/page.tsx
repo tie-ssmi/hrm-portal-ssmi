@@ -1,31 +1,41 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge, CalendarDays, MessageSquare, User2, Building2 } from 'lucide-react'
-
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet"
 export default function NewsPage() {
-  const showNewsItems =
+  const initialNews =
   {
     "createAt": "2026-03-19T02:30:00.000Z",
     "createBy": "ໂອລີເດດ ວົງສະຫວ່າງ",
     "description": "ກອງປະຊຸມວາງແຜນຍຸດທະສາດປະຈຳເດືອນ ມີນາ 2026 ຮ່ວມກັບຜູ້ຈັດການທັງ 8 ສາຂາ ເພື່ອສະຫຼຸບຜົນການດຳເນີນງານໃນໄຕມາດທີ 1 ແລະ ກຳນົດທິດທາງການຂະຫຍາຍຕົວຂອງທຸລະກິດໃນໄລຍະຖັດໄປ",
     "docType": "image",
-    "docURL": "https://firebasestorage.googleapis.com/v0/b/hrm-ssmi.firebasestorage.app/o/images%2Fevents%2Fmeeting-01.png?alt=media",
+    "docURL": "https://firebasestorage.googleapis.com/v0/b/hrm-ssmi.firebasestorage.app/o/images%2Fprofiles%2Fcf8ef0cb-1b5a-465c-962f-77e40c642423.png?alt=media&token=139a6be9-1e60-43b6-98ba-f3b6be4b92b6",
     "note": "ກະລຸນາເຂົ້າຮ່ວມໃຫ້ກົງເວລາ",
     "title": "ປະຊຸມວາງແຜນ"
   }
   const newsItems = [
-    {
-      "createAt": "2026-03-19T02:30:00.000Z",
-      "createBy": "ໂອລີເດດ ວົງສະຫວ່າງ",
-      "description": "ກອງປະຊຸມວາງແຜນຍຸດທະສາດປະຈຳເດືອນ ມີນາ 2026 ຮ່ວມກັບຜູ້ຈັດການທັງ 8 ສາຂາ ເພື່ອສະຫຼຸບຜົນການດຳເນີນງານໃນໄຕມາດທີ 1 ແລະ ກຳນົດທິດທາງການຂະຫຍາຍຕົວຂອງທຸລະກິດໃນໄລຍະຖັດໄປ",
-      "docType": "image",
-      "docURL": "https://firebasestorage.googleapis.com/v0/b/hrm-ssmi.firebasestorage.app/o/images%2Fevents%2Fmeeting-01.png?alt=media",
-      "note": "ກະລຸນາເຂົ້າຮ່ວມໃຫ້ກົງເວລາ",
-      "title": "ປະຊຸມວາງແຜນ"
-    },
+  {
+    "createAt": "2026-03-19T02:30:00.000Z",
+    "createBy": "ໂອລີເດດ ວົງສະຫວ່າງ",
+    "description": "ກອງປະຊຸມວາງແຜນຍຸດທະສາດປະຈຳເດືອນ ມີນາ 2026 ຮ່ວມກັບຜູ້ຈັດການທັງ 8 ສາຂາ ເພື່ອສະຫຼຸບຜົນການດຳເນີນງານໃນໄຕມາດທີ 1 ແລະ ກຳນົດທິດທາງການຂະຫຍາຍຕົວຂອງທຸລະກິດໃນໄລຍະຖັດໄປ",
+    "docType": "image",
+    "docURL": "https://firebasestorage.googleapis.com/v0/b/hrm-ssmi.firebasestorage.app/o/images%2Fprofiles%2Fcf8ef0cb-1b5a-465c-962f-77e40c642423.png?alt=media&token=139a6be9-1e60-43b6-98ba-f3b6be4b92b6",
+    "note": "ກະລຸນາເຂົ້າຮ່ວມໃຫ້ກົງເວລາ",
+    "title": "ປະຊຸມວາງແຜນ"
+  },
     {
       "createAt": "2026-03-19T03:15:20.000Z",
       "createBy": "ມົວ ລີ",
@@ -108,8 +118,22 @@ export default function NewsPage() {
       "title": "SSMI Expo"
     }
   ]
+  const [selectedNews, setSelectedNews] = useState(newsItems[0] || initialNews)
+  const [openSheetIndex, setOpenSheetIndex] = useState<number | null>(null)
+  
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(min-width: 1024px)')
+    const handleChange = (e: MediaQueryListEvent) => {
+      if (e.matches) {
+        setOpenSheetIndex(null)
+      }
+    }
+    mediaQuery.addEventListener('change', handleChange)
+    return () => mediaQuery.removeEventListener('change', handleChange)
+  }, [])
+  
   return (
-    <div className="p-6 space-y-8">
+    <div className=" space-y-6 ">
       <div className="border-b pb-4">
         <h1 className="text-3xl font-bold text-foreground font-noto-lao text-primary">ຂ່າວສານ ແລະ ແຈ້ງການ</h1>
         <p className="text-muted-foreground font-noto-lao">ຕິດຕາມການເຄື່ອນໄຫວລ່າສຸດຈາກທັງໝົດ 8 ສາຂາ</p>
@@ -117,11 +141,15 @@ export default function NewsPage() {
 
       {/* Grid Layout: computer*/}
       {/* Grid 5*/}
-      <div className=" grid grid-cols-2 items-start gap-6">
+      <div className="hidden lg:grid grid-cols-2 items-start gap-6 w-full">
         {/* grid 2 box */}
         <div className="grid gap-6 grid-cols-1 ">
           {newsItems.map((item, index) => (
-            <Card key={index} className="flex flex-col overflow-hidden hover:shadow-xl transition-all duration-300 border-slate-200 ">
+            <Card 
+              key={index} 
+              className="flex flex-col overflow-hidden hover:shadow-xl transition-all duration-300 border-slate-200 cursor-pointer"
+              onClick={() => setSelectedNews(item)}
+            >
               {/* ສ່ວນຮູບພາບ */}
 
 
@@ -133,18 +161,22 @@ export default function NewsPage() {
               </CardHeader>
 
               <CardContent className="p-4 pt-0 flex-grow">
-                <p className="text-sm text-slate-600 font-noto-lao line-clamp-2 mb-3">
+                <p className="text-sm font-noto-lao line-clamp-2 mb-3">
                   {item.description}
                 </p>
                 {item.note && (
-                  <div className="bg-slate-50 p-2 rounded-md border-l-4 border-primary flex items-start gap-2">
+                  <div className="p-2 rounded-md border-l-4 border-primary flex items-start gap-2">
                     <MessageSquare className="h-3 w-3 mt-1 text-primary" />
                     <p className="text-xs italic text-slate-500 font-noto-lao">{item.note}</p>
                   </div>
                 )}
+
+               
+              
+            
               </CardContent>
 
-              <CardFooter className="px-4 border-t bg-slate-50/50 flex justify-between items-center">
+              <CardFooter className="px-4 border-t  flex justify-between items-center">
 
                 <div>
                   <div className="flex items-center gap-2">
@@ -159,7 +191,7 @@ export default function NewsPage() {
                 </div>
                 <div className="flex items-center gap-2 text-xs text-muted-foreground pt-1">
                   <CalendarDays className="h-3 w-3" />
-                  <span>{item.createAt}</span>
+                  <span>{new Date(item.createAt).toLocaleDateString('lo-LA')}</span>
                 </div>
               </CardFooter>
             </Card>
@@ -168,62 +200,59 @@ export default function NewsPage() {
         {/* grid 3 box whit overflow*/}
         <div className="sticky top-4 self-start w-full">
 
-          <Card className="flex max-h-[calc(100vh-8rem)] min-h-0 flex-col overflow-hidden hover:shadow-xl">
+          <Card className="flex max-h-[calc(100vh-1rem)] min-h-0 flex-col overflow-hidden hover:shadow-xl">
             {/* ສ່ວນຮູບພາບ */}
 
 
-            <CardHeader className="p-4 pb-2 bg-slate-50/50 border-b">
+            <CardHeader className="p-4 pb-2  border-b">
               <CardTitle className="text-xl font-bold font-noto-lao line-clamp-1">
-                {showNewsItems.title}
+                {selectedNews.title}
               </CardTitle>
 
             </CardHeader>
 
             <CardContent className="flex-1 min-h-0 overflow-y-auto p-4 pt-0">
-              <p className="text-sm text-slate-600 font-noto-lao  mb-3">
-                {showNewsItems.description}
+              <p className="text-sm  font-noto-lao  mb-3">
+                {selectedNews.description}
+                {selectedNews.description}
+                {selectedNews.description}
+                {selectedNews.description}
+                {selectedNews.description}
+                {selectedNews.description}
+                {selectedNews.description}
+                {selectedNews.description}
+                {selectedNews.description}
+                {selectedNews.description}
+                {selectedNews.description}
+                {selectedNews.description}
               </p>
-              <p className="text-sm text-slate-600 font-noto-lao  mb-3">
-                {showNewsItems.description}
-              </p>
-              <p className="text-sm text-slate-600 font-noto-lao  mb-3">
-                {showNewsItems.description}
-              </p>
-              <p className="text-sm text-slate-600 font-noto-lao  mb-3">
-                {showNewsItems.description}
-              </p>
-              <p className="text-sm text-slate-600 font-noto-lao  mb-3">
-                {showNewsItems.description}
-              </p>
-              <p className="text-sm text-slate-600 font-noto-lao  mb-3">
-                {showNewsItems.description}
-              </p>
-              <p className="text-sm text-slate-600 font-noto-lao  mb-3">
-                {showNewsItems.description}
-              </p>
-              <p className="text-sm text-slate-600 font-noto-lao  mb-3">
-                {showNewsItems.description}
-              </p>
-              <p className="text-sm text-slate-600 font-noto-lao  mb-3">
-                {showNewsItems.description}
-              </p>
-              <p className="text-sm text-slate-600 font-noto-lao  mb-3">
-                {showNewsItems.description}
-              </p>
-              {showNewsItems.note && (
-                <div className="bg-slate-50 p-2 rounded-md border-l-4 border-primary flex items-start gap-2">
+              
+              {selectedNews.note && (
+                <div className="p-2 rounded-md border-l-4 border-primary flex items-start gap-2">
                   <MessageSquare className="h-3 w-3 mt-1 text-primary" />
-                  <p className="text-xs italic text-slate-500 font-noto-lao">{showNewsItems.note}</p>
+                  <p className="text-xs italic text-slate-500 font-noto-lao">{selectedNews.note}</p>
                 </div>
               )}
+               {selectedNews.docType === 'image' && selectedNews.docURL ? (
+                  <div className="mt-4">
+                    <img src={selectedNews.docURL} alt={selectedNews.title} className="w-full h-auto rounded-md" />
+                  </div>
+                ) : selectedNews.docType === 'doc' && selectedNews.docURL ? (
+                  <div className="mt-4">
+                    <a href={selectedNews.docURL} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-primary">
+                      <Badge className="h-4 w-4" />
+                      <span className="text-sm font-medium">ເອກະສານ PDF</span>
+                    </a>
+                  </div>
+                ) : null}
             </CardContent>
 
-            <CardFooter className="px-4 border-t bg-slate-50/50 flex justify-between items-center">
+            <CardFooter className="px-4 border-t flex justify-between items-center">
 
               <div>
                 <div className="flex items-center gap-2">
                   <User2 className="h-4 w-4 text-slate-400" />
-                  <span className="text-xs font-medium text-slate-500">{showNewsItems.createBy}</span>
+                  <span className="text-xs font-medium text-slate-500">{selectedNews.createBy}</span>
                 </div>
                 <div className="flex items-center gap-2 mt-2">
                   <Building2 className="h-4 w-4 text-slate-400" />
@@ -233,13 +262,126 @@ export default function NewsPage() {
               </div>
               <div className="flex items-center gap-2 text-xs text-muted-foreground pt-1">
                 <CalendarDays className="h-3 w-3" />
-                <span>{new Date(showNewsItems.createAt).toLocaleDateString('lo-LA')}</span>
+                <span>{new Date(selectedNews.createAt).toLocaleDateString('lo-LA')}</span>
               </div>
             </CardFooter>
           </Card>
 
         </div>
       </div>
+                  {/* on mobil */}
+      <div className="lg:hidden  flex flex-wrap gap-2">
+      {newsItems.map((side,index) => (
+        <Sheet key={index} open={openSheetIndex === index} onOpenChange={(isOpen) => setOpenSheetIndex(isOpen ? index : null)}>
+          <SheetTrigger asChild>
+            <Card 
+              className="flex w-full flex-col overflow-hidden hover:shadow-xl transition-all duration-300 border-slate-200 cursor-pointer"
+            >
+              {/* ສ່ວນຮູບພາບ */}
+
+
+              <CardHeader className="p-4 pb-2">
+                <CardTitle className="text-xl font-bold font-noto-lao line-clamp-1">
+                  {side.title}
+                </CardTitle>
+
+              </CardHeader>
+
+              <CardContent className="p-4 pt-0 flex-grow">
+                <p className="text-sm font-noto-lao line-clamp-2 mb-3">
+                  {side.description}
+                </p>
+                {side.note && (
+                  <div className="p-2 rounded-md border-l-4 border-primary flex items-start gap-2">
+                    <MessageSquare className="h-3 w-3 mt-1 text-primary" />
+                    <p className="text-xs italic text-slate-500 font-noto-lao">{side.note}</p>
+                  </div>
+                )}
+
+               
+              
+            
+              </CardContent>
+
+              <CardFooter className="px-4 border-t  flex justify-between items-center">
+
+                <div>
+                  <div className="flex items-center gap-2">
+                    <User2 className="h-4 w-4 text-slate-400" />
+                    <span className="text-xs font-medium text-slate-500">{side.createBy}</span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-2">
+                    <Building2 className="h-4 w-4 text-slate-400" />
+                    <span className="text-xs font-medium text-slate-500">ສາຂາ ຫຼວງພະບາງ</span>
+                  </div>
+
+                </div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground pt-1">
+                  <CalendarDays className="h-3 w-3" />
+                  <span>{new Date(side.createAt).toLocaleDateString('lo-LA')}</span>
+                </div>
+              </CardFooter>
+            </Card>
+          </SheetTrigger>
+          <SheetContent
+            side="right"
+            className="data-[side=bottom]:max-h-[50vh] data-[side=top]:max-h-[50vh]"
+          >
+            <SheetHeader>
+              <SheetTitle className="font-noto-lao">{side.title}</SheetTitle>
+              <SheetDescription className="font-noto-lao text-sm text-muted-foreground flex items-center justify-between gap-4">
+               
+                <div>
+                  <div className="flex items-center gap-2">
+                    <User2 className="h-4 w-4 text-slate-400" />
+                    <span className="text-xs font-medium text-slate-500">{side.createBy}</span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-2">
+                    <Building2 className="h-4 w-4 text-slate-400" />
+                    <span className="text-xs font-medium text-slate-500">ສາຂາ ຫຼວງພະບາງ</span>
+                  </div>
+
+                </div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground pt-1">
+                  <CalendarDays className="h-3 w-3" />
+                  <span>{new Date(side.createAt).toLocaleDateString('lo-LA')}</span>
+                </div>
+              </SheetDescription>
+            </SheetHeader>
+            <div className="no-scrollbar overflow-y-auto px-4 space-y-4">
+              <p className="text-sm font-noto-lao leading-relaxed">
+                {side.description}
+              </p>
+              
+              {side.note && (
+                <div className="p-2 rounded-md border-l-4 border-primary flex items-start gap-2">
+                  <MessageSquare className="h-3 w-3 mt-1 text-primary" />
+                  <p className="text-xs italic text-slate-500 font-noto-lao">{side.note}</p>
+                </div>
+              )}
+              
+              {side.docType === 'image' && side.docURL ? (
+                <div className="mt-4">
+                  <img src={side.docURL} alt={side.title} className="w-full h-auto rounded-md" />
+                </div>
+              ) : side.docType === 'doc' && side.docURL ? (
+                <div className="mt-4">
+                  <a href={side.docURL} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-primary">
+                    <Badge className="h-4 w-4" />
+                    <span className="text-sm font-medium">ເອກະສານ PDF</span>
+                  </a>
+                </div>
+              ) : null}
+            </div>
+            <SheetFooter>
+              <SheetClose asChild>
+                <Button variant="outline">ປິດ</Button>
+              </SheetClose>
+            </SheetFooter>
+          </SheetContent>
+        </Sheet>
+      ))}
+    </div>
 
     </div>
   )
