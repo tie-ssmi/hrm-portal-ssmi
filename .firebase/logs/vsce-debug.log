@@ -46472,3 +46472,4 @@ I0319 15:15:12.983861    1680 dev.go:104] Listening on address (HTTP + gRPC): 12
 [debug] [2026-03-19T08:15:15.533Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects [omitted]
 [debug] [2026-03-19T08:15:22.829Z] E0319 15:15:22.829433    1680 watch.go:40] Failed to load config from "c:\\Users\\muale\\Desktop\\SSMI\\hrm-portal-ssmi\\dataconnect": could not find dataconnect.yaml in `c:\Users\muale\Desktop\SSMI\hrm-portal-ssmi\dataconnect`
  {"metadata":{"emulator":{"name":"dataconnect"},"message":"E0319 15:15:22.829433    1680 watch.go:40] Failed to load config from \"c:\\\\Users\\\\muale\\\\Desktop\\\\SSMI\\\\hrm-portal-ssmi\\\\dataconnect\": could not find dataconnect.yaml in `c:\\Users\\muale\\Desktop\\SSMI\\hrm-portal-ssmi\\dataconnect`\n"}}
+[debug] [2026-03-20T01:16:27.310Z] [Firebase Plugin] Activating Firebase extension.
