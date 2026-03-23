@@ -20,6 +20,8 @@ type UpdateCheckInTimeParams = {
   jobTitle?: string
   employeeImage?: string
   note?: string | null
+  updateBy?: string
+  updateAt?: string
   department?: {
     name: string
     uid: string

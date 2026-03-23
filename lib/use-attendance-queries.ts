@@ -168,7 +168,7 @@ export function useCheckIn() {
       const now = new Date()
       const attendanceDate = formatAttendanceDocumentDate(now)
       const checkInTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`
-      const isLate = now.getHours() >= 9 && now.getMinutes() > 0
+      const isLate = now.getHours() > 8 || (now.getHours() === 8 && now.getMinutes() > 15)
 
       await updateAttendanceCheckInTime({
         userUuid: user.uuid,
@@ -177,14 +177,10 @@ export function useCheckIn() {
         checkInTime,
         status: isLate ? 'late' : 'present',
         location,
-        createdBy: 'system',
-        fullNameEn: `${user.firstNameEn || user.firstName} ${user.lastNameEn || user.lastName}`.trim(),
-        fullNameLo: `${user.firstNameLo || ''} ${user.lastNameLo || ''}`.trim() || undefined,
-        jobTitle: user.jobTitle || user.position,
-        employeeImage: user.profileImage || user.photo3x4Url || user.avatar,
+         updateBy: `${user.firstNameEn || user.firstName} ${user.lastNameEn || user.lastName}`.trim(),
         note: null,
-        department: toDepartmentPayload(user.department),
-        workLocation: toWorkLocationPayload(user.workLocation),
+        updateAt: new Date().toISOString(),
+    
       })
 
       return {

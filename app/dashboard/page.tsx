@@ -26,6 +26,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs"
+import { ToDay } from '@/components/leaveLists'
 export default function DashboardPage() {
   const { user, isLoading } = useAuth()
   const { leaveBalance, lateRecords, totalFines, leaveRequests, todayAttendance } = useHRM()
@@ -113,7 +114,15 @@ const leaveData: LeaveData[] =[
   { "name": "Indiana Jones", "department": "Research", "successor": "Marcus", "startDate": "2026-03-31", "endDate": "2026-03-31", "reason": "Field trip", "position": "Professor", "note": "Museum duty", "type": { "id": "01", "name": "Annual Leave" } },
   { "name": "John McClane", "department": "Security", "successor": "Al Powell", "startDate": "2026-03-31", "endDate": "2026-03-31", "reason": "Visit family", "position": "Consultant", "note": "Yippee-ki-yay", "type": { "id": "01", "name": "Annual Leave" } }
 ]
-
+const leaveDataToday = leaveData.filter((leave) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0); // Ensure midnight
+  const startDate = new Date(leave.startDate);
+  const endDate = new Date(leave.endDate);
+  startDate.setHours(0, 0, 0, 0);
+  endDate.setHours(0, 0, 0, 0);
+  return startDate.getTime() <= today.getTime() && endDate.getTime() >= today.getTime();
+});
 
 
   return (
@@ -275,23 +284,22 @@ const leaveData: LeaveData[] =[
      
       <Tabs defaultValue="overview" className="w-full ">
       <TabsList>
-        <TabsTrigger value="overview">Leave</TabsTrigger>
-        <TabsTrigger value="analytics">lest</TabsTrigger>
-        <TabsTrigger value="reports">wrok out site</TabsTrigger>
-        <TabsTrigger value="settings">Top lest</TabsTrigger>
+        <TabsTrigger value="overview">ລາພັກ</TabsTrigger>
+        <TabsTrigger value="analytics">ເຂົ້າວຽກ</TabsTrigger>
+        <TabsTrigger value="reports">ບອອກວຽກນອກ</TabsTrigger>
+        <TabsTrigger value="settings">ມາຊ້າ (Top)</TabsTrigger>
       </TabsList>
       <TabsContent value="overview">
         <Card >
-          <CardHeader>
-            <CardTitle>Overview</CardTitle>
-            <CardDescription>
-              View your key metrics and recent project activity. Track progress
-              across all your active projects.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            You have 12 active projects and 3 pending tasks.
-          </CardContent>
+     
+      <div  >
+                
+                 <CardContent className="text-muted-foreground text-sm h-auto max-h-[500px] overflow-auto">
+                    <p className="mb-2 font-semibold text-lg">ລາຍການລາພັກມື້ນີ້ </p>
+                    <ToDay data={leaveDataToday} />
+                 </CardContent>
+               
+               </div>
         </Card>
       </TabsContent>
       <TabsContent value="analytics">
