@@ -5,6 +5,7 @@ import { useMemo } from 'react'
 import type { AttendanceRecord, Employee } from './types'
 import {
   fetchAttendanceByUserThisMonth,
+  fetchTodayCheckInAttendance,
   formatAttendanceDocumentDate,
   updateAttendanceCheckInTime,
   updateAttendanceCheckOutTime,
@@ -21,6 +22,7 @@ type AttendanceStatus = AttendanceRecord['status']
 export const attendanceKeys = {
   all: ['attendance'] as const,
   history: (userUuid: string) => [...attendanceKeys.all, 'history', userUuid] as const,
+  todayCheckIn: ['attendance', 'today-check-in'] as const,
 }
 
 function formatLocalIsoDate(date: Date): string {
@@ -82,6 +84,22 @@ export function useTodayAttendance(userUuid: string | null | undefined) {
     data: todayAttendance,
     ...query,
   }
+}
+
+/**
+ * Fetch today's check-in attendance records (where checkInTime is not null)
+ * Ordered by checkInTime descending (last one first)
+ */
+export function useTodayCheckInAttendance() {
+  return useQuery({
+    queryKey: attendanceKeys.todayCheckIn,
+    queryFn: async () => {
+      const records = await fetchTodayCheckInAttendance()
+      return records
+    },
+    staleTime: 1000 * 60, // 1 minute
+    refetchInterval: 1000 * 60 * 5, // Refetch every 5 minutes
+  })
 }
 
 function toDepartmentPayload(

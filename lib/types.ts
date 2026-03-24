@@ -60,9 +60,12 @@ export interface Employee {
 
 export interface AttendanceRecord {
   id: string
+  _id?: string
   date: string
   checkIn?: string
+  checkInTime?: string
   checkOut?: string
+  checkOutTime?: string | null
   status: 'present' | 'late' | 'absent' | 'leave' | 'offsite'
   location?: {
     lat: number
@@ -70,6 +73,26 @@ export interface AttendanceRecord {
     address?: string
   }
   workHours?: number
+  uid?: string
+  userUuid?: string
+  fullNameEn?: string
+  fullNameLo?: string
+  employeeImage?: string
+  jobTitle?: string
+  createdAt?: string
+  createdBy?: string
+  updatedAt?: string
+  updatedBy?: string
+  note?: string | null
+  department?: {
+    name: string
+    uid: string
+  }
+  workLocation?: {
+    code?: string
+    name: string
+    uid?: string
+  }
 }
 
 export type LeaveApproverRole = 'departmentHead' | 'hr' | 'manager'

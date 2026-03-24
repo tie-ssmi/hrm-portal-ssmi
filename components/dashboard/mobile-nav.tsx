@@ -90,7 +90,7 @@ export function MobileNav() {
     <>
       <nav 
         className={`lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border pointer-events-auto select-none cursor-auto transition-transform duration-300 ${
-          showNav ? 'translate-y-0' : 'translate-y-full'
+          showNav ? 'translate-y-0 ' : 'translate-y-full'
         }`}
         style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
       >
@@ -120,7 +120,7 @@ export function MobileNav() {
 
         </div>
       </nav>
-      <div className={`pointer-events-auto fixed top-2 right-2 z-50 select-none flex items-center justify-center min-h-[44px] min-w-[44px] transition-opacity duration-300 ${
+      <div className={`pointer-events-auto fixed lg:hidden  top-2 right-2 z-50 select-none flex items-center justify-center min-h-[44px] min-w-[44px] transition-opacity duration-300 ${
         showNav ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
       }`}>
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>

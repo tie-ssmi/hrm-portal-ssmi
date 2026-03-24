@@ -244,3 +244,60 @@ export async function updateAttendanceCheckOutTime({
 
   return attendanceId
 }
+
+export async function fetchTodayCheckInAttendance(): Promise<AttendanceRecord[]> {
+  const today = new Date()
+  const todayDateStr = formatAttendanceDocumentDate(today)
+
+  const attendanceQuery = query(
+    collection(db, 'attendance'),
+    where('date', '==', todayDateStr),
+  )
+
+  const snapshot = await getDocs(attendanceQuery)
+  const rows: AttendanceRecord[] = []
+
+  for (const docSnapshot of snapshot.docs) {
+    const data = docSnapshot.data() as AttendanceDoc & Record<string, any>
+
+    // Filter only records with checkInTime present
+    if (!data.checkInTime) {
+      continue
+    }
+
+    rows.push({
+      id: docSnapshot.id,
+      _id: data._id,
+      date: todayDateStr,
+      checkInTime: data.checkInTime,
+      checkIn: data.checkInTime,
+      checkOutTime: data.checkOutTime,
+      checkOut: data.checkOutTime,
+      status: (data.status === 'late' || data.status === 'absent' || data.status === 'leave' || data.status === 'offsite')
+        ? data.status
+        : 'present',
+      location: data.location,
+      workHours: data.workHours,
+      uid: data.uid,
+      userUuid: data.userUuid,
+      fullNameEn: data.fullNameEn,
+      fullNameLo: data.fullNameLo,
+      employeeImage: data.employeeImage,
+      jobTitle: data.jobTitle,
+      createdAt: data.createdAt,
+      createdBy: data.createdBy,
+      updatedAt: data.updatedAt,
+      updatedBy: data.updatedBy,
+      note: data.note,
+      department: data.department,
+      workLocation: data.workLocation,
+    })
+  }
+
+  // Sort by checkInTime descending (last one first)
+  return rows.sort((left, right) => {
+    const leftTime = left.checkInTime || ''
+    const rightTime = right.checkInTime || ''
+    return rightTime.localeCompare(leftTime)
+  })
+}
