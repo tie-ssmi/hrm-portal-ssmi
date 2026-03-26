@@ -4,6 +4,8 @@ export interface DepartmentInfo {
   department?: string
   title?: string
   uuid?: string
+  nameLo?: string
+  nameEn?: string
 }
 
 export interface EducationEntry {
@@ -124,6 +126,13 @@ export interface LeaveRequest {
   createdBy?: string
   reviewedBy?: string
   reviewedAt?: string
+  departmentUid?: string
+  departmentNameLo?: string
+  departmentNameEn?: string
+  successorUid?: string
+  successorNameLo?: string
+  successorNameEn?: string
+  jobTitle?: string
 }
 
 export interface OffsiteRequest {

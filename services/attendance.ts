@@ -272,7 +272,7 @@ export async function fetchTodayCheckInAttendance(): Promise<AttendanceRecord[]>
       checkInTime: data.checkInTime,
       checkIn: data.checkInTime,
       checkOutTime: data.checkOutTime,
-      checkOut: data.checkOutTime,
+      checkOut: data.checkOutTime || undefined,
       status: (data.status === 'late' || data.status === 'absent' || data.status === 'leave' || data.status === 'offsite')
         ? data.status
         : 'present',

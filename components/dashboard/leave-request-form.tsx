@@ -276,6 +276,8 @@ export default function LeaveRequestForm() {
         .filter(Boolean)
         .join(' ') || undefined
 
+      const selectedSuccessor = employeesData.find(emp => emp.uid === selectedSuccessorUid)
+
       await submitLeaveRequest({
         userUuid: loggedInUserUuid || undefined,
         type: selectedPolicy?.requestType || 'annual',
@@ -289,6 +291,14 @@ export default function LeaveRequestForm() {
         endPeriod,
         duration: duration ?? undefined,
         reason: leaveReason,
+        departmentUid: typeof user?.department === 'object' && user.department ? (user.department as any).uid : undefined,
+        departmentNameLo: typeof user?.department === 'object' && user.department ? (user.department as any).nameLo : undefined,
+        departmentNameEn: typeof user?.department === 'object' && user.department ? (user.department as any).nameEn : undefined,
+        successorUid: selectedSuccessor?.uid,
+        successorNameLo: selectedSuccessor ? [selectedSuccessor.firstNameLo, selectedSuccessor.lastNameLo].filter(Boolean).join(' ') : undefined,
+        successorNameEn: selectedSuccessor ? [selectedSuccessor.firstNameEn, selectedSuccessor.lastNameEn].filter(Boolean).join(' ') : undefined,
+        jobTitle: user?.jobTitle || user?.position,
+        
       })
       await refetchMyCurrentLeaves()
       toast.success('Leave request submitted successfully')
@@ -299,8 +309,11 @@ export default function LeaveRequestForm() {
       setLeaveEndDate(undefined)
       setEndPeriod('afternoon')
       setLeaveReason('')
-    } catch {
+    } catch (err) {
       toast.error('Failed to submit leave request')
+      // show the error in console for debugging, but not in the toast to avoid overwhelming users with technical details
+      // show why it failed in console for debugging
+      console.error('Failed to submit leave request:', err)
     } finally {
       setIsSubmitting(false)
     }

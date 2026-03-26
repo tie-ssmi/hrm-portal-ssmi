@@ -17,8 +17,8 @@ import { FieldGroup, Field, FieldLabel } from '@/components/ui/field'
 import { Spinner } from '@/components/ui/spinner'
 // NumberFormatter
 import { NumberFormatter } from '@/components/formatNumber'
-//CameraUpload
-import CameraUpload from '@/components/cameraUpload'
+//FileUpload
+import FileUpload from '@/components/cameraUpload'
 import {
   User,
   Mail,
@@ -295,7 +295,7 @@ export default function ProfilePage() {
                 </DialogContent>
               </Dialog>
               <div className="absolute -bottom-1 -right-1 z-20">
-                <CameraUpload
+                <FileUpload
                   uid={firebaseUser?.uid || profileUser.id || ''}
                   className="h-9 w-9 border-2 border-background bg-black/70"
                   onUploaded={(url) => {

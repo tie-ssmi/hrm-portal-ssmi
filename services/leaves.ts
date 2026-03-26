@@ -3,7 +3,11 @@ import { db } from '@/lib/firebase'
 import type { LeaveRequest } from '@/lib/types'
 
 export async function createLeaveRequest(payload: Omit<LeaveRequest, 'id'>): Promise<string> {
-  const docRef = await addDoc(collection(db, 'leaves'), payload)
+  // Remove undefined fields to avoid Firebase errors
+  const cleanPayload = Object.fromEntries(
+    Object.entries(payload).filter(([_, value]) => value !== undefined)
+  )
+  const docRef = await addDoc(collection(db, 'leaves'), cleanPayload)
   return docRef.id
 }
 
