@@ -1,3 +1,5 @@
+'use client'
+
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -10,6 +12,7 @@ import {
 } from '@/components/ui/table'
 import { Card, CardContent } from '@/components/ui/card'
 import { CalendarRange, UserRound } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 
 type LeaveTableStatus = 'pending' | 'approved' | 'rejected'
 
@@ -19,9 +22,14 @@ export type LeaveTableItem = {
 	position?: string
 	department?: string
 	reason?: string
+	note?: string
 	successor?: string
 	startDate: string
 	endDate: string
+	type?: {
+		id?: string
+		name?: string
+	}
 	status?: LeaveTableStatus
 }
 
@@ -50,6 +58,30 @@ function statusVariant(status?: LeaveTableStatus): 'default' | 'destructive' | '
 }
 
 export default function LeaveTable({ data, onViewDetail, onApprove, className }: LeaveTableProps) {
+	const router = useRouter()
+
+	const handleViewDetail = (item: LeaveTableItem) => {
+		if (onViewDetail) {
+			onViewDetail(item)
+			return
+		}
+
+		const params = new URLSearchParams({
+			name: item.name,
+			department: item.department || '',
+			successor: item.successor || '',
+			startDate: item.startDate,
+			endDate: item.endDate,
+			reason: item.reason || '',
+			position: item.position || '',
+			note: item.note || '',
+			typeId: item.type?.id || '',
+			typeName: item.type?.name || '',
+		})
+
+		router.push(`/dashboard/approv/leave/${item.id}?${params.toString()}`)
+	}
+
 	if (data.length === 0) {
 		return (
 			<Card className={className}>
@@ -112,7 +144,7 @@ export default function LeaveTable({ data, onViewDetail, onApprove, className }:
 									</div>
 
 									<div className="grid grid-cols-2 gap-2 pt-1">
-										<Button type="button" variant="outline" size="sm" onClick={() => onViewDetail?.(item)}>
+										<Button type="button" variant="outline" size="sm" onClick={() => handleViewDetail(item)}>
 											ລາຍລະອຽດ
 										</Button>
 										<Button type="button" size="sm" onClick={() => onApprove?.(item)} disabled={!canApprove}>
@@ -147,7 +179,7 @@ export default function LeaveTable({ data, onViewDetail, onApprove, className }:
 								const canApprove = item.status !== 'approved' && item.status !== 'rejected'
 
 								return (
-									<TableRow key={item.id} className="align-top">
+									<TableRow key={item.id} className="align-top" onClick={() => handleViewDetail(item)}>
 										<TableCell className="px-4 py-4 font-semibold text-muted-foreground">{index + 1}</TableCell>
 
 										<TableCell className="px-4 py-3">
@@ -195,7 +227,7 @@ export default function LeaveTable({ data, onViewDetail, onApprove, className }:
 													variant="outline"
 													size="sm"
 													className="min-w-[84px]"
-													onClick={() => onViewDetail?.(item)}
+													onClick={() => handleViewDetail(item)}
 												>
 													ລາຍລະອຽດ
 												</Button>

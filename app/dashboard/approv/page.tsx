@@ -8,41 +8,126 @@ import { Palmtree, MapPin } from 'lucide-react'
 import LeaveTable from '@/components/leaveTable'
 import OffsiteTable from '@/components/offSiteTable'
 
-const demoLeaveData = [
-  {
-    id: 'LV-001',
-    name: 'ທ້າວ ສົມພອນ ພັນດາລາ',
-    position: 'IT Support',
-    department: 'IT',
-    reason: 'ພັກຜ່ອນກັບຄອບຄົວ',
-    successor: 'ນາງ ມະລີ ຈັນທະວົງ',
-    startDate: '2026-04-18',
-    endDate: '2026-04-20',
-    status: 'pending' as const,
-  },
-  {
-    id: 'LV-002',
-    name: 'ນາງ ພອນພິມ ສີຫາລາດ',
-    position: 'Accountant',
-    department: 'Finance',
-    reason: 'ຕິດຕໍ່ເອກະສານສ່ວນຕົວ',
-    successor: 'ທ້າວ ອານຸພົງ ສີວົງ',
-    startDate: '2026-04-22',
-    endDate: '2026-04-22',
-    status: 'approved' as const,
-  },
-  {
-    id: 'LV-003',
-    name: 'ທ້າວ ອາລຸນ ໄຊຍະລາດ',
-    position: 'Store Officer',
-    department: 'Operation',
-    reason: 'ໄປຮັກສາສຸຂະພາບ',
-    successor: 'ນາງ ນິດດາ ວິໄລ',
-    startDate: '2026-04-25',
-    endDate: '2026-04-26',
-    status: 'rejected' as const,
-  },
-]
+const demoLeaveData = [{
+  "id": "L-001",
+  "name": "SINA AI",
+  "department": "IT",
+  "successor": "Admin",
+  "startDate": "2026-04-01",
+  "endDate": "2026-04-01",
+  "reason": "System Optimization",
+  "position": "Virtual Assistant",
+  "note": "Official rebranding from Nong Khai complete",
+  "type": { "id": "01", "name": "Annual Leave" }
+},
+{
+  "id": "L-002",
+  "name": "Marcus Holloway",
+  "department": "IT",
+  "successor": "Victor Stone",
+  "startDate": "2026-04-05",
+  "endDate": "2026-04-07",
+  "reason": "Security Conference",
+  "position": "Network Sec",
+  "note": "Available on SINA chat for emergencies",
+  "type": { "id": "01", "name": "Annual Leave" }
+},
+{
+  "id": "L-003",
+  "name": "Lara Croft",
+  "department": "Research",
+  "successor": "Indiana Jones",
+  "startDate": "2026-04-10",
+  "endDate": "2026-04-15",
+  "reason": "Expedition",
+  "position": "Lead Researcher",
+  "note": "Satellite phone only",
+  "type": { "id": "05", "name": "Unpaid Leave" }
+},
+{
+  "id": "L-004",
+  "name": "Barry Allen",
+  "department": "IT",
+  "successor": "Iris West",
+  "startDate": "2026-04-12",
+  "endDate": "2026-04-12",
+  "reason": "Personal errand",
+  "position": "Forensics",
+  "note": "Back in a flash (literally)",
+  "type": { "id": "02", "name": "Sick Leave" }
+},
+{
+  "id": "L-005",
+  "name": "Walter White",
+  "department": "R&D",
+  "successor": "Jesse Pinkman",
+  "startDate": "2026-04-14",
+  "endDate": "2026-04-16",
+  "reason": "Health checkup",
+  "position": "Chemist",
+  "note": "Jesse knows the protocol",
+  "type": { "id": "02", "name": "Sick Leave" }
+},
+{
+  "id": "L-006",
+  "name": "Natasha Romanoff",
+  "department": "Security",
+  "successor": "Clint Barton",
+  "startDate": "2026-04-18",
+  "endDate": "2026-04-18",
+  "reason": "Offsite training",
+  "position": "Specialist",
+  "note": "Budapest assignment",
+  "type": { "id": "01", "name": "Annual Leave" }
+},
+{
+  "id": "L-007",
+  "name": "Jim Halpert",
+  "department": "Sales",
+  "successor": "Dwight Schrute",
+  "startDate": "2026-04-20",
+  "endDate": "2026-04-24",
+  "reason": "Family trip",
+  "position": "Sales Rep",
+  "note": "Please don't let Dwight touch my desk",
+  "type": { "id": "01", "name": "Annual Leave" }
+},
+{
+  "id": "L-008",
+  "name": "Din Djarin",
+  "department": "Logistics",
+  "successor": "Bo-Katan",
+  "startDate": "2026-04-25",
+  "endDate": "2026-04-26",
+  "reason": "Vehicle maintenance",
+  "position": "Fleet Driver",
+  "note": "Razor Crest in the shop",
+  "type": { "id": "01", "name": "Annual Leave" }
+},
+{
+  "id": "L-009",
+  "name": "Ted Lasso",
+  "department": "HR",
+  "successor": "Beard",
+  "startDate": "2026-04-28",
+  "endDate": "2026-04-28",
+  "reason": "Mental health",
+  "position": "Coach",
+  "note": "Believe!",
+  "type": { "id": "02", "name": "Sick Leave" }
+},
+{
+  "id": "L-010",
+  "name": "Master Chief",
+  "department": "Security",
+  "successor": "Cortana",
+  "startDate": "2026-04-29",
+  "endDate": "2026-05-02",
+  "reason": "System Update",
+  "position": "Chief",
+  "note": "Finishing the fight",
+  "type": { "id": "01", "name": "Annual Leave" }
+}]
 
 const demoOffsiteData = [
   {
@@ -106,7 +191,7 @@ export default function ApprovePage() {
             <p className="text-lg font-bold text-foreground">{workOutSide} list</p>
           </CardContent>
         </Card>
-    
+
       </div>
 
       {/* Forms Tabs */}
