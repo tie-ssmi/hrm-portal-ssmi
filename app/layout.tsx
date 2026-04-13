@@ -1,34 +1,35 @@
 import type { Metadata, Viewport } from 'next'
-import { Noto_Sans_Lao } from 'next/font/google'
-import { Analytics } from '@vercel/analytics/next'
 import { AuthProvider } from '@/lib/auth-context'
-import { HRMProvider } from '@/lib/hrm-context'
 import { ThemeProvider } from '@/components/theme-provider'
-import { TanstackQueryProvider } from '@/components/query-provider-tanstack'
 import { Toaster } from '@/components/ui/sonner'
-import './globals.css'
-
-const notoSansLao = Noto_Sans_Lao({ 
-  subsets: ["lao", "latin"], 
-  variable: '--font-noto-sans-lao',
-  weight: ['400', '500', '600', '700'],
-  display: 'swap',
-});
+import '@/app/globals.css'
 
 export const metadata: Metadata = {
-  title: 'Employee HRM Portal',
-  description: 'Human Resource Management System for Employees',
-  generator: 'SSIM',
+  title: 'ພະນັກງານສິນຊັບເມືອງເໜືອ | SSMI Laos HRM',
+  description: 'ລະບົບການຄຸ້ມຄອງຊັບຍາກອນມະນຸດ ສຳລັບພະນັກງານ SSMI | Human Resource Management System for SSMI Laos Staff',
+  keywords: ['ພະນັກງານສິນຊັບເມືອງເໜືອ', 'ssmi laos staff', 'hrm ssmi laos', 'ssmi laos', 'SSMI', 'HRM Laos'],
+  authors: [{ name: 'SSMI Laos' }],
+  creator: 'SSMI Laos',
+  generator: 'SSMI',
+  metadataBase: new URL('https://hrm-ssmi.firebaseapp.com'),
+  openGraph: {
+    title: 'ພະນັກງານສິນຊັບເມືອງເໜືອ | SSMI Laos HRM',
+    description: 'ລະບົບການຄຸ້ມຄອງຊັບຍາກອນມະນຸດ ສຳລັບພະນັກງານ SSMI Laos',
+    siteName: 'SSMI HRM Portal',
+    locale: 'lo_LA',
+    type: 'website',
+  },
   icons: {
     icon: '/SSMI.svg',
+    apple: '/apple-icon.png',
   },
 }
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  maximumScale: 5,
+  userScalable: true,
   themeColor: '#3b5998',
 }
 
@@ -39,23 +40,18 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="lo" suppressHydrationWarning>
-      <body className={`${notoSansLao.variable} font-sans antialiased`}>
+      <body className="font-sans antialiased">
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
           enableSystem
           disableTransitionOnChange
         >
-          <TanstackQueryProvider>
-            <AuthProvider>
-              <HRMProvider>
-                {children}
-                <Toaster position="top-center" />
-              </HRMProvider>
-            </AuthProvider>
-          </TanstackQueryProvider>
+          <AuthProvider>
+            {children}
+            <Toaster position="top-center" />
+          </AuthProvider>
         </ThemeProvider>
-        <Analytics />
       </body>
     </html>
   )

@@ -4,23 +4,19 @@ import { createContext, useContext, useState, useCallback, useEffect, useRef, ty
 import {
   EmailAuthProvider,
   signInWithEmailAndPassword,
-  signInWithPopup,
   signOut,
   linkWithCredential,
-  GoogleAuthProvider,
   onAuthStateChanged,
-  type AuthCredential,
   type User as FirebaseUser
 } from 'firebase/auth'
-import { auth } from './firebase'
-import { fetchEmployeeByEmail, fetchEmployeeByUid, updateEmployeeUidByEmail } from './employees'
+import { auth } from './firebase-auth'
+import type { AuthCredential } from 'firebase/auth'
 import type { AuthContextType, Employee } from './types'
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-const googleProvider = new GoogleAuthProvider()
-
 async function resolveEmployeeForFirebaseUser(firebaseUser: FirebaseUser): Promise<Partial<Employee> | null> {
+  const { fetchEmployeeByEmail, fetchEmployeeByUid, updateEmployeeUidByEmail } = await import('./employees')
   let employeeData = await fetchEmployeeByUid(firebaseUser.uid)
 
   if (!employeeData && firebaseUser.email) {
@@ -188,6 +184,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
+      const { GoogleAuthProvider, signInWithPopup } = await import('firebase/auth')
+      const googleProvider = new GoogleAuthProvider()
       const result = await signInWithPopup(auth, googleProvider)
       const employeeData = await resolveEmployeeForFirebaseUser(result.user)
 
@@ -225,6 +223,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (error?.code === 'auth/account-exists-with-different-credential') {
+        const { GoogleAuthProvider } = await import('firebase/auth')
         const email = error?.customData?.email as string | undefined
         const pendingCredential = GoogleAuthProvider.credentialFromError(error)
 

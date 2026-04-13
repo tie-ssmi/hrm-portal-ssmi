@@ -1,4 +1,6 @@
+import { Suspense } from 'react'
 import LeaveDetailClient from './leave-detail-client'
+import { Spinner } from '@/components/ui/spinner'
 
 const leaveIds = ['L-001', 'L-002', 'L-003', 'L-004', 'L-005', 'L-006', 'L-007', 'L-008', 'L-009', 'L-010']
 
@@ -13,5 +15,9 @@ export default async function LeaveDetailPage({
 }) {
 	const { id } = await params
 
-	return <LeaveDetailClient leaveId={id} />
+	return (
+		<Suspense fallback={<div className="flex items-center justify-center py-12"><Spinner className="w-8 h-8" /></div>}>
+			<LeaveDetailClient leaveId={id} />
+		</Suspense>
+	)
 }

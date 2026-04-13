@@ -2,7 +2,6 @@ import { initializeApp, getApps, getApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
 import { getStorage } from 'firebase/storage'
-import { getAnalytics, isSupported } from 'firebase/analytics'
 
 const firebaseConfig = {
   apiKey: "AIzaSyBOz7kNhNpXqPjezyPTP2olrDtSsxyxR6c",
@@ -22,9 +21,7 @@ export const auth = getAuth(app)
 export const db = getFirestore(app)
 export const storage = getStorage(app)
 
-// Analytics (only in browser)
-export const analytics = typeof window !== 'undefined' 
-  ? isSupported().then(yes => yes ? getAnalytics(app) : null)
-  : null
+// Keep analytics disabled by default to reduce initial JS and third-party script loading.
+export const analytics = null
 
 export default app

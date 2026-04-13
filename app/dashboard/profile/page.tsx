@@ -189,7 +189,7 @@ export default function ProfilePage() {
     || resolveProfileImage(employeeData?.profileImage, firebaseUser?.uid)
     || employeeData?.photo3x4Url
     || profileUser?.avatar
-    || (toStr(profileUser?.gender).toLowerCase() === 'male' ? '/info/ma.jpg' : '/info/woman.jpg')
+    || (toStr(profileUser?.gender).toLowerCase() === 'male' ? '/info/man.jpg' : '/info/woman.jpg')
 
   const handleEditClick = (field: string, currentValue: string) => {
     setEditField(field)
@@ -278,7 +278,7 @@ export default function ProfilePage() {
                       <AvatarImage
                         src={avatarSrc}
                         alt={`${profileUser?.firstNameEn || profileUser?.firstName} ${profileUser?.lastNameEn || profileUser?.lastName}`}
-                        className="object-scale-down"
+                        className="object-cover"
                         
                       />
                       <AvatarFallback className="text-2xl bg-primary text-primary-foreground">{initials}</AvatarFallback>
