@@ -10,6 +10,7 @@ import {
   updateAttendanceCheckInTime,
   updateAttendanceCheckOutTime,
 } from '@/services/attendance'
+import { fetchServerTime } from '@/lib/server-time'
 
 type AttendanceLocation = {
   lat: number
@@ -183,10 +184,10 @@ export function useCheckIn() {
         throw new Error('User uuid is missing. Unable to update attendance.')
       }
 
-      const now = new Date()
-      const attendanceDate = formatAttendanceDocumentDate(now)
-      const checkInTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`
-      const isLate = now.getHours() > 8 || (now.getHours() === 8 && now.getMinutes() > 15)
+      const serverTime = await fetchServerTime()
+      const attendanceDate = serverTime.date
+      const checkInTime = serverTime.checkTime
+      const isLate = serverTime.isLate
 
       await updateAttendanceCheckInTime({
         userUuid: user.uuid,
@@ -203,7 +204,7 @@ export function useCheckIn() {
 
       return {
         success: true,
-        attendanceDate: formatLocalIsoDate(now),
+        attendanceDate: serverTime.isoDate,
         message: isLate
           ? `Checked in late at ${checkInTime}`
           : `Checked in at ${checkInTime}`,
@@ -255,9 +256,9 @@ export function useCheckOut() {
         throw new Error('User uuid is missing. Unable to update attendance.')
       }
 
-      const now = new Date()
-      const attendanceDate = formatAttendanceDocumentDate(now)
-      const checkOutTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`
+      const serverTime = await fetchServerTime()
+      const attendanceDate = serverTime.date
+      const checkOutTime = serverTime.checkTime
       const workHours = 8
 
       await updateAttendanceCheckOutTime({
@@ -277,7 +278,7 @@ export function useCheckOut() {
 
       return {
         success: true,
-        attendanceDate: formatLocalIsoDate(now),
+        attendanceDate: serverTime.isoDate,
         message: `Checked out at ${checkOutTime}`,
         checkOutTime,
       }
