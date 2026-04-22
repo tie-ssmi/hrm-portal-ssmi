@@ -124,7 +124,7 @@ export default function LoginForm() {
             <img src="/SSMI.svg" alt="SSMI Logo" className="w-full h-full object-contain" />
           </div>
           <div className="text-center">
-            <h1 className="text-2xl font-bold text-foreground">ພະນັກງານ SSMI</h1>
+            <h1 className="text-2xl font-bold text-foreground">ພະນັກງານ SSMILaos</h1>
             <p className="text-muted-foreground mt-1">ລະບົບການຄຸ້ມຄອງພະນັກງານ</p>
           </div>
         </div>

@@ -5,16 +5,16 @@ import { Toaster } from '@/components/ui/sonner'
 import '@/app/globals.css'
 
 export const metadata: Metadata = {
-  title: 'ພະນັກງານສິນຊັບເມືອງເໜືອ | SSMI Laos HRM',
-  description: 'ລະບົບການຄຸ້ມຄອງຊັບຍາກອນມະນຸດ ສຳລັບພະນັກງານ SSMI | Human Resource Management System for SSMI Laos Staff',
+  title: 'ພະນັກງານ SSMILaos | Smart system HRM for Staff | web portal',
+  description: 'ລະບົບ HRM ຂອງ SSMI Laos ຊ່ວຍພະນັກງານຈັດການການເຂົ້າວຽກ, ການລາພັກ, ການອະນຸມັດ ແລະ ຂໍ້ມູນສ່ວນຕົວ ໃນລະບົບດຽວຢ່າງປອດໄພ | SSMI Laos HRM web Portal for Staff',
   keywords: ['ພະນັກງານສິນຊັບເມືອງເໜືອ', 'ssmi laos staff', 'hrm ssmi laos', 'ssmi laos', 'SSMI', 'HRM Laos'],
   authors: [{ name: 'SSMI Laos' }],
   creator: 'SSMI Laos',
   generator: 'SSMI',
   metadataBase: new URL('https://hrm-ssmi.firebaseapp.com'),
   openGraph: {
-    title: 'ພະນັກງານສິນຊັບເມືອງເໜືອ | SSMI Laos HRM',
-    description: 'ລະບົບການຄຸ້ມຄອງຊັບຍາກອນມະນຸດ ສຳລັບພະນັກງານ SSMI Laos',
+    title: 'ພະນັກງານ SSMILaos | Smart system HRM for Staff | web portal',
+    description: 'ລະບົບ HRM ຂອງ SSMI Laos ຊ່ວຍພະນັກງານຈັດການການເຂົ້າວຽກ, ການລາພັກ, ການອະນຸມັດ ແລະ ຂໍ້ມູນສ່ວນຕົວ ໃນລະບົບດຽວຢ່າງປອດໄພ | SSMI Laos HRM web Portal for Staff',
     siteName: 'SSMI HRM Portal',
     locale: 'lo_LA',
     type: 'website',

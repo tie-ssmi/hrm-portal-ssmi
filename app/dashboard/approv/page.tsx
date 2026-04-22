@@ -1,5 +1,6 @@
 'use client'
-
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
 import FormsSkeleton from '@/components/skeletons/formsSkeleton'
 import { Card, CardContent } from '@/components/ui/card'
@@ -7,7 +8,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Palmtree, MapPin } from 'lucide-react'
 import LeaveTable from '@/components/leaveTable'
 import OffsiteTable from '@/components/offSiteTable'
-
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Field,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field"
 const demoLeaveData = [{
   "id": "L-001",
   "name": "SINA AI",
@@ -155,9 +163,24 @@ const demoOffsiteData = [
 ]
 
 export default function ApprovePage() {
+  const router = useRouter()
   const { isLoading } = useAuth()
   const leave = demoLeaveData.length
   const workOutSide = demoOffsiteData.length
+  const [openConfirmDialog, setOpenConfirmDialog] = useState(false)
+  const [confirmLeave, setConfirmLeave] = useState(false)
+
+  const handleConfirmLeaveChange = (checked: boolean | 'indeterminate') => {
+    setConfirmLeave(checked === true)
+  }
+
+  const handleDialogOpenChange = (open: boolean) => {
+    setOpenConfirmDialog(open)
+    if (!open) {
+      setConfirmLeave(false)
+    }
+  }
+
 
   if (isLoading) {
     return <FormsSkeleton />
@@ -208,10 +231,56 @@ export default function ApprovePage() {
         </TabsList>
 
         <TabsContent value="leave" className="mt-4">
+          <div className='w-full flex justify-end mb-4'>
+          
+          
+           <Dialog open={openConfirmDialog} onOpenChange={handleDialogOpenChange}>
+      
+        <DialogTrigger asChild>
+          <Button >ລາພັກແທນ</Button>
+        </DialogTrigger>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>ການລາພັກແທນ</DialogTitle>
+            <DialogDescription >
+              <p className="text-sm text-foreground text-red-500">ການລາພັກແທນແມ່ນອະນຸມັດໃຫ້ໃຊ້ໃນກໍລະນີທີ່ຜູ້ກ່ຽວບໍ່ສາມາດເຂົ້າເຖີງບັນຊີຂອງຕົນເອງໄດ້ ຫຼື ເຫດສຸດເສີນເທົ່ານັ້ນ. 
+ </p>
+
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2" >
+            
+            <FieldGroup className="max-w-sm" >
+              <Field orientation="horizontal" >
+                <Checkbox id="confirmLeave" name="confirmLeave" checked={confirmLeave} onCheckedChange={handleConfirmLeaveChange} />
+                <FieldLabel htmlFor="confirmLeave">ຢືນຢັນການລາພັກແທນ</FieldLabel>
+              </Field>
+            </FieldGroup>
+          </div>
+        
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">ຍົກເລີກ</Button>
+            </DialogClose>
+            <Button
+              type="button"
+              disabled={confirmLeave === false}
+              onClick={() => router.push('/dashboard/approv/leave/instead')}
+            >
+              ເພີ່ມ
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      
+    </Dialog>
+          
+          
+          </div>
           <LeaveTable data={demoLeaveData} />
         </TabsContent>
 
         <TabsContent value="offsite" className="mt-4">
+          
           <OffsiteTable data={demoOffsiteData} />
         </TabsContent>
       </Tabs>

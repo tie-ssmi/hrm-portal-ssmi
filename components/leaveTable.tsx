@@ -169,6 +169,7 @@ export default function LeaveTable({ data, onViewDetail, onApprove, className }:
 								<TableHead className="px-4 min-w-[150px]">ຜູ້ຮັບວຽກຕໍ່</TableHead>
 								<TableHead className="px-4 min-w-[130px]">ມື້ເລີ່ມຕົ້ນ</TableHead>
 								<TableHead className="px-4 min-w-[130px]">ມື້ສິ້ນສຸດ</TableHead>
+								<TableHead className="px-4 min-w-[130px]">ຈຳນວນວັນ</TableHead>
 								<TableHead className="px-4 min-w-[190px]">ສະຖານະ</TableHead>
 								<TableHead className="px-4 min-w-[170px] text-right">ຈັດການ</TableHead>
 							</TableRow>
@@ -214,6 +215,11 @@ export default function LeaveTable({ data, onViewDetail, onApprove, className }:
 												<CalendarRange className="h-3.5 w-3.5" />
 												{item.endDate}
 											</div>
+										</TableCell>
+										<TableCell className="px-4 py-3">
+											<p className=" whitespace-normal break-words text-foreground leading-6">
+												3 ວັນ
+											</p>
 										</TableCell>
 
 										<TableCell className="px-4 py-3">
