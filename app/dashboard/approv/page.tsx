@@ -232,47 +232,9 @@ export default function ApprovePage() {
 
         <TabsContent value="leave" className="mt-4">
           <div className='w-full flex justify-end mb-4'>
+           <Button onClick={() => router.push('/dashboard/approv/leave/instead')}>ລາພັກແທນ</Button>
           
           
-           <Dialog open={openConfirmDialog} onOpenChange={handleDialogOpenChange}>
-      
-        <DialogTrigger asChild>
-          <Button >ລາພັກແທນ</Button>
-        </DialogTrigger>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>ການລາພັກແທນ</DialogTitle>
-            <DialogDescription >
-              <p className="text-sm text-foreground text-red-500">ການລາພັກແທນແມ່ນອະນຸມັດໃຫ້ໃຊ້ໃນກໍລະນີທີ່ຜູ້ກ່ຽວບໍ່ສາມາດເຂົ້າເຖີງບັນຊີຂອງຕົນເອງໄດ້ ຫຼື ເຫດສຸດເສີນເທົ່ານັ້ນ. 
- </p>
-
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-2" >
-            
-            <FieldGroup className="max-w-sm" >
-              <Field orientation="horizontal" >
-                <Checkbox id="confirmLeave" name="confirmLeave" checked={confirmLeave} onCheckedChange={handleConfirmLeaveChange} />
-                <FieldLabel htmlFor="confirmLeave">ຢືນຢັນການລາພັກແທນ</FieldLabel>
-              </Field>
-            </FieldGroup>
-          </div>
-        
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">ຍົກເລີກ</Button>
-            </DialogClose>
-            <Button
-              type="button"
-              disabled={confirmLeave === false}
-              onClick={() => router.push('/dashboard/approv/leave/instead')}
-            >
-              ເພີ່ມ
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      
-    </Dialog>
           
           
           </div>

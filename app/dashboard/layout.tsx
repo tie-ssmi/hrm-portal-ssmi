@@ -7,6 +7,8 @@ import { HRMProvider } from '@/lib/hrm-context'
 import { TanstackQueryProvider } from '@/components/query-provider-tanstack'
 import { DashboardNav } from '@/components/dashboard/nav'
 import { MobileNav } from '@/components/dashboard/mobile-nav'
+import SinaChat from '@/components/SinaChat'
+import { Button } from '@/components/ui/button'
 
 export default function DashboardLayout({
   children,
@@ -44,6 +46,7 @@ export default function DashboardLayout({
             <div className="p-4 lg:p-8  mx-auto">
               {children}
             </div>
+            {/* <Button onClick={() => router.push('/dashboard/ai')} className='fixed bottom-20 right-5 lg:bottom-5 lg:right-5 z-50 w-10 h-10 rounded-full'>SINA</Button> */}
           </main>
           
           {/* Mobile bottom navigation */}

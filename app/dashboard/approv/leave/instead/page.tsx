@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { useHRM } from '@/lib/hrm-context'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -24,6 +24,8 @@ import { fetchPoliciesForGender } from '@/services/policies'
 import type { LeaveRequest } from '@/lib/types'
 import { getEmployees } from '@/services/employees'
 import { useQuery } from '@tanstack/react-query'
+import router from 'next/dist/shared/lib/router/router'
+import { Checkbox } from '@/components/ui/checkbox'
 
 type Period = 'morning' | 'afternoon'
 type LeaveTypeOption = {
@@ -142,6 +144,8 @@ export default function InsteadLeaveRequestForm() {
   const annualRemaining = leaveBalance.annual - leaveBalance.annualUsed
   const sickRemaining = leaveBalance.sick - leaveBalance.sickUsed
   const personalRemaining = leaveBalance.personal - leaveBalance.personalUsed
+  const [openConfirmDialog, setOpenConfirmDialog] = useState(false)
+  const [confirmLeave, setConfirmLeave] = useState(false)
 
   const duration = useMemo(
     () => calcDuration(leaveStartDate, startPeriod, leaveEndDate, endPeriod),
@@ -298,7 +302,7 @@ export default function InsteadLeaveRequestForm() {
         successorNameLo: selectedSuccessor ? [selectedSuccessor.firstNameLo, selectedSuccessor.lastNameLo].filter(Boolean).join(' ') : undefined,
         successorNameEn: selectedSuccessor ? [selectedSuccessor.firstNameEn, selectedSuccessor.lastNameEn].filter(Boolean).join(' ') : undefined,
         jobTitle: user?.jobTitle || user?.position,
-        
+
       })
       await refetchMyCurrentLeaves()
       toast.success('Leave request submitted successfully')
@@ -319,6 +323,16 @@ export default function InsteadLeaveRequestForm() {
     }
   }
 
+  const handleConfirmLeaveChange = (checked: boolean | 'indeterminate') => {
+    setConfirmLeave(checked === true)
+  }
+
+  const handleDialogOpenChange = (open: boolean) => {
+    setOpenConfirmDialog(open)
+    if (!open) {
+      setConfirmLeave(false)
+    }
+  }
   return (
     <>
       <Card>
@@ -479,30 +493,95 @@ export default function InsteadLeaveRequestForm() {
                   rows={3}
                 />
               </Field>
-                 <Field>
-                <FieldLabel>ຜູ້ຮັບວຽກຕໍ່</FieldLabel>
+
+              <div className="grid grid-cols-2 gap-4">
+                <Field>
+                  <FieldLabel>ຜູ້ລາພັກ</FieldLabel>
                   <Select value={selectedSuccessorUid} onValueChange={setSelectedSuccessorUid}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="ເລືອກຜູ້ຮັບວຽກຕໍ່" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">ບໍ່ລະບຸ</SelectItem>
-                    {employeesData?.map((employee) => (
+                    <SelectTrigger>
+                      <SelectValue placeholder="ເລືອກຜູ້ລາພັກ" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {employeesData?.map((employee) => (
                         <SelectItem key={employee.uid} value={employee.uid}>
                           {[employee.firstNameLo || employee.firstNameEn, employee.lastNameLo || employee.lastNameEn]
                             .filter(Boolean)
                             .join(' ') || employee.email || employee.uid} ({employee.jobTitle})
                         </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field>
+                  <FieldLabel>ຜູ້ຮັບວຽກຕໍ່</FieldLabel>
+                  <Select value={selectedSuccessorUid} onValueChange={setSelectedSuccessorUid}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="ເລືອກຜູ້ຮັບວຽກຕໍ່" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">ບໍ່ລະບຸ</SelectItem>
+                      {employeesData?.map((employee) => (
+                        <SelectItem key={employee.uid} value={employee.uid}>
+                          {[employee.firstNameLo || employee.firstNameEn, employee.lastNameLo || employee.lastNameEn]
+                            .filter(Boolean)
+                            .join(' ') || employee.email || employee.uid} ({employee.jobTitle})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </div>
+
+
             </FieldGroup>
 
-            <Button type="submit" className="w-full" disabled={isSubmitting}>
-              {isSubmitting ? <Spinner className="mr-2" /> : <Send className="w-4 h-4 mr-2" />}
-              ສົ່ງຄໍາຮ້ອງຂໍ
-            </Button>
+
+
+            <Dialog open={openConfirmDialog} onOpenChange={handleDialogOpenChange}>
+
+              <DialogTrigger asChild>
+                <Button className="w-full" >ສົ່ງຄໍາຮ້ອງຂໍແທນ</Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-sm">
+                <DialogHeader>
+                  <DialogTitle>ການລາພັກແທນ</DialogTitle>
+                  <DialogDescription >
+                    <p className="text-sm text-foreground text-red-500">ການລາພັກແທນແມ່ນອະນຸມັດໃຫ້ໃຊ້ໃນກໍລະນີທີ່ຜູ້ກ່ຽວບໍ່ສາມາດເຂົ້າເຖີງບັນຊີຂອງຕົນເອງໄດ້ ຫຼື ເຫດສຸດເສີນເທົ່ານັ້ນ.
+                    </p>
+
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="py-2" >
+
+                  <FieldGroup className="max-w-sm" >
+                    <Field orientation="horizontal" >
+                      <Checkbox id="confirmLeave" name="confirmLeave" checked={confirmLeave} onCheckedChange={handleConfirmLeaveChange} />
+                      <FieldLabel htmlFor="confirmLeave">ຢືນຢັນການລາພັກແທນ</FieldLabel>
+                    </Field>
+                  </FieldGroup>
+                </div>
+
+                <DialogFooter>
+                  <DialogClose asChild>
+                    <Button variant="outline">ຍົກເລີກ</Button>
+                  </DialogClose>
+                  {/* <Button
+              type="button"
+              disabled={confirmLeave === false}
+              onClick={() => router.push('/dashboard/approv/leave/instead')}
+            >
+              ເພີ່ມ
+            </Button> */}
+                  <Button type="submit" className="w-full" disabled={isSubmitting || confirmLeave === false}>
+                    {isSubmitting ? <Spinner className="mr-2" /> : <Send className="w-4 h-4 mr-2" />}
+                    ສົ່ງຄໍາຮ້ອງຂໍ
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+
+            </Dialog>
+
+
           </form>
         </CardContent>
       </Card>
