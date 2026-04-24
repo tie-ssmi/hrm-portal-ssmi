@@ -1,5 +1,2 @@
 User-agent: *
 Allow: /
-Disallow: /dashboard/
-
-Sitemap: https://hrm-ssmi.firebaseapp.com/sitemap.xml

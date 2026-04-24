@@ -27,6 +27,7 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs"
 import { CheckInToday, ToDay } from '@/components/leaveLists'
+import { Button } from '@/components/ui/button'
 export default function DashboardPage() {
   const { user, isLoading } = useAuth()
   const { leaveBalance, lateRecords, totalFines, leaveRequests, todayAttendance } = useHRM()
@@ -296,7 +297,10 @@ export default function DashboardPage() {
             <div  >
 
               <CardContent className="text-muted-foreground text-sm h-auto max-h-[500px] overflow-auto">
-                <p className="mb-2 font-semibold text-lg">ລາຍການມາວຽກມື້ນີ້ </p>
+                <div className="flex items-center justify-between mb-4">
+                                 <p className="mb-2 font-semibold text-lg">ລາຍການມາວຽກມື້ນີ້ </p>
+                <Button variant="link">ທັງໝົດ</Button>
+                </div>
                 <CheckInToday />
               </CardContent>
 
