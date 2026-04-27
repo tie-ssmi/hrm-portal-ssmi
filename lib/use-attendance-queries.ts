@@ -172,6 +172,8 @@ type CheckInParams = {
   location?: AttendanceLocation
 }
 
+type CheckInServerStatus = 'present' | 'late' | 'not_check_in'
+
 /**
  * Check-in mutation
  */
@@ -184,17 +186,21 @@ export function useCheckIn() {
         throw new Error('User uuid is missing. Unable to update attendance.')
       }
 
-      const serverTime = await fetchServerTime()
+      const serverTime = await fetchServerTime(user.uuid)
       const attendanceDate = serverTime.date
       const checkInTime = serverTime.checkTime
-      const isLate = serverTime.isLate
+      const status = serverTime.status as CheckInServerStatus
+
+      if (status === 'not_check_in') {
+        throw new Error('Check-in window has closed for today.')
+      }
 
       await updateAttendanceCheckInTime({
         userUuid: user.uuid,
         uid: user.uid || user.uuid,
         date: attendanceDate,
         checkInTime,
-        status: isLate ? 'late' : 'present',
+        status,
         location,
          updateBy: `${user.firstNameEn || user.firstName} ${user.lastNameEn || user.lastName}`.trim(),
         note: null,
@@ -205,11 +211,11 @@ export function useCheckIn() {
       return {
         success: true,
         attendanceDate: serverTime.isoDate,
-        message: isLate
+        message: status === 'late'
           ? `Checked in late at ${checkInTime}`
           : `Checked in at ${checkInTime}`,
         checkInTime,
-        status: (isLate ? 'late' : 'present') as AttendanceStatus,
+        status: status as AttendanceStatus,
       }
     },
     onSuccess: (data, variables) => {
