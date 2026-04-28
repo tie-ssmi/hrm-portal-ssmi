@@ -51,9 +51,10 @@ export default function AttendancePage() {
 
   const [location, setLocation] = useState<LocationState | null>(null)
   const [isLoadingLocation, setIsLoadingLocation] = useState(false)
-  const [currentTime, setCurrentTime] = useState(new Date())
+  const [currentTime, setCurrentTime] = useState<Date | null>(null)
 
   useEffect(() => {
+    setCurrentTime(new Date())
     const interval = window.setInterval(() => setCurrentTime(new Date()), 1000)
     return () => window.clearInterval(interval)
   }, [])
@@ -162,8 +163,12 @@ export default function AttendancePage() {
         <CardContent className="pt-6">
           <div className="text-center">
             <p className="text-sm opacity-80">ເວລາປະຈຸບັນ</p>
-            <p className="mt-1 text-4xl font-bold" suppressHydrationWarning>{format(currentTime, 'HH:mm:ss')}</p>
-            <p className="mt-2 text-sm opacity-80" suppressHydrationWarning>{format(currentTime, 'EEEE, MMMM d, yyyy')}</p>
+            <p className="mt-1 text-4xl font-bold">
+              {currentTime ? format(currentTime, 'HH:mm:ss') : '--:--:--'}
+            </p>
+            <p className="mt-2 text-sm opacity-80">
+              {currentTime ? format(currentTime, 'EEEE, MMMM d, yyyy') : ''}
+            </p>
           </div>
         </CardContent>
       </Card>
@@ -236,10 +241,7 @@ export default function AttendancePage() {
               ) : todayAttendance?.status === 'not_check_in' ? (
                 <><AlertTriangle className="mr-2 h-4 w-4" /> ລືມກົດເຂົ້າວຽກ</>
               ) : todayAttendance?.checkIn ? (
-                <><Clock className="mr-2 h-4 w-4" /> {
-                  todayAttendance.status === 'late' ? 'ເຂົ້າວຽກ (ຊ້າ)'
-                    : todayAttendance.status === 'present' ? 'ເຂົ້າວຽກ' : ""
-                }</>
+                <><Clock className="mr-2 h-4 w-4" /> {todayAttendance.status === 'late' ? 'ເຂົ້າວຽກ (ຊ້າ)' : 'ເຂົ້າວຽກ'}</>
               ) : (
                 <><AlertTriangle className="mr-2 h-4 w-4" /> ຍັງບໍ່ເຂົ້າວຽກ</>
               )}
