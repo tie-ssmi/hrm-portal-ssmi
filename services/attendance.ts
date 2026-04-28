@@ -2,6 +2,12 @@ import { collection, doc, getDocs, query, setDoc, where } from 'firebase/firesto
 import { db } from '@/lib/firebase'
 import type { AttendanceRecord } from '@/lib/types'
 
+type ServerDateTime = {
+  date: Date
+  isoDate: string
+  time: string
+}
+
 type AttendanceLocation = {
   lat: number
   lng: number
@@ -97,6 +103,47 @@ function formatLocalIsoDate(date: Date): string {
   const month = (date.getMonth() + 1).toString().padStart(2, '0')
   const day = date.getDate().toString().padStart(2, '0')
   return `${year}-${month}-${day}`
+}
+
+function parseIsoDateAndTime(dateTimeString: string): ServerDateTime {
+  const parsedDate = new Date(dateTimeString)
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    throw new Error('Invalid date received from server time source.')
+  }
+
+  const isoDate = `${parsedDate.getUTCFullYear()}-${(parsedDate.getUTCMonth() + 1)
+    .toString()
+    .padStart(2, '0')}-${parsedDate.getUTCDate().toString().padStart(2, '0')}`
+
+  const time = `${parsedDate.getUTCHours().toString().padStart(2, '0')}:${parsedDate
+    .getUTCMinutes()
+    .toString()
+    .padStart(2, '0')}`
+
+  return {
+    date: parsedDate,
+    isoDate,
+    time,
+  }
+}
+
+export async function getServerDateTimeInVientiane(): Promise<ServerDateTime> {
+  const response = await fetch('https://worldtimeapi.org/api/timezone/Asia/Vientiane', {
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    throw new Error('Unable to get server time. Please try again.')
+  }
+
+  const payload = (await response.json()) as { datetime?: string }
+
+  if (!payload.datetime) {
+    throw new Error('Server time response is invalid.')
+  }
+
+  return parseIsoDateAndTime(payload.datetime)
 }
 
 export async function fetchAttendanceByUserThisMonth(userUuid: string): Promise<AttendanceRecord[]> {
