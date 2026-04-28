@@ -19,7 +19,6 @@ type AttendanceLocation = {
 
 type AttendanceStatus = AttendanceRecord['status']
 
-// Query keys factory for attendance
 export const attendanceKeys = {
   all: ['attendance'] as const,
   history: (userUuid: string) => [...attendanceKeys.all, 'history', userUuid] as const,
@@ -37,102 +36,34 @@ function upsertAttendanceRecord(
   records: AttendanceRecord[] | undefined,
   nextRecord: AttendanceRecord
 ): AttendanceRecord[] {
-  const currentRecords = records || []
-  const existingIndex = currentRecords.findIndex((record) => record.date === nextRecord.date)
+  const current = records || []
+  const existingIndex = current.findIndex((r) => r.date === nextRecord.date)
 
   if (existingIndex === -1) {
-    return [...currentRecords, nextRecord].sort((left, right) => right.date.localeCompare(left.date))
+    return [...current, nextRecord].sort((a, b) => b.date.localeCompare(a.date))
   }
 
-  const updatedRecords = [...currentRecords]
-  updatedRecords[existingIndex] = {
-    ...updatedRecords[existingIndex],
-    ...nextRecord,
-  }
-
-  return updatedRecords.sort((left, right) => right.date.localeCompare(left.date))
-}
-
-/**
- * Fetch attendance history for the current month
- */
-export function useAttendanceHistory(userUuid: string | null | undefined) {
-  return useQuery({
-    queryKey: attendanceKeys.history(userUuid || ''),
-    queryFn: async () => {
-      if (!userUuid) {
-        return []
-      }
-      const records = await fetchAttendanceByUserThisMonth(userUuid)
-      return records
-    },
-    enabled: !!userUuid,
-  })
-}
-
-/**
- * Get today's attendance record from history
- */
-export function useTodayAttendance(userUuid: string | null | undefined) {
-  const { data: history = [], ...query } = useAttendanceHistory(userUuid)
-
-  const todayAttendance = useMemo(() => {
-    const todayIso = formatLocalIsoDate(new Date())
-    return history.find((record) => record.date === todayIso) || null
-  }, [history])
-
-  return {
-    data: todayAttendance,
-    ...query,
-  }
-}
-
-/**
- * Fetch today's check-in attendance records (where checkInTime is not null)
- * Ordered by checkInTime descending (last one first)
- */
-export function useTodayCheckInAttendance() {
-  return useQuery({
-    queryKey: attendanceKeys.todayCheckIn,
-    queryFn: async () => {
-      const records = await fetchTodayCheckInAttendance()
-      return records
-    },
-    staleTime: 1000 * 60, // 1 minute
-    refetchInterval: 1000 * 60 * 5, // Refetch every 5 minutes
-  })
+  const updated = [...current]
+  updated[existingIndex] = { ...updated[existingIndex], ...nextRecord }
+  return updated
 }
 
 function toDepartmentPayload(
   department: unknown
 ): { name: string; uid: string } | undefined {
-  if (!department) {
-    return undefined
-  }
+  if (!department) return undefined
 
-  if (typeof department === 'string') {
-    return { name: department, uid: '' }
-  }
+  if (typeof department === 'string') return { name: department, uid: '' }
 
   if (typeof department === 'object') {
     const value = department as Record<string, unknown>
     const name =
-      typeof value.nameLo === 'string'
-        ? value.nameLo
-        : typeof value.name === 'string'
-          ? value.name
-          : typeof value.department === 'string'
-            ? value.department
-            : ''
-
-    if (!name) {
-      return undefined
-    }
-
-    return {
-      name,
-      uid: typeof value.uid === 'string' ? value.uid : '',
-    }
+      typeof value.nameLo === 'string' ? value.nameLo
+        : typeof value.name === 'string' ? value.name
+        : typeof value.department === 'string' ? value.department
+        : ''
+    if (!name) return undefined
+    return { name, uid: typeof value.uid === 'string' ? value.uid : '' }
   }
 
   return undefined
@@ -141,22 +72,14 @@ function toDepartmentPayload(
 function toWorkLocationPayload(
   workLocation: unknown
 ): { code?: string; name: string; uid?: string } | undefined {
-  if (!workLocation) {
-    return undefined
-  }
+  if (!workLocation) return undefined
 
-  if (typeof workLocation === 'string') {
-    return { name: workLocation }
-  }
+  if (typeof workLocation === 'string') return { name: workLocation }
 
   if (typeof workLocation === 'object') {
     const value = workLocation as Record<string, unknown>
     const name = typeof value.name === 'string' ? value.name : ''
-
-    if (!name) {
-      return undefined
-    }
-
+    if (!name) return undefined
     return {
       name,
       ...(typeof value.code === 'string' ? { code: value.code } : {}),
@@ -167,6 +90,37 @@ function toWorkLocationPayload(
   return undefined
 }
 
+export function useAttendanceHistory(userUuid: string | null | undefined) {
+  return useQuery({
+    queryKey: attendanceKeys.history(userUuid || ''),
+    queryFn: async () => {
+      if (!userUuid) return []
+      return fetchAttendanceByUserThisMonth(userUuid)
+    },
+    enabled: !!userUuid,
+  })
+}
+
+export function useTodayAttendance(userUuid: string | null | undefined) {
+  const { data: history = [], ...query } = useAttendanceHistory(userUuid)
+
+  const todayAttendance = useMemo(() => {
+    const todayIso = formatLocalIsoDate(new Date())
+    return history.find((r) => r.date === todayIso) ?? null
+  }, [history])
+
+  return { data: todayAttendance, ...query }
+}
+
+export function useTodayCheckInAttendance() {
+  return useQuery({
+    queryKey: attendanceKeys.todayCheckIn,
+    queryFn: fetchTodayCheckInAttendance,
+    staleTime: 1000 * 60,
+    refetchInterval: 1000 * 60 * 5,
+  })
+}
+
 type CheckInParams = {
   user: Employee
   location?: AttendanceLocation
@@ -174,61 +128,46 @@ type CheckInParams = {
 
 type CheckInServerStatus = 'present' | 'late' | 'not_check_in'
 
-/**
- * Check-in mutation
- */
 export function useCheckIn() {
   const queryClient = useQueryClient()
 
   return useMutation({
     mutationFn: async ({ user, location }: CheckInParams) => {
-      if (!user.uuid) {
-        throw new Error('User uuid is missing. Unable to update attendance.')
-      }
+      if (!user.uuid) throw new Error('User uuid is missing. Unable to update attendance.')
 
       const serverTime = await fetchServerTime(user.uuid)
-      const attendanceDate = serverTime.date
-      const checkInTime = serverTime.checkTime
       const status = serverTime.status as CheckInServerStatus
-
-      if (status === 'not_check_in') {
-        throw new Error('Check-in window has closed for today.')
-      }
 
       await updateAttendanceCheckInTime({
         userUuid: user.uuid,
         uid: user.uid || user.uuid,
-        date: attendanceDate,
-        checkInTime,
+        date: serverTime.date,
+        checkInTime: serverTime.checkTime,
         status,
         location,
-         updateBy: `${user.firstNameEn || user.firstName} ${user.lastNameEn || user.lastName}`.trim(),
+        fullNameEn: `${user.firstNameEn || user.firstName} ${user.lastNameEn || user.lastName}`.trim(),
+        fullNameLo: `${user.firstNameLo || ''} ${user.lastNameLo || ''}`.trim() || undefined,
+        jobTitle: user.jobTitle || user.position,
+        employeeImage: user.profileImage || user.photo3x4Url || user.avatar,
+        department: toDepartmentPayload(user.department),
+        workLocation: toWorkLocationPayload(user.workLocation),
         note: null,
-        updateAt: new Date().toISOString(),
-    
       })
 
       return {
-        success: true,
         attendanceDate: serverTime.isoDate,
-        message: status === 'late'
-          ? `Checked in late at ${checkInTime}`
-          : `Checked in at ${checkInTime}`,
-        checkInTime,
+        checkInTime: serverTime.checkTime,
         status: status as AttendanceStatus,
       }
     },
     onSuccess: (data, variables) => {
       const userUuid = variables.user.uuid
-
-      if (!userUuid) {
-        return
-      }
+      if (!userUuid) return
 
       queryClient.setQueryData<AttendanceRecord[]>(
         attendanceKeys.history(userUuid),
-        (currentRecords) =>
-          upsertAttendanceRecord(currentRecords, {
+        (current) =>
+          upsertAttendanceRecord(current, {
             id: `${userUuid}_${formatAttendanceDocumentDate(new Date(`${data.attendanceDate}T00:00:00`))}`,
             date: data.attendanceDate,
             checkIn: data.checkInTime,
@@ -237,9 +176,7 @@ export function useCheckIn() {
           })
       )
 
-      queryClient.invalidateQueries({
-        queryKey: attendanceKeys.history(userUuid),
-      })
+      queryClient.invalidateQueries({ queryKey: attendanceKeys.history(userUuid) })
     },
   })
 }
@@ -247,33 +184,24 @@ export function useCheckIn() {
 type CheckOutParams = {
   user: Employee
   location?: AttendanceLocation
-  currentLocation?: AttendanceLocation
 }
 
-/**
- * Check-out mutation
- */
 export function useCheckOut() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async ({ user, location, currentLocation }: CheckOutParams) => {
-      if (!user.uuid) {
-        throw new Error('User uuid is missing. Unable to update attendance.')
-      }
+    mutationFn: async ({ user, location }: CheckOutParams) => {
+      if (!user.uuid) throw new Error('User uuid is missing. Unable to update attendance.')
 
-      const serverTime = await fetchServerTime()
-      const attendanceDate = serverTime.date
-      const checkOutTime = serverTime.checkTime
-      const workHours = 8
+      const serverTime = await fetchServerTime(user.uuid)
 
       await updateAttendanceCheckOutTime({
         userUuid: user.uuid,
         uid: user.uid || user.uuid,
-        date: attendanceDate,
-        checkOutTime,
-        workHours,
-        location: location || currentLocation,
+        date: serverTime.date,
+        checkOutTime: serverTime.checkTime,
+        workHours: 8,
+        location,
         fullNameEn: `${user.firstNameEn || user.firstName} ${user.lastNameEn || user.lastName}`.trim(),
         fullNameLo: `${user.firstNameLo || ''} ${user.lastNameLo || ''}`.trim() || undefined,
         jobTitle: user.jobTitle || user.position,
@@ -283,40 +211,30 @@ export function useCheckOut() {
       })
 
       return {
-        success: true,
         attendanceDate: serverTime.isoDate,
-        message: `Checked out at ${checkOutTime}`,
-        checkOutTime,
+        checkOutTime: serverTime.checkTime,
       }
     },
     onSuccess: (data, variables) => {
       const userUuid = variables.user.uuid
-
-      if (!userUuid) {
-        return
-      }
+      if (!userUuid) return
 
       queryClient.setQueryData<AttendanceRecord[]>(
         attendanceKeys.history(userUuid),
-        (currentRecords) => {
-          const existingRecord = currentRecords?.find((record) => record.date === data.attendanceDate)
-
-          return upsertAttendanceRecord(currentRecords, {
+        (current) => {
+          const existing = current?.find((r) => r.date === data.attendanceDate)
+          return upsertAttendanceRecord(current, {
             id: `${userUuid}_${formatAttendanceDocumentDate(new Date(`${data.attendanceDate}T00:00:00`))}`,
             date: data.attendanceDate,
-            ...(existingRecord?.checkIn ? { checkIn: existingRecord.checkIn } : {}),
+            ...(existing?.checkIn ? { checkIn: existing.checkIn } : {}),
             checkOut: data.checkOutTime,
-            status: existingRecord?.status || 'present',
-            ...(variables.location || variables.currentLocation
-              ? { location: variables.location || variables.currentLocation }
-              : {}),
+            status: existing?.status ?? 'present',
+            ...(variables.location ? { location: variables.location } : {}),
           })
         }
       )
 
-      queryClient.invalidateQueries({
-        queryKey: attendanceKeys.history(userUuid),
-      })
+      queryClient.invalidateQueries({ queryKey: attendanceKeys.history(userUuid) })
     },
   })
 }

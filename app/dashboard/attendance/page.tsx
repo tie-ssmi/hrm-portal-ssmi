@@ -44,9 +44,8 @@ export default function AttendancePage() {
   const { user } = useAuth()
   const { isWithinGeofence } = useHRM()
 
-  const { data: attendanceHistory = [], isLoading: isLoadingHistory } =
-    useAttendanceHistory(user?.uuid)
-  const { data: todayAttendance } = useTodayAttendance(user?.uuid)
+  const { data: todayAttendance, isLoading: isLoadingHistory } = useTodayAttendance(user?.uuid)
+  const { data: attendanceHistory = [] } = useAttendanceHistory(user?.uuid)
   const checkInMutation = useCheckIn()
   const checkOutMutation = useCheckOut()
 
@@ -55,9 +54,7 @@ export default function AttendancePage() {
   const [currentTime, setCurrentTime] = useState(new Date())
 
   useEffect(() => {
-    const interval = window.setInterval(() => {
-      setCurrentTime(new Date())
-    }, 1000)
+    const interval = window.setInterval(() => setCurrentTime(new Date()), 1000)
     return () => window.clearInterval(interval)
   }, [])
 
@@ -94,111 +91,79 @@ export default function AttendancePage() {
     })
   }, [])
 
+  const getValidatedLocation = useCallback(async (): Promise<LocationState | null> => {
+    const loc = await getLocation()
+    if (!loc) {
+      toast.error('ບໍ່ສາມາດຮັບຂໍ້ມູນສະຖານທີ່. ກະລຸນາເປີດ GPS ແລະອະນຸຍາດການເຂົ້າເຖິງສະຖານທີ່.')
+      return null
+    }
+    if (!isWithinGeofence(loc.lat, loc.lng)) {
+      toast.error('ທ່ານຢູ່ນອກພື້ນທີ່ຫ້ອງການ. ບໍ່ສາມາດກົດເຂົ້າການໄດ້.')
+      return null
+    }
+    return loc
+  }, [getLocation, isWithinGeofence])
+
   const handleCheckIn = useCallback(async () => {
     if (!user) {
       toast.error('ບໍ່ເຫັນຂໍ້ມູນຜູ້ໃຊ້. ກະລຸນາເຂົ້າລະບົບອີກຄັ້ງ.')
       return
     }
-
     try {
-      const loc = await getLocation()
-      if (!loc) {
-        toast.error('ບໍ່ສາມາດຮັບຂໍ້ມູນສະຖານທີ່. ກະລຸນາເປີດ GPS ແລະອະນຸຍາດການເຂົ້າເຖິງສະຖານທີ່.')
-        return
-      }
-
-      const withinFence = isWithinGeofence(loc.lat, loc.lng)
-      if (!withinFence) {
-        toast.error('ທ່ານຢູ່ນອກພື້ນທີ່ຫ້ອງການ. ບໍ່ສາມາດກົດເຂົ້າການໄດ້.')
-        return
-      }
-
-      await checkInMutation.mutateAsync({
-        user,
-        location: { lat: loc.lat, lng: loc.lng },
-      })
-
+      const loc = await getValidatedLocation()
+      if (!loc) return
+      await checkInMutation.mutateAsync({ user, location: { lat: loc.lat, lng: loc.lng } })
       toast.success('ເຂົ້າການສຳເລັດແລ້ວ')
     } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : 'ບໍ່ສາມາດດໍາເນີນການເຂົ້າການ. ກະລຸນາລອງໃໝ່.'
-      )
+      toast.error(error instanceof Error ? error.message : 'ບໍ່ສາມາດດໍາເນີນການເຂົ້າການ. ກະລຸນາລອງໃໝ່.')
     }
-  }, [user, getLocation, isWithinGeofence, checkInMutation])
+  }, [user, getValidatedLocation, checkInMutation])
 
   const handleCheckOut = useCallback(async () => {
     if (!user) {
       toast.error('ບໍ່ເຫັນຂໍ້ມູນຜູ້ໃຊ້. ກະລຸນາເຂົ້າລະບົບອີກຄັ້ງ.')
       return
     }
-
     try {
-      const loc = await getLocation()
-      if (!loc) {
-        toast.error('ບໍ່ສາມາດຮັບຂໍ້ມູນສະຖານທີ່. ກະລຸນາເປີດ GPS ແລະອະນຸຍາດການເຂົ້າເຖິງສະຖານທີ່.')
-        return
-      }
-
-      const withinFence = isWithinGeofence(loc.lat, loc.lng)
-      if (!withinFence) {
-        toast.error('ທ່ານຢູ່ນອກພື້ນທີ່ຫ້ອງການ. ບໍ່ສາມາດກົດເຂົ້າການໄດ້.')
-        return
-      }
-
-      await checkOutMutation.mutateAsync({
-        user,
-        location: { lat: loc.lat, lng: loc.lng },
-      })
-
+      const loc = await getValidatedLocation()
+      if (!loc) return
+      await checkOutMutation.mutateAsync({ user, location: { lat: loc.lat, lng: loc.lng } })
       toast.success('ອອກຈາກການສຳເລັດແລ້ວ')
     } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : 'ບໍ່ສາມາດດໍາເນີນການອອກ. ກະລຸນາລອງໃໝ່.'
-      )
+      toast.error(error instanceof Error ? error.message : 'ບໍ່ສາມາດດໍາເນີນການອອກ. ກະລຸນາລອງໃໝ່.')
     }
-  }, [user, getLocation, isWithinGeofence, checkOutMutation])
+  }, [user, getValidatedLocation, checkOutMutation])
 
   const isWithinOffice = useMemo(() => {
-    if (!location || location.error) {
-      return false
-    }
+    if (!location || location.error) return false
     return isWithinGeofence(location.lat, location.lng)
   }, [isWithinGeofence, location])
 
   const weeklyHistory = useMemo(() => {
-    const weekStart = startOfWeek(currentTime, { weekStartsOn: 1 })
-    const weekEnd = addDays(weekStart, 6)
+    const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 })
     const weekStartIso = format(weekStart, 'yyyy-MM-dd')
-    const weekEndIso = format(weekEnd, 'yyyy-MM-dd')
-
+    const weekEndIso = format(addDays(weekStart, 6), 'yyyy-MM-dd')
     return attendanceHistory
-      .filter((record) => {
-        const normalizedDate = record.date.slice(0, 10)
-        return normalizedDate >= weekStartIso && normalizedDate <= weekEndIso
+      .filter((r) => {
+        const d = r.date.slice(0, 10)
+        return d >= weekStartIso && d <= weekEndIso
       })
-      // .sort((left, right) => left.date.localeCompare(right.date)) // Old go to new
-      .sort((left, right) => right.date.localeCompare(left.date)) // New go to old
-  }, [attendanceHistory, currentTime])
+      .sort((a, b) => b.date.localeCompare(a.date))
+  }, [attendanceHistory])
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-foreground">Check-In / Check-Out</h1>
-        <p className="text-muted-foreground">
-ບັນທຶກການເຂົ້າຮ່ວມຂອງທ່ານດ້ວຍການຢັ້ງຢືນ GPS</p>
+        <p className="text-muted-foreground">ບັນທຶກການເຂົ້າຮ່ວມຂອງທ່ານດ້ວຍການຢັ້ງຢືນ GPS</p>
       </div>
 
       <Card className="bg-primary text-primary-foreground">
         <CardContent className="pt-6">
           <div className="text-center">
-            <p className="text-sm opacity-80">
-ເວລາປະຈຸບັນ</p>
-            <p className="mt-1 text-4xl font-bold">{format(currentTime, 'HH:mm:ss')}</p>
-            <p className="mt-2 text-sm opacity-80">{format(currentTime, 'EEEE, MMMM d, yyyy')}</p>
+            <p className="text-sm opacity-80">ເວລາປະຈຸບັນ</p>
+            <p className="mt-1 text-4xl font-bold" suppressHydrationWarning>{format(currentTime, 'HH:mm:ss')}</p>
+            <p className="mt-2 text-sm opacity-80" suppressHydrationWarning>{format(currentTime, 'EEEE, MMMM d, yyyy')}</p>
           </div>
         </CardContent>
       </Card>
@@ -213,37 +178,30 @@ export default function AttendancePage() {
         <CardContent>
           <div className="flex items-center justify-between">
             <Button variant="outline" size="sm" onClick={getLocation} disabled={isLoadingLocation}>
-              {isLoadingLocation ? (
-                <Spinner className="mr-2" />
-              ) : (
-                <Navigation className="mr-2 h-4 w-4" />
-              )}
-ດຶງຂໍ້ມູນຕຳແໜ່ງໃໝ່            </Button>
+              {isLoadingLocation ? <Spinner className="mr-2" /> : <Navigation className="mr-2 h-4 w-4" />}
+              ດຶງຂໍ້ມູນຕຳແໜ່ງໃໝ່
+            </Button>
 
-            {location && !location.error ? (
+            {location && !location.error && (
               <Badge variant={isWithinOffice ? 'default' : 'destructive'} className="flex items-center gap-1">
                 {isWithinOffice ? (
-                  <>
-                    <Shield className="h-3 w-3" />
-                    ຢູ່ໃນພື້ນທີ່ຫ້ອງການ
-                  </>
+                  <><Shield className="h-3 w-3" /> ຢູ່ໃນພື້ນທີ່ຫ້ອງການ</>
                 ) : (
-                  <>
-                    <ShieldX className="h-3 w-3" />
-                    ຢູ່ນອກພື້ນທີ່ຫ້ອງການ
-                  </>
+                  <><ShieldX className="h-3 w-3" /> ຢູ່ນອກພື້ນທີ່ຫ້ອງການ</>
                 )}
               </Badge>
-            ) : null}
+            )}
           </div>
 
-          {location && !location.error ? (
+          {location && !location.error && (
             <p className="mt-2 text-xs text-muted-foreground">
-              ນອກຫ້ອງການ: {Math.round(location.accuracy)} ແມັດ
+              ຄວາມແມ່ນຍໍາ GPS: {Math.round(location.accuracy)} ແມັດ
             </p>
-          ) : null}
+          )}
 
-          {location?.error ? <p className="mt-2 text-xs text-destructive">{location.error}</p> : null}
+          {location?.error && (
+            <p className="mt-2 text-xs text-destructive">{location.error}</p>
+          )}
         </CardContent>
       </Card>
 
@@ -266,29 +224,24 @@ export default function AttendancePage() {
           <div className="flex items-center justify-center">
             <Badge
               variant={
-                todayAttendance?.status === 'present'
-                  ? 'default'
-                  : todayAttendance?.status === 'late'
-                    ? 'secondary'
-                    : 'outline'
+                todayAttendance?.status === 'present' ? 'default'
+                  : todayAttendance?.status === 'late' ? 'secondary'
+                  : todayAttendance?.status === 'not_check_in' ? 'destructive'
+                  : 'outline'
               }
               className="px-4 py-1 text-sm"
             >
               {todayAttendance?.checkOut ? (
-                <>
-                  <CheckCircle className="mr-2 h-4 w-4" />
-                  ກັບແລ້ວ 
-                </>
+                <><CheckCircle className="mr-2 h-4 w-4" /> ກັບແລ້ວ</>
+              ) : todayAttendance?.status === 'not_check_in' ? (
+                <><AlertTriangle className="mr-2 h-4 w-4" /> ລືມກົດເຂົ້າວຽກ</>
               ) : todayAttendance?.checkIn ? (
-                <>
-                  <Clock className="mr-2 h-4 w-4" />
-                  {todayAttendance.status === 'late' ? 'ເຂົ້າວຽກ (ຊ້າ)' : 'ເຂົ້າວຽກ'}
-                </>
+                <><Clock className="mr-2 h-4 w-4" /> {
+                  todayAttendance.status === 'late' ? 'ເຂົ້າວຽກ (ຊ້າ)'
+                    : todayAttendance.status === 'present' ? 'ເຂົ້າວຽກ' : ""
+                }</>
               ) : (
-                <>
-                  <AlertTriangle className="mr-2 h-4 w-4" />
-                  ຍັງບໍ່ເຂົ້າວຽກ
-                </>
+                <><AlertTriangle className="mr-2 h-4 w-4" /> ຍັງບໍ່ເຂົ້າວຽກ</>
               )}
             </Badge>
           </div>
@@ -302,11 +255,7 @@ export default function AttendancePage() {
           onClick={handleCheckIn}
           disabled={checkInMutation.isPending || !!todayAttendance?.checkIn || isLoadingHistory}
         >
-          {checkInMutation.isPending ? (
-            <Spinner className="mr-2" />
-          ) : (
-            <LogIn className="mr-2 h-5 w-5" />
-          )}
+          {checkInMutation.isPending ? <Spinner className="mr-2" /> : <LogIn className="mr-2 h-5 w-5" />}
           Check In
         </Button>
 
@@ -317,11 +266,7 @@ export default function AttendancePage() {
           onClick={handleCheckOut}
           disabled={checkOutMutation.isPending || !todayAttendance?.checkIn || !!todayAttendance?.checkOut}
         >
-          {checkOutMutation.isPending ? (
-            <Spinner className="mr-2" />
-          ) : (
-            <LogOut className="mr-2 h-5 w-5" />
-          )}
+          {checkOutMutation.isPending ? <Spinner className="mr-2" /> : <LogOut className="mr-2 h-5 w-5" />}
           Check Out
         </Button>
       </div>
@@ -342,29 +287,25 @@ export default function AttendancePage() {
               {weeklyHistory.map((record) => (
                 <div key={record.id} className="flex items-center justify-between rounded-lg bg-muted/50 p-3">
                   <div>
-                    <p className="text-sm font-medium">{format(new Date(record.date), 'EEE, MMM d')}</p>
+                    <p className="text-sm font-medium">
+                      {format(new Date(`${record.date}T00:00:00`), 'EEE, MMM d')}
+                    </p>
                     <p className="text-xs text-muted-foreground">
                       {record.checkIn || '--:--'} - {record.checkOut || '--:--'}
                     </p>
                   </div>
                   <Badge
                     variant={
-                      record.status === 'present'
-                        ? 'default'
-                        : record.status === 'late'
-                          ? 'secondary'
-                          : record.status === 'leave'
-                            ? 'outline'
-                            : 'destructive'
+                      record.status === 'present' ? 'default'
+                        : record.status === 'late' ? 'secondary'
+                        : record.status === 'leave' ? 'outline'
+                        : 'destructive'
                     }
                   >
-                    {record.status === 'present'
-                      ? 'ມາວຽກ'
-                      : record.status === 'late'
-                        ? 'ມາວຽກ (ຊ້າ)'
-                        : record.status === 'leave'
-                          ? 'ພັກ'
-                          : 'ບໍ່ມາວຽກ'}
+                    {record.status === 'present' ? 'ມາວຽກ'
+                      : record.status === 'late' ? 'ມາວຽກ (ຊ້າ)'
+                      : record.status === 'leave' ? 'ພັກ'
+                      : 'ບໍ່ມາວຽກ'}
                   </Badge>
                 </div>
               ))}

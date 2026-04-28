@@ -86,6 +86,15 @@ type LeaveLike = {
   endPeriod?: string
 }
 
+const callableCorsOrigins: Array<string | RegExp> = [
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'capacitor://localhost',
+  'ionic://localhost',
+  /^https:\/\/.*\.web\.app$/,
+  /^https:\/\/.*\.firebaseapp\.com$/,
+]
+
 async function hasMorningLeaveEndingToday(userUuid: string | undefined, isoDate: string): Promise<boolean> {
   if (!userUuid) {
     return false
@@ -112,7 +121,7 @@ async function hasMorningLeaveEndingToday(userUuid: string | undefined, isoDate:
 }
 
 export const getServerTime = onCall(
-  { region: 'asia-southeast1', cors: true },
+  { region: 'asia-southeast1', cors: callableCorsOrigins, invoker: 'public' },
   async (request): Promise<ServerTimeResult> => {
     const { date, checkTime, isoDate } = getVientianeParts()
     const [hourStr, minuteStr] = checkTime.split(':')

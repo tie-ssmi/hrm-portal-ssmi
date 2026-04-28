@@ -12,7 +12,7 @@ type UpdateCheckInTimeParams = {
   uid?: string
   date: string
   checkInTime: string
-  status: 'present' | 'late'
+  status: 'present' | 'late' | 'not_check_in'
   location?: AttendanceLocation
   createdBy?: string
   fullNameEn?: string
