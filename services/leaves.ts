@@ -17,7 +17,7 @@ export async function fetchLeavesByUserUuidFromToday(userUuid: string): Promise<
   }
 
   const today = new Date().toISOString().split('T')[0]
-  const leavesQuery = query(collection(db, 'leaves'), where('userUuid', '==', userUuid))
+  const leavesQuery = query(collection(db, 'leaves'), where('leaveUserUuid', '==', userUuid))
 
   const snapshot = await getDocs(leavesQuery)
   const rows = snapshot.docs.map((doc) => ({

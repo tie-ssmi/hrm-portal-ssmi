@@ -108,24 +108,21 @@ export interface LeaveApprovalStep {
 
 export interface LeaveRequest {
   id: string
-  userUuid?: string
+  leaveUserUuid?: string
+  leaveUserName?: string
+  species?: 'owner' | 'instead'
   type: string
   policyUuid?: string
   policyId?: string
   policyName?: string
+  createdBy?: string
+  createdByUid?: string
   startDate: string
   startPeriod?: 'morning' | 'afternoon'
   endDate: string
   endPeriod?: 'morning' | 'afternoon'
   duration?: number
-  requiredApprovers?: LeaveApproverRole[]
-  approvals?: LeaveApprovalStep[]
   reason: string
-  status: 'pending' | 'approved' | 'rejected'
-  createdAt: string
-  createdBy?: string
-  reviewedBy?: string
-  reviewedAt?: string
   departmentUid?: string
   departmentNameLo?: string
   departmentNameEn?: string
@@ -133,6 +130,14 @@ export interface LeaveRequest {
   successorNameLo?: string
   successorNameEn?: string
   jobTitle?: string
+  doc?: string
+  docLink?: string
+  requiredApprovers?: LeaveApproverRole[]
+  approvals?: LeaveApprovalStep[]
+  status: 'pending' | 'approved' | 'rejected'
+  createdAt: string
+  reviewedBy?: string
+  reviewedAt?: string
 }
 
 export interface OffsiteRequest {

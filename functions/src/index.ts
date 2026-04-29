@@ -103,7 +103,7 @@ async function hasMorningLeaveEndingToday(userUuid: string | undefined, isoDate:
   const snapshot = await admin
     .firestore()
     .collection('leaves')
-    .where('userUuid', '==', userUuid)
+    .where('leaveUserUuid', '==', userUuid)
     .get()
 
   return snapshot.docs.some((doc) => {

@@ -24,6 +24,7 @@ import { fetchPoliciesForGender } from '@/services/policies'
 import type { LeaveRequest } from '@/lib/types'
 import { getEmployees } from '@/services/employees'
 import { useQuery } from '@tanstack/react-query'
+import { Combobox } from '@/components/ui/combobox'
 
 type Period = 'morning' | 'afternoon'
 type LeaveTypeOption = {
@@ -168,14 +169,15 @@ export default function LeaveRequestForm() {
   })
 
   const { data: employeesData = [] } = useQuery({
-    queryKey: ['employees', departmentUuid ?? null, workLocationUuid ?? null, loggedInUserUuid],
-    queryFn: () => getEmployees({
-      departmentUuid,
-      workLocationUuid,
-      excludeUid: loggedInUserUuid,
-    }),
-    enabled: !!departmentUuid && !!workLocationUuid && !!loggedInUserUuid,
+    queryKey: ['employees', departmentUuid ?? null],
+    queryFn: () => getEmployees({ departmentUuid }),
+    enabled: !!departmentUuid,
   })
+
+  const successorOptions = useMemo(
+    () => employeesData.filter(emp => (emp.uid || emp.id) !== loggedInUserUuid),
+    [employeesData, loggedInUserUuid]
+  )
 
   const leaveTypeOptions = useMemo(() => {
     const fallback: LeaveTypeOption[] = [
@@ -278,8 +280,12 @@ export default function LeaveRequestForm() {
 
       const selectedSuccessor = employeesData.find(emp => emp.uid === selectedSuccessorUid)
 
+      const dept = typeof user?.department === 'object' && user.department ? user.department as any : undefined
+
       await submitLeaveRequest({
-        userUuid: loggedInUserUuid || undefined,
+        leaveUserUuid: loggedInUserUuid || undefined,
+        species: 'owner',
+        createdByUid: loggedInUserUuid || undefined,
         type: selectedPolicy?.requestType || 'annual',
         policyUuid: selectedPolicy?.policyUuid,
         policyId: selectedPolicy?.policyId || undefined,
@@ -291,14 +297,13 @@ export default function LeaveRequestForm() {
         endPeriod,
         duration: duration ?? undefined,
         reason: leaveReason,
-        departmentUid: typeof user?.department === 'object' && user.department ? (user.department as any).uid : undefined,
-        departmentNameLo: typeof user?.department === 'object' && user.department ? (user.department as any).nameLo : undefined,
-        departmentNameEn: typeof user?.department === 'object' && user.department ? (user.department as any).nameEn : undefined,
+        departmentUid: dept?.uid,
+        departmentNameLo: dept?.nameLo,
+        departmentNameEn: dept?.nameEn,
         successorUid: selectedSuccessor?.uid,
         successorNameLo: selectedSuccessor ? [selectedSuccessor.firstNameLo, selectedSuccessor.lastNameLo].filter(Boolean).join(' ') : undefined,
         successorNameEn: selectedSuccessor ? [selectedSuccessor.firstNameEn, selectedSuccessor.lastNameEn].filter(Boolean).join(' ') : undefined,
         jobTitle: user?.jobTitle || user?.position,
-        
       })
       await refetchMyCurrentLeaves()
       toast.success('Leave request submitted successfully')
@@ -479,23 +484,22 @@ export default function LeaveRequestForm() {
                   rows={3}
                 />
               </Field>
-                 <Field>
+              <Field>
                 <FieldLabel>ຜູ້ຮັບວຽກຕໍ່</FieldLabel>
-                  <Select value={selectedSuccessorUid} onValueChange={setSelectedSuccessorUid}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="ເລືອກຜູ້ຮັບວຽກຕໍ່" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">ບໍ່ລະບຸ</SelectItem>
-                    {employeesData?.map((employee) => (
-                        <SelectItem key={employee.uid} value={employee.uid}>
-                          {[employee.firstNameLo || employee.firstNameEn, employee.lastNameLo || employee.lastNameEn]
-                            .filter(Boolean)
-                            .join(' ') || employee.email || employee.uid} ({employee.jobTitle})
-                        </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Combobox
+                  value={selectedSuccessorUid}
+                  onValueChange={setSelectedSuccessorUid}
+                  options={[
+                    { value: 'none', label: 'ບໍ່ລະບຸ' },
+                    ...successorOptions.map((emp) => ({
+                      value: emp.uid || emp.id || '',
+                      label: [emp.firstNameLo || emp.firstNameEn, emp.lastNameLo || emp.lastNameEn].filter(Boolean).join(' ') || emp.email || '',
+                      subLabel: emp.jobTitle,
+                    })),
+                  ]}
+                  placeholder="ເລືອກຜູ້ຮັບວຽກຕໍ່"
+                  searchPlaceholder="ຄົ້ນຫາຊື່ຫຼືຕໍາແໜ່ງ..."
+                />
               </Field>
             </FieldGroup>
 

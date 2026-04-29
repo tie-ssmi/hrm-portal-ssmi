@@ -11,6 +11,7 @@ export interface EmployeeDepartment {
 }
 
 export interface Employee {
+  id?: string
   uid: string;
   firstNameEn: string;
   lastNameEn: string;
