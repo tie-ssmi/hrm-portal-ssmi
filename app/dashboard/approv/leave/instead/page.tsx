@@ -98,6 +98,14 @@ function getStatusVariant(status: string) {
   }
 }
 
+function getStatusBadgeClass(status: string) {
+  switch (status) {
+    case 'approved': return 'bg-emerald-100 text-emerald-700 border-emerald-200'
+    case 'rejected': return 'bg-red-100 text-red-700 border-red-200'
+    default: return 'bg-amber-100 text-amber-700 border-amber-200'
+  }
+}
+
 function SectionHeader({ number, icon: Icon, title }: { number: number; icon: React.ElementType; title: string }) {
   return (
     <div className="flex items-center gap-2 mb-3">
@@ -569,7 +577,9 @@ export default function InsteadLeaveRequestForm() {
                   key={request.id}
                   type="button"
                   onClick={() => setSelectedLeave(request)}
-                  className="w-full flex items-center gap-3 p-3 rounded-lg border bg-card text-left hover:bg-muted/50 transition-colors"
+                  className={`w-full flex items-center gap-3 p-3 rounded-lg border-l-4 bg-white shadow-sm text-left hover:shadow-md transition-all ${
+                    request.status === 'approved' ? 'border-l-emerald-400' : request.status === 'rejected' ? 'border-l-red-400' : 'border-l-amber-400'
+                  }`}
                 >
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{request.policyName || request.type}</p>
@@ -583,10 +593,10 @@ export default function InsteadLeaveRequestForm() {
                       )}
                     </p>
                   </div>
-                  <Badge variant={getStatusVariant(request.status)} className="flex items-center gap-1 shrink-0">
+                  <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border shrink-0 ${getStatusBadgeClass(request.status)}`}>
                     {getStatusIcon(request.status)}
                     {request.status}
-                  </Badge>
+                  </span>
                 </button>
               ))}
             </div>
@@ -604,10 +614,10 @@ export default function InsteadLeaveRequestForm() {
             <div className="space-y-3 text-sm">
               <div className="flex justify-between items-center">
                 <span className="text-muted-foreground">ສະຖານະ</span>
-                <Badge variant={getStatusVariant(selectedLeave.status)} className="flex items-center gap-1">
+                <span className={`inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full border ${getStatusBadgeClass(selectedLeave.status)}`}>
                   {getStatusIcon(selectedLeave.status)}
                   {selectedLeave.status}
-                </Badge>
+                </span>
               </div>
               <Separator />
               <div className="grid grid-cols-2 gap-3">
@@ -646,10 +656,10 @@ export default function InsteadLeaveRequestForm() {
                       {selectedLeave.approvals.map((approval, i) => (
                         <div key={i} className="flex items-center justify-between">
                           <span className="text-xs capitalize">{approval.role}</span>
-                          <Badge variant={getStatusVariant(approval.decision)} className="flex items-center gap-1 text-xs">
+                          <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border ${getStatusBadgeClass(approval.decision)}`}>
                             {getStatusIcon(approval.decision)}
                             {approval.decision}
-                          </Badge>
+                          </span>
                         </div>
                       ))}
                     </div>
