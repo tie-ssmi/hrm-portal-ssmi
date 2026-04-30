@@ -12,7 +12,8 @@ import {
   Settings,
   LogOut,
   Newspaper,
-  Menu
+  Menu,
+  FileExclamationPoint
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 
@@ -45,8 +46,10 @@ const navItems = [
   // { href: '/dashboard/request', label: 'Forms', icon: FileText },
   { href: '/dashboard/history', label: 'History', icon: History },
   { href: '/dashboard/attendance', label: 'Check-In', icon: Clock },
-  { href: '/dashboard/news', label: 'News', icon: Newspaper },
-  { href: '/dashboard/profile', label: 'Profile', icon: User }
+  { href: '/dashboard/approv', label: 'Approval', icon: FileExclamationPoint  },
+  { href: '/dashboard/profile', label: 'Profile', icon: User },
+  // { href: '/dashboard/news', label: 'News', icon: Newspaper },
+
 
 ]
 const navMenuItems = [

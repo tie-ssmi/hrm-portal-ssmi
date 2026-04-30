@@ -17,7 +17,8 @@ import {
   Palmtree,
   Briefcase,
   HeartPulse,
-  User
+  User,
+  MapPinX
 } from 'lucide-react'
 import { format } from 'date-fns'
 import {
@@ -131,10 +132,10 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-bold text-foreground">
-          ຍີນດີຕ້ອນຮັບ, {user?.firstName}
+          ຍີນດີຕ້ອນຮັບ, {user?.firstNameLo}
         </h1>
         <p className="text-muted-foreground">
-          {format(new Date(), 'EEEE, MMMM d, yyyy')}
+          {format(new Date(), "EEEE, d MMMM (MM), yyyy")}
         </p>
       </div>
 
@@ -205,11 +206,11 @@ export default function DashboardPage() {
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
               <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-chart-2/10">
-                <Palmtree className="w-5 h-5 text-chart-2" />
+                <MapPinX  className="w-5 h-5 text-chart-2" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">ວັນພັກປະຈຳປີ</p>
-                <p className="text-xl font-bold text-foreground">{annualRemaining}/{effectiveLeaveBalance.annual}</p>
+                <p className="text-xs text-muted-foreground">ລືມກົດເຂົ້າວຽກ</p>
+                <p className="text-xl font-bold text-foreground">3</p>
               </div>
             </div>
           </CardContent>
