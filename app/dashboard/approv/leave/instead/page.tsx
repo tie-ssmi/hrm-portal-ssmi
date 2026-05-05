@@ -296,6 +296,7 @@ export default function InsteadLeaveRequestForm() {
         successorNameLo: selectedSuccessor ? [selectedSuccessor.firstNameLo, selectedSuccessor.lastNameLo].filter(Boolean).join(' ') : undefined,
         successorNameEn: selectedSuccessor ? [selectedSuccessor.firstNameEn, selectedSuccessor.lastNameEn].filter(Boolean).join(' ') : undefined,
         jobTitle: selectedLeaveFor.jobTitle,
+        workLocationUid: selectedLeaveFor.workLocation?.uuid,
       })
       await refetchMyCurrentLeaves()
       toast.success('ສົ່ງຄໍາຮ້ອງຂໍສໍາເລັດ')

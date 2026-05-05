@@ -42,7 +42,7 @@ type LocationState = {
 
 export default function AttendancePage() {
   const { user } = useAuth()
-  const { isWithinGeofence } = useHRM()
+  const { distanceToOffice } = useHRM()
 
   const { data: todayAttendance, isLoading: isLoadingHistory } = useTodayAttendance(user?.uuid)
   const { data: attendanceHistory = [] } = useAttendanceHistory(user?.uuid)
@@ -98,12 +98,13 @@ export default function AttendancePage() {
       toast.error('ບໍ່ສາມາດຮັບຂໍ້ມູນສະຖານທີ່. ກະລຸນາເປີດ GPS ແລະອະນຸຍາດການເຂົ້າເຖິງສະຖານທີ່.')
       return null
     }
-    if (!isWithinGeofence(loc.lat, loc.lng)) {
-      toast.error('ທ່ານຢູ່ນອກພື້ນທີ່ຫ້ອງການ. ບໍ່ສາມາດກົດເຂົ້າການໄດ້.')
+    const dist = distanceToOffice(loc.lat, loc.lng)
+    if (dist !== null && dist > 50) {
+      toast.error(`ທ່ານຢູ່ຫ່າງຈາກຫ້ອງການ ${dist} ແມັດ. ຕ້ອງຢູ່ພາຍໃນ 50 ແມັດ.`)
       return null
     }
     return loc
-  }, [getLocation, isWithinGeofence])
+  }, [getLocation, distanceToOffice])
 
   const handleCheckIn = useCallback(async () => {
     if (!user) {
@@ -135,10 +136,12 @@ export default function AttendancePage() {
     }
   }, [user, getValidatedLocation, checkOutMutation])
 
-  const isWithinOffice = useMemo(() => {
-    if (!location || location.error) return false
-    return isWithinGeofence(location.lat, location.lng)
-  }, [isWithinGeofence, location])
+  const officeDistance = useMemo(() => {
+    if (!location || location.error) return null
+    return distanceToOffice(location.lat, location.lng)
+  }, [distanceToOffice, location])
+
+  const isWithinOffice = officeDistance !== null && officeDistance <= 50
 
   const weeklyHistory = useMemo(() => {
     const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 })
@@ -199,8 +202,10 @@ export default function AttendancePage() {
           </div>
 
           {location && !location.error && (
-            <p className="mt-2 text-xs text-muted-foreground">
+            <p className={`mt-2 text-xs ${officeDistance === null || officeDistance > 50 ? 'text-destructive' : 'text-muted-foreground'}`}>
               ຄວາມແມ່ນຍໍາ GPS: {Math.round(location.accuracy)} ແມັດ
+              {` · ໄກຈາກຫ້ອງການ: ${officeDistance !== null ? `${officeDistance} ແມັດ${officeDistance > 50 ? ' (ໄກເກີນໄປ)' : ''}` : 'ບໍ່ສາມາດໂຫຼດຂໍ້ມູນສະຖານທີ່ຫ້ອງການໄດ້'}`}
+              my location is {location.lat.toFixed(4)}, {location.lng.toFixed(4)}  work location is {location.lat.toFixed(4)}, {location.lng.toFixed(4)}
             </p>
           )}
 
@@ -255,7 +260,7 @@ export default function AttendancePage() {
           size="lg"
           className="h-16 text-lg"
           onClick={handleCheckIn}
-          disabled={checkInMutation.isPending || !!todayAttendance?.checkIn || isLoadingHistory}
+          disabled={checkInMutation.isPending || !!todayAttendance?.checkIn || isLoadingHistory || !isWithinOffice}
         >
           {checkInMutation.isPending ? <Spinner className="mr-2" /> : <LogIn className="mr-2 h-5 w-5" />}
           Check In
@@ -266,7 +271,7 @@ export default function AttendancePage() {
           variant="outline"
           className="h-16 text-lg"
           onClick={handleCheckOut}
-          disabled={checkOutMutation.isPending || !todayAttendance?.checkIn || !!todayAttendance?.checkOut}
+          disabled={checkOutMutation.isPending || !todayAttendance?.checkIn || !!todayAttendance?.checkOut || !isWithinOffice}
         >
           {checkOutMutation.isPending ? <Spinner className="mr-2" /> : <LogOut className="mr-2 h-5 w-5" />}
           Check Out

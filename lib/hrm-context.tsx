@@ -1,11 +1,11 @@
 'use client'
 
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
-import type { AttendanceRecord, HRMContextType, LeaveRequest, OffsiteRequest, ProfileUpdateRequest, LeaveBalance, LateRecord, LeaveApproverRole } from './types'
-import { mockLeaveRequests, mockOffsiteRequests, mockLeaveBalance, mockLateRecords, mockGeoFenceLPB } from './mock-data'
+import type { AttendanceRecord, HRMContextType, LeaveRequest, OffsiteRequest, ProfileUpdateRequest, LeaveBalance, LateRecord, LeaveApproverRole, GeoFence } from './types'
 import { buildInitialLeaveApprovals, getRequiredLeaveApprovers, resolveLeaveRequestStatus } from '@/services/leave-approval'
 import { fetchAttendanceByUserThisMonth, formatAttendanceDocumentDate, updateAttendanceCheckInTime, updateAttendanceCheckOutTime } from '@/services/attendance'
 import { createLeaveRequest } from '@/services/leaves'
+import { fetchWorkLocationGeoFence } from '@/services/workLocations'
 import { useAuth } from './auth-context'
 
 const HRMContext = createContext<HRMContextType | undefined>(undefined)
@@ -95,11 +95,28 @@ export function HRMProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
   const [todayAttendance, setTodayAttendance] = useState<AttendanceRecord | null>(null)
   const [attendanceHistory, setAttendanceHistory] = useState<AttendanceRecord[]>([])
-  const [leaveBalance] = useState<LeaveBalance>(mockLeaveBalance)
-  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>(mockLeaveRequests)
-  const [offsiteRequests, setOffsiteRequests] = useState<OffsiteRequest[]>(mockOffsiteRequests)
+  const [leaveBalance] = useState<LeaveBalance>({ annual: 0, annualUsed: 0, sick: 0, sickUsed: 0, personal: 0, personalUsed: 0 })
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([])
+  const [offsiteRequests, setOffsiteRequests] = useState<OffsiteRequest[]>([])
   const [profileUpdateRequests, setProfileUpdateRequests] = useState<ProfileUpdateRequest[]>([])
-  const [lateRecords] = useState<LateRecord[]>(mockLateRecords)
+  const [lateRecords] = useState<LateRecord[]>([])
+  const [geoFence, setGeoFence] = useState<GeoFence | null>(null)
+
+  const workLocationUuid = typeof user?.workLocation === 'object'
+    ? ((user.workLocation as { uuid?: string; code?: string })?.uuid
+        || (user.workLocation as { code?: string })?.code)
+    : typeof user?.workLocation === 'string'
+      ? user.workLocation
+      : undefined
+
+  useEffect(() => {
+    if (!workLocationUuid) return
+    let isMounted = true
+    fetchWorkLocationGeoFence(workLocationUuid).then((fence) => {
+      if (isMounted && fence) setGeoFence(fence)
+    })
+    return () => { isMounted = false }
+  }, [workLocationUuid])
 
   useEffect(() => {
     let isMounted = true
@@ -141,10 +158,16 @@ export function HRMProvider({ children }: { children: ReactNode }) {
     }
   }, [user?.uuid])
 
+  const distanceToOffice = useCallback((lat: number, lng: number): number | null => {
+    if (!geoFence) return null
+    return Math.round(calculateDistance(lat, lng, geoFence.lat, geoFence.lng))
+  }, [geoFence])
+
   const isWithinGeofence = useCallback((lat: number, lng: number) => {
-    const distance = calculateDistance(lat, lng, mockGeoFenceLPB.lat, mockGeoFenceLPB.lng)
-    return distance <= mockGeoFenceLPB.radius
-  }, [])
+    if (!geoFence) return true
+    const distance = calculateDistance(lat, lng, geoFence.lat, geoFence.lng)
+    return distance <= geoFence.radius
+  }, [geoFence])
 
   const checkIn = useCallback(async (location?: { lat: number; lng: number }) => {
     await new Promise(resolve => setTimeout(resolve, 500))
@@ -365,7 +388,8 @@ export function HRMProvider({ children }: { children: ReactNode }) {
       submitProfileUpdate,
       lateRecords,
       totalFines,
-      isWithinGeofence
+      isWithinGeofence,
+      distanceToOffice,
     }}>
       {children}
     </HRMContext.Provider>

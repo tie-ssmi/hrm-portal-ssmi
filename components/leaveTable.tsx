@@ -67,6 +67,7 @@ export default function LeaveTable({ data, onViewDetail, onApprove, className }:
 		}
 
 		const params = new URLSearchParams({
+			id: item.id,
 			name: item.name,
 			department: item.department || '',
 			successor: item.successor || '',
@@ -79,7 +80,7 @@ export default function LeaveTable({ data, onViewDetail, onApprove, className }:
 			typeName: item.type?.name || '',
 		})
 
-		router.push(`/dashboard/approv/leave/${item.id}?${params.toString()}`)
+		router.push(`/dashboard/approv/leave/detail?${params.toString()}`)
 	}
 
 	if (data.length === 0) {
@@ -147,7 +148,7 @@ export default function LeaveTable({ data, onViewDetail, onApprove, className }:
 										<Button type="button" variant="outline" size="sm" onClick={() => handleViewDetail(item)}>
 											ລາຍລະອຽດ
 										</Button>
-										<Button type="button" size="sm" onClick={() => onApprove?.(item)} disabled={!canApprove}>
+										<Button type="button" size="sm" onClick={() => onApprove ? onApprove(item) : handleViewDetail(item)} disabled={!canApprove}>
 											{canApprove ? 'ອະນຸມັດ' : 'ສໍາເລັດ'}
 										</Button>
 									</div>
@@ -177,7 +178,7 @@ export default function LeaveTable({ data, onViewDetail, onApprove, className }:
 
 						<TableBody>
 							{data.map((item, index) => {
-								const canApprove = item.status !== 'approved' && item.status !== 'rejected'
+								const canApprove = item?.approvals?.decision !== 'approved' && item?.approvals?.decision !== 'rejected'
 
 								return (
 									<TableRow key={item.id} className="align-top" onClick={() => handleViewDetail(item)}>
@@ -241,7 +242,7 @@ export default function LeaveTable({ data, onViewDetail, onApprove, className }:
 													type="button"
 													size="sm"
 													className="min-w-[84px]"
-													onClick={() => onApprove?.(item)}
+													onClick={(e) => { e.stopPropagation(); onApprove ? onApprove(item) : handleViewDetail(item) }}
 													disabled={!canApprove}
 												>
 													{canApprove ? 'ອະນຸມັດ' : 'ສໍາເລັດ'}

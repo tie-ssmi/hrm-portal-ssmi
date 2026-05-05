@@ -180,16 +180,17 @@ function Field({
 	)
 }
 
-export default function LeaveDetailClient({ leaveId }: { leaveId: string }) {
+export default function LeaveDetailClient({ leaveId }: { leaveId?: string }) {
 	const router = useRouter()
 	const searchParams = useSearchParams()
+	const id = leaveId || searchParams.get('id') || ''
 
 	const detail = useMemo(() => {
 		const queryName = searchParams.get('name')
 
 		if (queryName) {
 			return {
-				id: leaveId,
+				id,
 				name: queryName,
 				department: searchParams.get('department') || '-',
 				successor: searchParams.get('successor') || '-',
@@ -205,7 +206,7 @@ export default function LeaveDetailClient({ leaveId }: { leaveId: string }) {
 			}
 		}
 
-		return leaveDetails.find((item) => item.id.toLowerCase() === leaveId.toLowerCase())
+		return leaveDetails.find((item) => item.id.toLowerCase() === id.toLowerCase())
 	}, [leaveId, searchParams])
 
 	if (!detail) {

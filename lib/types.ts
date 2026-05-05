@@ -8,6 +8,12 @@ export interface DepartmentInfo {
   nameEn?: string
 }
 
+export interface WorkLocationInfo {
+  uuid?: string
+  nameLo?: string
+  code?: string
+}
+
 export interface EducationEntry {
   education?: string
   graduatedFrom?: string
@@ -53,7 +59,7 @@ export interface Employee {
   jobTitle?: string
   role?: string
   employeeType?: string
-  workLocation?: string
+  workLocation?: string | WorkLocationInfo
   salary?: string
   profileImage?: string
   photo3x4Url?: string
@@ -126,6 +132,7 @@ export interface LeaveRequest {
   departmentUid?: string
   departmentNameLo?: string
   departmentNameEn?: string
+  workLocationUid?: string
   successorUid?: string
   successorNameLo?: string
   successorNameEn?: string
@@ -244,4 +251,5 @@ export interface HRMContextType {
   lateRecords: LateRecord[]
   totalFines: number
   isWithinGeofence: (lat: number, lng: number) => boolean
+  distanceToOffice: (lat: number, lng: number) => number | null
 }

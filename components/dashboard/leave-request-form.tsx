@@ -122,6 +122,7 @@ export default function LeaveRequestForm() {
   const { submitLeaveRequest, leaveBalance } = useHRM()
   const loggedInUserUuid = user?.uid || user?.id || ''
   const departmentUuid = typeof user?.department === 'object' ? user.department?.uuid : undefined
+  const workLocationUuid = typeof user?.workLocation === 'object' ? user.workLocation?.uuid : undefined
 
   const [selectedPolicyValue, setSelectedPolicyValue] = useState('annual')
   const [selectedSuccessorUid, setSelectedSuccessorUid] = useState('')
@@ -240,6 +241,7 @@ export default function LeaveRequestForm() {
 
       await submitLeaveRequest({
         leaveUserUuid: loggedInUserUuid || undefined,
+        leaveUserName: createdBy,
         species: 'owner',
         createdByUid: loggedInUserUuid || undefined,
         type: selectedPolicy?.requestType || 'annual',
@@ -253,13 +255,14 @@ export default function LeaveRequestForm() {
         endPeriod,
         duration: duration ?? undefined,
         reason: leaveReason,
-        departmentUid: dept?.uid,
+        departmentUid: departmentUuid || dept?.uid,
         departmentNameLo: dept?.nameLo,
         departmentNameEn: dept?.nameEn,
         successorUid: selectedSuccessor?.uid,
         successorNameLo: selectedSuccessor ? [selectedSuccessor.firstNameLo, selectedSuccessor.lastNameLo].filter(Boolean).join(' ') : undefined,
         successorNameEn: selectedSuccessor ? [selectedSuccessor.firstNameEn, selectedSuccessor.lastNameEn].filter(Boolean).join(' ') : undefined,
         jobTitle: user?.jobTitle || user?.position,
+        workLocationUid: workLocationUuid,
       })
       await refetchMyCurrentLeaves()
       toast.success('ສົ່ງຄໍາຮ້ອງຂໍສໍາເລັດ')

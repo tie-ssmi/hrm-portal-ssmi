@@ -1,7 +1,9 @@
 'use client'
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
+import { useQuery } from '@tanstack/react-query'
+import { fetchLeavesForApproval } from '@/services/leaves'
 import FormsSkeleton from '@/components/skeletons/formsSkeleton'
 import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -16,126 +18,6 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field"
-const demoLeaveData = [{
-  "id": "L-001",
-  "name": "SINA AI",
-  "department": "IT",
-  "successor": "Admin",
-  "startDate": "2026-04-01",
-  "endDate": "2026-04-01",
-  "reason": "System Optimization",
-  "position": "Virtual Assistant",
-  "note": "Official rebranding from Nong Khai complete",
-  "type": { "id": "01", "name": "Annual Leave" }
-},
-{
-  "id": "L-002",
-  "name": "Marcus Holloway",
-  "department": "IT",
-  "successor": "Victor Stone",
-  "startDate": "2026-04-05",
-  "endDate": "2026-04-07",
-  "reason": "Security Conference",
-  "position": "Network Sec",
-  "note": "Available on SINA chat for emergencies",
-  "type": { "id": "01", "name": "Annual Leave" }
-},
-{
-  "id": "L-003",
-  "name": "Lara Croft",
-  "department": "Research",
-  "successor": "Indiana Jones",
-  "startDate": "2026-04-10",
-  "endDate": "2026-04-15",
-  "reason": "Expedition",
-  "position": "Lead Researcher",
-  "note": "Satellite phone only",
-  "type": { "id": "05", "name": "Unpaid Leave" }
-},
-{
-  "id": "L-004",
-  "name": "Barry Allen",
-  "department": "IT",
-  "successor": "Iris West",
-  "startDate": "2026-04-12",
-  "endDate": "2026-04-12",
-  "reason": "Personal errand",
-  "position": "Forensics",
-  "note": "Back in a flash (literally)",
-  "type": { "id": "02", "name": "Sick Leave" }
-},
-{
-  "id": "L-005",
-  "name": "Walter White",
-  "department": "R&D",
-  "successor": "Jesse Pinkman",
-  "startDate": "2026-04-14",
-  "endDate": "2026-04-16",
-  "reason": "Health checkup",
-  "position": "Chemist",
-  "note": "Jesse knows the protocol",
-  "type": { "id": "02", "name": "Sick Leave" }
-},
-{
-  "id": "L-006",
-  "name": "Natasha Romanoff",
-  "department": "Security",
-  "successor": "Clint Barton",
-  "startDate": "2026-04-18",
-  "endDate": "2026-04-18",
-  "reason": "Offsite training",
-  "position": "Specialist",
-  "note": "Budapest assignment",
-  "type": { "id": "01", "name": "Annual Leave" }
-},
-{
-  "id": "L-007",
-  "name": "Jim Halpert",
-  "department": "Sales",
-  "successor": "Dwight Schrute",
-  "startDate": "2026-04-20",
-  "endDate": "2026-04-24",
-  "reason": "Family trip",
-  "position": "Sales Rep",
-  "note": "Please don't let Dwight touch my desk",
-  "type": { "id": "01", "name": "Annual Leave" }
-},
-{
-  "id": "L-008",
-  "name": "Din Djarin",
-  "department": "Logistics",
-  "successor": "Bo-Katan",
-  "startDate": "2026-04-25",
-  "endDate": "2026-04-26",
-  "reason": "Vehicle maintenance",
-  "position": "Fleet Driver",
-  "note": "Razor Crest in the shop",
-  "type": { "id": "01", "name": "Annual Leave" }
-},
-{
-  "id": "L-009",
-  "name": "Ted Lasso",
-  "department": "HR",
-  "successor": "Beard",
-  "startDate": "2026-04-28",
-  "endDate": "2026-04-28",
-  "reason": "Mental health",
-  "position": "Coach",
-  "note": "Believe!",
-  "type": { "id": "02", "name": "Sick Leave" }
-},
-{
-  "id": "L-010",
-  "name": "Master Chief",
-  "department": "Security",
-  "successor": "Cortana",
-  "startDate": "2026-04-29",
-  "endDate": "2026-05-02",
-  "reason": "System Update",
-  "position": "Chief",
-  "note": "Finishing the fight",
-  "type": { "id": "01", "name": "Annual Leave" }
-}]
 
 const demoOffsiteData = [
   {
@@ -164,8 +46,36 @@ const demoOffsiteData = [
 
 export default function ApprovePage() {
   const router = useRouter()
-  const { isLoading } = useAuth()
-  const leave = demoLeaveData.length
+  const { user, isLoading } = useAuth()
+
+  const loggedInUserUuid = user?.uid || user?.id || ''
+  const departmentUuid = typeof user?.department === 'object' ? (user.department as { uuid?: string })?.uuid : undefined
+  const workLocationUuid = typeof user?.workLocation === 'object' ? (user.workLocation as { uuid?: string })?.uuid : undefined
+
+  const { data: leaveRequests = [] } = useQuery({
+    queryKey: ['leaves', 'approval', departmentUuid ?? null, workLocationUuid ?? null, loggedInUserUuid],
+    queryFn: () => fetchLeavesForApproval({
+      departmentUid: departmentUuid!,
+      workLocationUid: workLocationUuid!,
+      excludeUserUuid: loggedInUserUuid,
+    }),
+    enabled: !!departmentUuid && !!workLocationUuid && !!loggedInUserUuid,
+  })
+
+  const leaveTableData = useMemo(() => leaveRequests.map((r) => ({
+    id: r.id,
+    name: r.leaveUserName || r.createdBy || '',
+    position: r.jobTitle,
+    department: r.departmentNameEn || r.departmentNameLo,
+    reason: r.reason,
+    successor: r.successorNameEn || r.successorNameLo,
+    startDate: r.startDate,
+    endDate: r.endDate,
+    note: undefined as string | undefined,
+    type: r.policyName ? { name: r.policyName } : { name: r.type },
+    status: r.status,
+  })), [leaveRequests])
+
   const workOutSide = demoOffsiteData.length
   const [openConfirmDialog, setOpenConfirmDialog] = useState(false)
   const [confirmLeave, setConfirmLeave] = useState(false)
@@ -202,7 +112,7 @@ export default function ApprovePage() {
               <Palmtree className="h-3.5 w-3.5 text-chart-2" />
               leave
             </p>
-            <p className="text-lg font-bold text-foreground">{leave} list</p>
+            <p className="text-lg font-bold text-foreground">{leaveTableData.length} list</p>
           </CardContent>
         </Card>
         <Card className="border-chart-1/20 bg-chart-1/5">
@@ -238,7 +148,7 @@ export default function ApprovePage() {
           
           
           </div>
-          <LeaveTable data={demoLeaveData} />
+          <LeaveTable data={leaveTableData} />
         </TabsContent>
 
         <TabsContent value="offsite" className="mt-4">
