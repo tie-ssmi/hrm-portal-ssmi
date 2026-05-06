@@ -1,0 +1,43 @@
+{
+  "name": "SSMI HRM Portal",
+  "short_name": "SSMI HRM",
+  "description": "ລະບົບ HRM ຂອງ SSMI Laos",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#3b5998",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "lo",
+  "icons": [
+    {
+      "src": "/SSMI.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/SSMI.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "form_factor": "narrow",
+      "label": "SSMI HRM Dashboard"
+    },
+    {
+      "src": "/SSMI.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "form_factor": "wide",
+      "label": "SSMI HRM Portal"
+    }
+  ],
+  "categories": ["business", "productivity"]
+}

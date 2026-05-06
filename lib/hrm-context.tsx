@@ -5,7 +5,7 @@ import type { AttendanceRecord, HRMContextType, LeaveRequest, OffsiteRequest, Pr
 import { buildInitialLeaveApprovals, getRequiredLeaveApprovers, resolveLeaveRequestStatus } from '@/services/leave-approval'
 import { fetchAttendanceByUserThisMonth, formatAttendanceDocumentDate, updateAttendanceCheckInTime, updateAttendanceCheckOutTime } from '@/services/attendance'
 import { createLeaveRequest } from '@/services/leaves'
-import { fetchWorkLocationGeoFence } from '@/services/workLocations'
+import { fetchWorkLocationGeoFence, type WorkLocationFenceResult } from '@/services/workLocations'
 import { useAuth } from './auth-context'
 
 const HRMContext = createContext<HRMContextType | undefined>(undefined)
@@ -101,20 +101,32 @@ export function HRMProvider({ children }: { children: ReactNode }) {
   const [profileUpdateRequests, setProfileUpdateRequests] = useState<ProfileUpdateRequest[]>([])
   const [lateRecords] = useState<LateRecord[]>([])
   const [geoFence, setGeoFence] = useState<GeoFence | null>(null)
+  const [geoFenceStatus, setGeoFenceStatus] = useState<WorkLocationFenceResult['status'] | 'loading'>('loading')
 
   const workLocationUuid = typeof user?.workLocation === 'object'
-    ? ((user.workLocation as { uuid?: string; code?: string })?.uuid
+    ? ((user.workLocation as { uuid?: string; uid?: string; code?: string })?.uuid
+        || (user.workLocation as { uid?: string })?.uid
         || (user.workLocation as { code?: string })?.code)
     : typeof user?.workLocation === 'string'
       ? user.workLocation
       : undefined
 
   useEffect(() => {
-    if (!workLocationUuid) return
+    if (!workLocationUuid) {
+      setGeoFenceStatus('not_found')
+      return
+    }
     let isMounted = true
-    fetchWorkLocationGeoFence(workLocationUuid).then((fence) => {
-      if (isMounted && fence) setGeoFence(fence)
-    })
+    setGeoFenceStatus('loading')
+    fetchWorkLocationGeoFence(workLocationUuid)
+      .then((result) => {
+        if (!isMounted) return
+        setGeoFenceStatus(result.status)
+        if (result.status === 'found') setGeoFence(result.fence)
+      })
+      .catch(() => {
+        if (isMounted) setGeoFenceStatus('not_found')
+      })
     return () => { isMounted = false }
   }, [workLocationUuid])
 
@@ -390,6 +402,7 @@ export function HRMProvider({ children }: { children: ReactNode }) {
       totalFines,
       isWithinGeofence,
       distanceToOffice,
+      geoFenceStatus,
     }}>
       {children}
     </HRMContext.Provider>

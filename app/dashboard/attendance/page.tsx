@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { useHRM } from '@/lib/hrm-context'
 import {
@@ -40,9 +40,36 @@ type LocationState = {
   error?: string
 }
 
+// Isolated component — 1s interval only re-renders this, not the whole page
+const LiveClock = memo(function LiveClock() {
+  const [time, setTime] = useState<Date | null>(null)
+
+  useEffect(() => {
+    setTime(new Date())
+    const id = window.setInterval(() => setTime(new Date()), 1000)
+    return () => window.clearInterval(id)
+  }, [])
+
+  return (
+    <Card className="bg-primary text-primary-foreground">
+      <CardContent className="pt-6">
+        <div className="text-center">
+          <p className="text-sm opacity-80">ເວລາປະຈຸບັນ</p>
+          <p className="mt-1 text-4xl font-bold">
+            {time ? format(time, 'HH:mm:ss') : '--:--:--'}
+          </p>
+          <p className="mt-2 text-sm opacity-80">
+            {time ? format(time, 'EEEE, MMMM d, yyyy') : ''}
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  )
+})
+
 export default function AttendancePage() {
   const { user } = useAuth()
-  const { distanceToOffice } = useHRM()
+  const { distanceToOffice, geoFenceStatus } = useHRM()
 
   const { data: todayAttendance, isLoading: isLoadingHistory } = useTodayAttendance(user?.uuid)
   const { data: attendanceHistory = [] } = useAttendanceHistory(user?.uuid)
@@ -51,13 +78,6 @@ export default function AttendancePage() {
 
   const [location, setLocation] = useState<LocationState | null>(null)
   const [isLoadingLocation, setIsLoadingLocation] = useState(false)
-  const [currentTime, setCurrentTime] = useState<Date | null>(null)
-
-  useEffect(() => {
-    setCurrentTime(new Date())
-    const interval = window.setInterval(() => setCurrentTime(new Date()), 1000)
-    return () => window.clearInterval(interval)
-  }, [])
 
   const getLocation = useCallback(async (): Promise<LocationState | null> => {
     setIsLoadingLocation(true)
@@ -98,15 +118,23 @@ export default function AttendancePage() {
       toast.error('ບໍ່ສາມາດຮັບຂໍ້ມູນສະຖານທີ່. ກະລຸນາເປີດ GPS ແລະອະນຸຍາດການເຂົ້າເຖິງສະຖານທີ່.')
       return null
     }
+    // Skip distance check if office has no coordinates configured
+    if (geoFenceStatus === 'no_coordinates') return loc
+
     const dist = distanceToOffice(loc.lat, loc.lng)
-    if (dist !== null && dist > 50) {
+    if (dist === null) {
+      toast.error('ບໍ່ສາມາດໂຫຼດຂໍ້ມູນສະຖານທີ່ຫ້ອງການໄດ້. ກະລຸນາລອງໃໝ່.')
+      return null
+    }
+    if (dist > 50) {
       toast.error(`ທ່ານຢູ່ຫ່າງຈາກຫ້ອງການ ${dist} ແມັດ. ຕ້ອງຢູ່ພາຍໃນ 50 ແມັດ.`)
       return null
     }
     return loc
   }, [getLocation, distanceToOffice])
 
-  const handleCheckIn = useCallback(async () => {
+  // Merged handler — eliminates duplicate logic between checkIn / checkOut
+  const handleAttendance = useCallback(async (type: 'checkIn' | 'checkOut') => {
     if (!user) {
       toast.error('ບໍ່ເຫັນຂໍ້ມູນຜູ້ໃຊ້. ກະລຸນາເຂົ້າລະບົບອີກຄັ້ງ.')
       return
@@ -114,35 +142,33 @@ export default function AttendancePage() {
     try {
       const loc = await getValidatedLocation()
       if (!loc) return
-      await checkInMutation.mutateAsync({ user, location: { lat: loc.lat, lng: loc.lng } })
-      toast.success('ເຂົ້າການສຳເລັດແລ້ວ')
+      const payload = { user, location: { lat: loc.lat, lng: loc.lng } }
+      if (type === 'checkIn') {
+        await checkInMutation.mutateAsync(payload)
+        toast.success('ເຂົ້າການສຳເລັດແລ້ວ')
+      } else {
+        await checkOutMutation.mutateAsync(payload)
+        toast.success('ອອກຈາກການສຳເລັດແລ້ວ')
+      }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'ບໍ່ສາມາດດໍາເນີນການເຂົ້າການ. ກະລຸນາລອງໃໝ່.')
+      toast.error(error instanceof Error ? error.message : 'ເກີດຂໍ້ຜິດພາດ. ກະລຸນາລອງໃໝ່.')
     }
-  }, [user, getValidatedLocation, checkInMutation])
-
-  const handleCheckOut = useCallback(async () => {
-    if (!user) {
-      toast.error('ບໍ່ເຫັນຂໍ້ມູນຜູ້ໃຊ້. ກະລຸນາເຂົ້າລະບົບອີກຄັ້ງ.')
-      return
-    }
-    try {
-      const loc = await getValidatedLocation()
-      if (!loc) return
-      await checkOutMutation.mutateAsync({ user, location: { lat: loc.lat, lng: loc.lng } })
-      toast.success('ອອກຈາກການສຳເລັດແລ້ວ')
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'ບໍ່ສາມາດດໍາເນີນການອອກ. ກະລຸນາລອງໃໝ່.')
-    }
-  }, [user, getValidatedLocation, checkOutMutation])
+  }, [user, getValidatedLocation, checkInMutation, checkOutMutation])
 
   const officeDistance = useMemo(() => {
     if (!location || location.error) return null
     return distanceToOffice(location.lat, location.lng)
   }, [distanceToOffice, location])
 
-  const isWithinOffice = officeDistance !== null && officeDistance <= 50
+  // Memoized — only recalculates when location or officeDistance changes, not every 1s
+  const isWithinOffice = useMemo(() => {
+    if (!location || !!location.error) return true
+    if (geoFenceStatus === 'no_coordinates') return true  // no fence configured → allow
+    return officeDistance !== null && officeDistance <= 50
+  }, [location, officeDistance, geoFenceStatus])
 
+  // todayIso in deps prevents stale week boundary if app stays open across midnight
+  const todayIso = format(new Date(), 'yyyy-MM-dd')
   const weeklyHistory = useMemo(() => {
     const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 })
     const weekStartIso = format(weekStart, 'yyyy-MM-dd')
@@ -153,7 +179,7 @@ export default function AttendancePage() {
         return d >= weekStartIso && d <= weekEndIso
       })
       .sort((a, b) => b.date.localeCompare(a.date))
-  }, [attendanceHistory])
+  }, [attendanceHistory, todayIso])
 
   return (
     <div className="space-y-6">
@@ -162,19 +188,7 @@ export default function AttendancePage() {
         <p className="text-muted-foreground">ບັນທຶກການເຂົ້າຮ່ວມຂອງທ່ານດ້ວຍການຢັ້ງຢືນ GPS</p>
       </div>
 
-      <Card className="bg-primary text-primary-foreground">
-        <CardContent className="pt-6">
-          <div className="text-center">
-            <p className="text-sm opacity-80">ເວລາປະຈຸບັນ</p>
-            <p className="mt-1 text-4xl font-bold">
-              {currentTime ? format(currentTime, 'HH:mm:ss') : '--:--:--'}
-            </p>
-            <p className="mt-2 text-sm opacity-80">
-              {currentTime ? format(currentTime, 'EEEE, MMMM d, yyyy') : ''}
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      <LiveClock />
 
       <Card>
         <CardHeader className="pb-2">
@@ -202,11 +216,40 @@ export default function AttendancePage() {
           </div>
 
           {location && !location.error && (
-            <p className={`mt-2 text-xs ${officeDistance === null || officeDistance > 50 ? 'text-destructive' : 'text-muted-foreground'}`}>
-              ຄວາມແມ່ນຍໍາ GPS: {Math.round(location.accuracy)} ແມັດ
-              {` · ໄກຈາກຫ້ອງການ: ${officeDistance !== null ? `${officeDistance} ແມັດ${officeDistance > 50 ? ' (ໄກເກີນໄປ)' : ''}` : 'ບໍ່ສາມາດໂຫຼດຂໍ້ມູນສະຖານທີ່ຫ້ອງການໄດ້'}`}
-              my location is {location.lat.toFixed(4)}, {location.lng.toFixed(4)}  work location is {location.lat.toFixed(4)}, {location.lng.toFixed(4)}
-            </p>
+            <div className="mt-3 space-y-2">
+              {geoFenceStatus === 'loading' && (
+                <p className="text-xs text-muted-foreground">ກຳລັງໂຫຼດຂໍ້ມູນສະຖານທີ່ຫ້ອງການ...</p>
+              )}
+
+              {geoFenceStatus === 'no_coordinates' && (
+                <p className="text-xs text-amber-600">ຫ້ອງການຍັງບໍ່ໄດ້ຕັ້ງຄ່າພິກັດ GPS — ການກວດສອບໄລຍະຖືກຂ້າມ</p>
+              )}
+
+              {geoFenceStatus === 'not_found' && (
+                <p className="text-xs text-destructive">ບໍ່ພົບຂໍ້ມູນສະຖານທີ່ຫ້ອງການ</p>
+              )}
+
+              {geoFenceStatus === 'found' && officeDistance !== null && (
+                <>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">ໄກຈາກຫ້ອງການ</span>
+                    <span className={`font-semibold tabular-nums ${officeDistance > 50 ? 'text-destructive' : 'text-emerald-600'}`}>
+                      {officeDistance} / 50 ແມັດ
+                    </span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${officeDistance > 50 ? 'bg-destructive' : 'bg-emerald-500'}`}
+                      style={{ width: `${Math.max(Math.min((officeDistance / 50) * 100, 100), 4)}%` }}
+                    />
+                  </div>
+                </>
+              )}
+
+              <p className="text-xs text-muted-foreground">
+                ຄວາມແມ່ນຍໍາ GPS: {Math.round(location.accuracy)} ແມັດ
+              </p>
+            </div>
           )}
 
           {location?.error && (
@@ -259,7 +302,7 @@ export default function AttendancePage() {
         <Button
           size="lg"
           className="h-16 text-lg"
-          onClick={handleCheckIn}
+          onClick={() => handleAttendance('checkIn')}
           disabled={checkInMutation.isPending || !!todayAttendance?.checkIn || isLoadingHistory || !isWithinOffice}
         >
           {checkInMutation.isPending ? <Spinner className="mr-2" /> : <LogIn className="mr-2 h-5 w-5" />}
@@ -270,7 +313,7 @@ export default function AttendancePage() {
           size="lg"
           variant="outline"
           className="h-16 text-lg"
-          onClick={handleCheckOut}
+          onClick={() => handleAttendance('checkOut')}
           disabled={checkOutMutation.isPending || !todayAttendance?.checkIn || !!todayAttendance?.checkOut || !isWithinOffice}
         >
           {checkOutMutation.isPending ? <Spinner className="mr-2" /> : <LogOut className="mr-2 h-5 w-5" />}

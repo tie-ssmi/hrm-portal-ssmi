@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { AuthProvider } from '@/lib/auth-context'
 import { ThemeProvider } from '@/components/theme-provider'
 import { Toaster } from '@/components/ui/sonner'
+import { PWARegister } from '@/components/pwa-register'
 import '@/app/globals.css'
 
 export const metadata: Metadata = {
@@ -12,6 +13,12 @@ export const metadata: Metadata = {
   creator: 'SSMI Laos',
   generator: 'SSMI',
   metadataBase: new URL('https://hrm-ssmi.firebaseapp.com'),
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'SSMI HRM',
+  },
   openGraph: {
     title: 'ພະນັກງານ SSMILaos | Smart system HRM for Staff | web portal',
     description: 'ລະບົບ HRM ຂອງ SSMI Laos ຊ່ວຍພະນັກງານຈັດການການເຂົ້າວຽກ, ການລາພັກ, ການອະນຸມັດ ແລະ ຂໍ້ມູນສ່ວນຕົວ ໃນລະບົບດຽວຢ່າງປອດໄພ | SSMI Laos HRM web Portal for Staff',
@@ -50,6 +57,7 @@ export default function RootLayout({
           <AuthProvider>
             {children}
             <Toaster position="top-center" />
+            <PWARegister />
           </AuthProvider>
         </ThemeProvider>
       </body>

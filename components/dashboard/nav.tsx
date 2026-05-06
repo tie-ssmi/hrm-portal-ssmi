@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 //Themes
 import TheThemes from '@/components/themes'
+import { PWAInstallButton } from '@/components/pwa-install-button'
 
 import {
   LayoutDashboard,
@@ -130,6 +131,11 @@ const profileImage = user?.profileImage || user?.photo3x4Url || user?.avatar || 
           )
         })}
       </nav>
+
+      {/* Install App */}
+      <div className="px-3 pb-2">
+        <PWAInstallButton className="w-full justify-start gap-3" />
+      </div>
 
       {/* Logout */}
       <div className="px-3 py-4 border-t border-sidebar-border">

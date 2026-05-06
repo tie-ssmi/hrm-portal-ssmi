@@ -252,4 +252,5 @@ export interface HRMContextType {
   totalFines: number
   isWithinGeofence: (lat: number, lng: number) => boolean
   distanceToOffice: (lat: number, lng: number) => number | null
+  geoFenceStatus: 'loading' | 'found' | 'no_coordinates' | 'not_found'
 }

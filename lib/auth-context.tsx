@@ -78,7 +78,7 @@ async function firebaseUserToEmployee(firebaseUser: FirebaseUser): Promise<Emplo
       phone: employeeData.tel || baseEmployee.phone,
       position: employeeData.jobTitle || baseEmployee.position,
       department: employeeData.department || baseEmployee.department,
-      workLocation: employeeData.workLocation ,
+      workLocation: employeeData.workLocation,
     }
   }
   
