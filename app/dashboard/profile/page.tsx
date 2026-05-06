@@ -17,8 +17,8 @@ import { FieldGroup, Field, FieldLabel } from '@/components/ui/field'
 import { Spinner } from '@/components/ui/spinner'
 // NumberFormatter
 import { NumberFormatter } from '@/components/formatNumber'
-//CameraUpload
-import CameraUpload from '@/components/cameraUpload'
+//FileUpload
+import FileUpload from '@/components/cameraUpload'
 import {
   User,
   Mail,
@@ -50,6 +50,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from '@/components/ui/dialog'
 
 // Firestore may store reference fields as objects { nameLo, uuid, code }
@@ -160,6 +161,7 @@ export default function ProfilePage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showSalary, setShowSalary] = useState(false)
   const [uploadedAvatarUrl, setUploadedAvatarUrl] = useState<string | null>(null)
+  const [isImageDialogOpen, setIsImageDialogOpen] = useState(false)
 
   const { data: employeeData, isLoading: isEmployeeLoading } = useQuery({
     queryKey: ['employee', firebaseUser?.uid],
@@ -187,7 +189,7 @@ export default function ProfilePage() {
     || resolveProfileImage(employeeData?.profileImage, firebaseUser?.uid)
     || employeeData?.photo3x4Url
     || profileUser?.avatar
-    || (toStr(profileUser?.gender).toLowerCase() === 'male' ? '/info/ma.jpg' : '/info/woman.jpg')
+    || (toStr(profileUser?.gender).toLowerCase() === 'male' ? '/info/man.jpg' : '/info/woman.jpg')
 
   const handleEditClick = (field: string, currentValue: string) => {
     setEditField(field)
@@ -265,21 +267,40 @@ export default function ProfilePage() {
         <CardContent className="pt-6">
           <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
             <div className="relative w-24 h-24">
-              <Avatar className="w-24 h-24">
-                <AvatarImage
-                  src={avatarSrc}
-                  alt={`${profileUser?.firstNameEn || profileUser?.firstName} ${profileUser?.lastNameEn || profileUser?.lastName}`}
-                  className="object-scale-down"
-                />
-                <AvatarFallback className="text-2xl bg-primary text-primary-foreground">{initials}</AvatarFallback>
-              </Avatar>
+              <Dialog open={isImageDialogOpen} onOpenChange={setIsImageDialogOpen}>
+                <DialogTrigger asChild>
+                  <button
+                    type="button"
+                    className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    aria-label="View profile image"
+                  >
+                    <Avatar className="w-24 h-24 cursor-zoom-in">
+                      <AvatarImage
+                        src={avatarSrc}
+                        alt={`${profileUser?.firstNameEn || profileUser?.firstName} ${profileUser?.lastNameEn || profileUser?.lastName}`}
+                        className="object-cover"
+                        
+                      />
+                      <AvatarFallback className="text-2xl bg-primary text-primary-foreground">{initials}</AvatarFallback>
+                    </Avatar>
+                  </button>
+                </DialogTrigger>
+                <DialogContent className="max-w-md p-2 max-h-[80vh]">
+                  <DialogTitle className="sr-only">ຮູບໂປຣໄຟລ໌</DialogTitle>
+                  <img
+                    src={avatarSrc}
+                    alt={`${profileUser?.firstNameEn || profileUser?.firstName} ${profileUser?.lastNameEn || profileUser?.lastName}`}
+                    className="h-auto w-full rounded-md object-contain"
+                  />
+                </DialogContent>
+              </Dialog>
               <div className="absolute -bottom-1 -right-1 z-20">
-                <CameraUpload
+                <FileUpload
                   uid={firebaseUser?.uid || profileUser.id || ''}
                   className="h-9 w-9 border-2 border-background bg-black/70"
                   onUploaded={(url) => {
                     setUploadedAvatarUrl(url)
-                    toast.success('Profile photo updated')
+                    toast.success('ຮູບໂປຣໄຟລ໌ຖືກອັບເດດແລ້ວ')
                   }}
                 />
               </div>
@@ -297,7 +318,7 @@ export default function ProfilePage() {
               <p className="text-sm text-muted-foreground mt-1">{toStr(profileUser?.workLocation || profileUser?.department)}</p>
               <div className="flex flex-wrap gap-2 mt-3 justify-center sm:justify-start">
                 <Badge variant="secondary">{toStr(profileUser?.employeeId)}</Badge>
-                <Badge variant="outline">Active</Badge>
+                {/* <Badge variant="outline">Active</Badge> */}
                 {profileUser?.employeeType && <Badge variant="outline">{toStr(profileUser.employeeType)}</Badge>}
               </div>
             </div>

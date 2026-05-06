@@ -1,12 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
-import { useTheme } from 'next-themes'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback,AvatarImage } from '@/components/ui/avatar'
 import { Separator } from '@/components/ui/separator'
 import {
   Dialog,
@@ -30,7 +29,8 @@ import {
   Clock,
   FileText,
   History,
-  LogOut
+  LogOut,Newspaper, 
+  FileExclamationPoint
 } from 'lucide-react'
 
 function formatDepartment(value: unknown): string {
@@ -50,24 +50,22 @@ const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/dashboard/profile', label: 'My Profile', icon: User },
   { href: '/dashboard/attendance', label: 'Check-In/Out', icon: Clock },
-  { href: '/dashboard/forms', label: 'Request Forms', icon: FileText },
+  { href: '/dashboard/news', label: 'News', icon: Newspaper  },
+
+  { href: '/dashboard/request', label: 'Request Forms', icon: FileText },
+  { href: '/dashboard/approv', label: 'Approval Forms', icon: FileExclamationPoint  },
   { href: '/dashboard/history', label: 'History', icon: History },
 ]
 
 export function DashboardNav() {
-  const [mounted, setMounted] = useState(false)
   const pathname = usePathname()
   const router = useRouter()
   const { user, logout } = useAuth()
-  const { theme } = useTheme()
-
-  useEffect(() => {
-    setMounted(true)
-  }, [])
 
   const initials = user 
     ? `${user.firstName[0]}${user.lastName[0]}`.toUpperCase()
     : 'U'
+const profileImage = user?.profileImage || user?.photo3x4Url || user?.avatar || (String(user?.gender).toLowerCase() === 'male' ? '/info/man.jpg' : '/info/woman.jpg')
 
  
 
@@ -75,12 +73,8 @@ export function DashboardNav() {
     <div className="flex flex-col h-full bg-sidebar text-sidebar-foreground">
       {/* Logo */}
       <div className="flex items-center gap-3 px-6 h-16 border-b border-sidebar-border">
-        <div className="flex items-center justify-center w-9 h-9 rounded-lg  text-sidebar-primary-foreground">
-          {mounted && theme === 'light' ? (
-            <img src="/SSMI.png" alt="SSMI Logo" className="w-10 h-10" />
-          ) : (
-            <img src="/SSMI2.png" alt="SSMI Logo" className="w-10 h-10" />
-          )}
+        <div className="flex items-center justify-center w-9 h-9 rounded-lg text-sidebar-primary-foreground overflow-hidden">
+          <img src="/SSMI.svg" alt="SSMI Logo" className="w-full h-full object-contain" />
         </div>
         <span className="font-semibold">HRM Portal</span>
         <div className="ml-auto">
@@ -91,7 +85,9 @@ export function DashboardNav() {
       {/* User info */}
       <div className="px-6 py-4">
         <div className="flex items-center gap-3">
-          <Avatar className="w-10 h-10">
+          <Avatar  className="w-10 h-10">
+                      <AvatarImage src={profileImage} alt="@shadcn" />
+
             <AvatarFallback className="bg-sidebar-accent text-sidebar-accent-foreground">
               {initials}
             </AvatarFallback>

@@ -1,5 +1,4 @@
 @import 'tailwindcss';
-@import 'tw-animate-css';
 
 @custom-variant dark (&:is(.dark *));
 :root {
@@ -18,7 +17,7 @@
   --secondary: #fce896;
   --secondary-foreground: #114a92;
   --muted: #f5e6a3;
-  --muted-foreground: #B32725;
+  --muted-foreground: #9A2422;
   --accent: #114a92;
   --accent-foreground: #ffffff;
   --destructive: #B32725;
@@ -87,7 +86,7 @@
 }
 
 @theme inline {
-  --font-sans: var(--font-noto-sans-lao), var(--font-inter), sans-serif;
+  --font-sans: 'Noto Sans Lao', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'Geist Mono', 'Geist Mono Fallback';
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -133,11 +132,14 @@
     -webkit-tap-highlight-color: transparent;
   }
   body {
-    font-family: var(--font-noto-sans-lao), var(--font-inter), sans-serif;
+    font-family: 'Noto Sans Lao', system-ui, -apple-system, 'Segoe UI', sans-serif;
     @apply bg-background text-foreground;
     -webkit-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
+  }
+  button, input, textarea, select,p, a ,span {
+    font-family: 'Noto Sans Lao', system-ui, -apple-system, 'Segoe UI', sans-serif;
   }
   /* iOS touch fixes */
   a, button, [role="button"], [onclick] {

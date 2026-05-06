@@ -105,7 +105,7 @@ export default function CameraUpload({ uid, folder, onUploaded, className }: Cam
         ref={cameraInputRef}
         type="file"
         accept="image/*"
-        capture="environment"
+        // capture="environment"
         className="hidden"
         onChange={(e) => handleSelect(e.target.files?.[0])}
       />

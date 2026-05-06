@@ -1,32 +1,47 @@
 'use client'
 
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
-import { 
-  signInWithEmailAndPassword, 
-  signInWithPopup, 
+import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from 'react'
+import {
+  EmailAuthProvider,
+  signInWithEmailAndPassword,
   signOut,
-  GoogleAuthProvider,
+  linkWithCredential,
   onAuthStateChanged,
   type User as FirebaseUser
 } from 'firebase/auth'
-import { auth } from './firebase'
-import { fetchEmployeeByUid } from './employees'
-import type { Employee } from './types'
-
-interface AuthContextType {
-  user: Employee | null
-  firebaseUser: FirebaseUser | null
-  isAuthenticated: boolean
-  isLoading: boolean
-  login: (email: string, password: string) => Promise<boolean>
-  loginWithGoogle: () => Promise<boolean>
-  logout: () => void
-  updateProfile: (updates: Partial<Employee>) => void
-}
+import { auth } from './firebase-auth'
+import type { AuthCredential } from 'firebase/auth'
+import type { AuthContextType, Employee } from './types'
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-const googleProvider = new GoogleAuthProvider()
+async function resolveEmployeeForFirebaseUser(firebaseUser: FirebaseUser): Promise<Partial<Employee> | null> {
+  const { fetchEmployeeByEmail, fetchEmployeeByUid, updateEmployeeUidByEmail } = await import('./employees')
+  let employeeData = await fetchEmployeeByUid(firebaseUser.uid)
+
+  if (!employeeData && firebaseUser.email) {
+    employeeData = await fetchEmployeeByEmail(firebaseUser.email)
+
+    if (employeeData) {
+      const storedUid = employeeData.uid
+      if (storedUid !== firebaseUser.uid) {
+        try {
+          await updateEmployeeUidByEmail(firebaseUser.email, firebaseUser.uid)
+        } catch (error) {
+          console.error('Error syncing employee uid:', error)
+        }
+      }
+
+      employeeData = {
+        ...employeeData,
+        uid: firebaseUser.uid,
+        email: employeeData.email || firebaseUser.email,
+      }
+    }
+  }
+
+  return employeeData
+}
 
 // Convert Firebase user to Employee format
 async function firebaseUserToEmployee(firebaseUser: FirebaseUser): Promise<Employee> {
@@ -34,10 +49,11 @@ async function firebaseUserToEmployee(firebaseUser: FirebaseUser): Promise<Emplo
   const nameParts = displayName.split(' ')
   
   // Fetch extended employee data from Firestore
-  const employeeData = await fetchEmployeeByUid(firebaseUser.uid)
+  const employeeData = await resolveEmployeeForFirebaseUser(firebaseUser)
   
   const baseEmployee: Employee = {
     id: firebaseUser.uid,
+    uid: firebaseUser.uid,
     email: firebaseUser.email || '',
     firstName: nameParts[0] || firebaseUser.email?.split('@')[0] || 'User',
     lastName: nameParts.slice(1).join(' ') || '',
@@ -54,22 +70,35 @@ async function firebaseUserToEmployee(firebaseUser: FirebaseUser): Promise<Emplo
     return {
       ...baseEmployee,
       ...employeeData,
+      uid: employeeData.uid || firebaseUser.uid,
+      uuid: employeeData.uuid || employeeData.uid || firebaseUser.uid,
       // Override with Firestore data where available
       firstName: employeeData.firstNameEn || baseEmployee.firstName,
       lastName: employeeData.lastNameEn || baseEmployee.lastName,
       phone: employeeData.tel || baseEmployee.phone,
       position: employeeData.jobTitle || baseEmployee.position,
-      department: employeeData.workLocation || baseEmployee.department,
+      department: employeeData.department || baseEmployee.department,
+      workLocation: employeeData.workLocation ,
     }
   }
   
-  return baseEmployee
+  return {
+    ...baseEmployee,
+    uuid: firebaseUser.uid,
+  }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Employee | null>(null)
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const pendingGoogleCredentialRef = useRef<AuthCredential | null>(null)
+  const pendingGoogleEmailRef = useRef<string | null>(null)
+
+  const clearPendingGoogleLink = useCallback(() => {
+    pendingGoogleCredentialRef.current = null
+    pendingGoogleEmailRef.current = null
+  }, [])
 
   // Listen for auth state changes
   useEffect(() => {
@@ -88,6 +117,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => unsubscribe()
   }, [])
 
+  const completeGoogleLink = useCallback(async (email: string, password: string, credential: AuthCredential) => {
+    await signInWithEmailAndPassword(auth, email, password)
+
+    if (!auth.currentUser) {
+      return { success: false, error: 'Unable to verify account. Please try again.' }
+    }
+
+    await linkWithCredential(auth.currentUser, credential)
+
+    const employeeData = await resolveEmployeeForFirebaseUser(auth.currentUser)
+    if (!employeeData) {
+      await signOut(auth)
+      return {
+        success: false,
+        error: 'This Google account is not allowed. Please contact HR.',
+      }
+    }
+
+    return { success: true }
+  }, [])
+
   const login = useCallback(async (email: string, password: string): Promise<boolean> => {
     setIsLoading(true)
     try {
@@ -100,25 +150,167 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const loginWithGoogle = useCallback(async (): Promise<boolean> => {
+  const loginWithGoogle = useCallback(async (linkPassword?: string): Promise<{
+    success: boolean
+    error?: string
+    requiresPasswordLink?: boolean
+    requiresPasswordSetup?: boolean
+    email?: string
+  }> => {
     setIsLoading(true)
     try {
-      await signInWithPopup(auth, googleProvider)
-      return true
-    } catch (error) {
+      if (linkPassword && pendingGoogleCredentialRef.current && pendingGoogleEmailRef.current) {
+        try {
+          const linkResult = await completeGoogleLink(
+            pendingGoogleEmailRef.current,
+            linkPassword,
+            pendingGoogleCredentialRef.current
+          )
+
+          if (linkResult.success) {
+            clearPendingGoogleLink()
+          } else {
+            setIsLoading(false)
+          }
+
+          return linkResult
+        } catch (linkError: any) {
+          console.error('Google link error:', linkError)
+          setIsLoading(false)
+          if (linkError?.code === 'auth/wrong-password' || linkError?.code === 'auth/invalid-credential') {
+            return { success: false, error: 'Incorrect password. Please try again.' }
+          }
+          return { success: false, error: 'Unable to link Google account. Please try again.' }
+        }
+      }
+
+      const { GoogleAuthProvider, signInWithPopup } = await import('firebase/auth')
+      const googleProvider = new GoogleAuthProvider()
+      const result = await signInWithPopup(auth, googleProvider)
+      const employeeData = await resolveEmployeeForFirebaseUser(result.user)
+
+      if (!employeeData) {
+        clearPendingGoogleLink()
+        await signOut(auth)
+        setIsLoading(false)
+        return {
+          success: false,
+          error: 'This Google account is not allowed. Please contact HR.',
+        }
+      }
+
+      const hasPasswordProvider = result.user.providerData.some(
+        (provider) => provider.providerId === 'password'
+      )
+
+      if (!hasPasswordProvider && result.user.email) {
+        clearPendingGoogleLink()
+        setIsLoading(false)
+        return {
+          success: false,
+          requiresPasswordSetup: true,
+          email: result.user.email,
+          error: 'Set a password to enable email and password login for this account.',
+        }
+      }
+
+      clearPendingGoogleLink()
+      return { success: true }
+    } catch (error: any) {
+      if (error?.code === 'auth/popup-closed-by-user') {
+        setIsLoading(false)
+        return { success: false }
+      }
+
+      if (error?.code === 'auth/account-exists-with-different-credential') {
+        const { GoogleAuthProvider } = await import('firebase/auth')
+        const email = error?.customData?.email as string | undefined
+        const pendingCredential = GoogleAuthProvider.credentialFromError(error)
+
+        if (!email || !pendingCredential) {
+          clearPendingGoogleLink()
+          setIsLoading(false)
+          return { success: false, error: 'Unable to link this Google account. Please contact HR.' }
+        }
+
+        pendingGoogleCredentialRef.current = pendingCredential
+        pendingGoogleEmailRef.current = email
+
+        if (!linkPassword) {
+          setIsLoading(false)
+          return {
+            success: false,
+            requiresPasswordLink: true,
+            email,
+            error: 'Please enter your account password to link Google sign-in.',
+          }
+        }
+
+        try {
+          const linkResult = await completeGoogleLink(email, linkPassword, pendingCredential)
+
+          if (!linkResult.success) {
+            setIsLoading(false)
+            return linkResult
+          }
+
+          clearPendingGoogleLink()
+          return linkResult
+        } catch (linkError: any) {
+          console.error('Google link error:', linkError)
+          setIsLoading(false)
+          if (linkError?.code === 'auth/wrong-password' || linkError?.code === 'auth/invalid-credential') {
+            return { success: false, error: 'Incorrect password. Please try again.' }
+          }
+          return { success: false, error: 'Unable to link Google account. Please try again.' }
+        }
+      }
+
       console.error('Google login error:', error)
+      clearPendingGoogleLink()
       setIsLoading(false)
-      return false
+      return { success: false, error: 'Google sign-in failed. Please try again.' }
+    }
+  }, [clearPendingGoogleLink, completeGoogleLink])
+
+  const setupPasswordForCurrentUser = useCallback(async (password: string): Promise<{ success: boolean; error?: string }> => {
+    setIsLoading(true)
+
+    try {
+      if (!auth.currentUser?.email) {
+        setIsLoading(false)
+        return { success: false, error: 'No authenticated Google account is available for password setup.' }
+      }
+
+      const credential = EmailAuthProvider.credential(auth.currentUser.email, password)
+      await linkWithCredential(auth.currentUser, credential)
+      setIsLoading(false)
+
+      return { success: true }
+    } catch (error: any) {
+      console.error('Password setup error:', error)
+      setIsLoading(false)
+
+      if (error?.code === 'auth/provider-already-linked') {
+        return { success: true }
+      }
+
+      if (error?.code === 'auth/weak-password') {
+        return { success: false, error: 'Password must be at least 6 characters.' }
+      }
+
+      return { success: false, error: 'Unable to set password for this account. Please try again.' }
     }
   }, [])
 
   const logout = useCallback(async () => {
     try {
+      clearPendingGoogleLink()
       await signOut(auth)
     } catch (error) {
       console.error('Logout error:', error)
     }
-  }, [])
+  }, [clearPendingGoogleLink])
 
   const updateProfile = useCallback((updates: Partial<Employee>) => {
     setUser(prev => prev ? { ...prev, ...updates } : null)
@@ -132,6 +324,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isLoading,
       login,
       loginWithGoogle,
+      setupPasswordForCurrentUser,
       logout,
       updateProfile
     }}>

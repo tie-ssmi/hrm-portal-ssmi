@@ -32,7 +32,7 @@ export function resolveLeaveRequestStatus(approvals?: LeaveApprovalStep[]): Leav
 
 export function getLeaveApproverRuleText(duration?: number | null): string {
   if (duration !== null && duration !== undefined && duration >= 3) {
-    return 'Approvers: Head of Department, HR, and Manager'
+    return 'ຜູ້ອານຸມັດ: ຫົວໜ້າພາແນກ, ບໍລິຫານ ບຸກຄະລາກອນ, ແລະ ຜູ້ຈັດການ'
   }
-  return 'Approvers: Head of Department and HR'
+  return 'ຜູ້ອານຸມັດ: ຫົວໜ້າພາແນກ ແລະ ບໍລິຫານ ບຸກຄະລາກອນ'
 }
