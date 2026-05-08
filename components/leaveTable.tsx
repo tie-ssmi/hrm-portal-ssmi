@@ -11,11 +11,13 @@ import {
 	TableRow,
 } from '@/components/ui/table'
 import { Card, CardContent } from '@/components/ui/card'
-import { CalendarRange, UserRound } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { CalendarRange, UserRound, CheckCircle, XCircle, Eye } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import type { LeaveApprovalStep } from '@/lib/types'
 
 type LeaveTableStatus = 'pending' | 'approved' | 'rejected'
-
+type LeaveApproval=[{ decision?: string , role?: string,reviewedAt?: string,reviewedBy?: string }]
 export type LeaveTableItem = {
 	id: string
 	name: string
@@ -26,28 +28,35 @@ export type LeaveTableItem = {
 	successor?: string
 	startDate: string
 	endDate: string
+	duration?: number
 	type?: {
 		id?: string
 		name?: string
 	}
 	status?: LeaveTableStatus
+	approvals?: LeaveApprovalStep[]
 }
 
 type LeaveTableProps = {
 	data: LeaveTableItem[]
 	onViewDetail?: (item: LeaveTableItem) => void
 	onApprove?: (item: LeaveTableItem) => void
+	onReject?: (item: LeaveTableItem) => void
 	className?: string
 }
 
-function statusLabel(status?: LeaveTableStatus) {
+function statusLabel(status?: LeaveTableStatus ,approved?:LeaveApproval) {
+	const depApproval = approved?.find(a => a.role === 'departmentHead')?.decision === 'approved'
+	const hrApproval = approved?.find(a => a.role === 'hr')?.decision === 'approved'
+	const managerApproval = approved?.find(a => a.role === 'manager')?.decision === 'approved'
+	
 	switch (status) {
 		case 'approved':
 			return 'ອະນຸມັດແລ້ວ'
 		case 'rejected':
 			return 'ປະຕິເສດ'
 		default:
-			return 'ລໍຖ້າອະນຸມັດ'
+			return 'ລໍຖ້າອະນຸມັດ ' + (!depApproval ? ' ' : !hrApproval ? '(HR)' : approved.length>0 && !managerApproval ? '(COO)' : '')
 	}
 }
 
@@ -57,7 +66,7 @@ function statusVariant(status?: LeaveTableStatus): 'default' | 'destructive' | '
 	return 'secondary'
 }
 
-export default function LeaveTable({ data, onViewDetail, onApprove, className }: LeaveTableProps) {
+export default function LeaveTable({ data, onViewDetail, onApprove, onReject, className }: LeaveTableProps) {
 	const router = useRouter()
 
 	const handleViewDetail = (item: LeaveTableItem) => {
@@ -98,7 +107,7 @@ export default function LeaveTable({ data, onViewDetail, onApprove, className }:
 			<CardContent className="p-0">
 				<div className="space-y-3 p-3 md:hidden">
 					{data.map((item, index) => {
-						const canApprove = item.status !== 'approved' && item.status !== 'rejected'
+						const canApprove = item.approvals?.[0]?.decision !== 'approved' && item.approvals?.[0]?.decision !== 'rejected' && item.status !== 'rejected'&& item.status !== 'approved'
 
 						return (
 							<Card key={item.id} className="border bg-background">
@@ -144,13 +153,29 @@ export default function LeaveTable({ data, onViewDetail, onApprove, className }:
 										<span className="font-medium text-foreground">{item.successor || '-'}</span>
 									</div>
 
-									<div className="grid grid-cols-2 gap-2 pt-1">
-										<Button type="button" variant="outline" size="sm" onClick={() => handleViewDetail(item)}>
-											ລາຍລະອຽດ
+									<div className="flex items-center gap-2 pt-1">
+										<Button type="button" variant="outline" size="sm" className="flex-1 gap-1.5" onClick={() => handleViewDetail(item)}>
+											<Eye className="h-3.5 w-3.5" /> ລາຍລະອຽດ
 										</Button>
-										<Button type="button" size="sm" onClick={() => onApprove ? onApprove(item) : handleViewDetail(item)} disabled={!canApprove}>
-											{canApprove ? 'ອະນຸມັດ' : 'ສໍາເລັດ'}
-										</Button>
+										{canApprove ? (
+											<>
+												<Button type="button" size="sm" className="flex-1 gap-1.5 "
+													onClick={() => onApprove ? onApprove(item) : handleViewDetail(item)}>
+													<CheckCircle className="h-3.5 w-3.5" /> ອະນຸມັດ
+												</Button>
+												{onReject && (
+													<Button type="button" size="sm" variant="destructive" className="flex-1 gap-1.5 "
+														onClick={() => onReject(item)}>
+														<XCircle className="h-3.5 w-3.5" /> ປະຕິເສດ
+													</Button>
+												)}
+											</>
+										) : (
+											<Button type="button" size="sm" className="flex-1 gap-1.5 "
+												onClick={() => handleViewDetail(item)} disabled>
+													<CheckCircle className="h-3.5 w-3.5 text-green-500" /> ອະນຸມັດແລ້ວ
+												</Button>
+										)}
 									</div>
 								</CardContent>
 							</Card>
@@ -178,7 +203,7 @@ export default function LeaveTable({ data, onViewDetail, onApprove, className }:
 
 						<TableBody>
 							{data.map((item, index) => {
-								const canApprove = item?.approvals?.decision !== 'approved' && item?.approvals?.decision !== 'rejected'
+								const canApprove = item.approvals?.[0]?.decision !== 'approved' && item.approvals?.[0]?.decision !== 'rejected' && item.status !== 'rejected' && item.status !== 'approved'
 
 								return (
 									<TableRow key={item.id} className="align-top" onClick={() => handleViewDetail(item)}>
@@ -217,14 +242,14 @@ export default function LeaveTable({ data, onViewDetail, onApprove, className }:
 												{item.endDate}
 											</div>
 										</TableCell>
-										<TableCell className="px-4 py-3">
-											<p className=" whitespace-normal break-words text-foreground leading-6">
-												3 ວັນ
-											</p>
+										<TableCell className="px-4 py-3 text-foreground">
+											{item.duration != null
+												? item.duration === 0.5 ? '0.5 ວັນ' : `${item.duration} ວັນ`
+												: '-'}
 										</TableCell>
 
 										<TableCell className="px-4 py-3">
-											<Badge variant={statusVariant(item.status)}>{statusLabel(item.status)}</Badge>
+											<Badge variant={statusVariant(item.status)}>{statusLabel(item.status, item.approvals)} </Badge> 
 										</TableCell>
 
 										<TableCell className="px-4 py-3">
@@ -234,7 +259,7 @@ export default function LeaveTable({ data, onViewDetail, onApprove, className }:
 													variant="outline"
 													size="sm"
 													className="min-w-[84px]"
-													onClick={() => handleViewDetail(item)}
+													onClick={(e) => { e.stopPropagation(); handleViewDetail(item) }}
 												>
 													ລາຍລະອຽດ
 												</Button>
@@ -245,7 +270,7 @@ export default function LeaveTable({ data, onViewDetail, onApprove, className }:
 													onClick={(e) => { e.stopPropagation(); onApprove ? onApprove(item) : handleViewDetail(item) }}
 													disabled={!canApprove}
 												>
-													{canApprove ? 'ອະນຸມັດ' : 'ສໍາເລັດ'}
+													{canApprove ? 'ອະນຸມັດ' : 'ອະນຸມັດແລ້ວ'}
 												</Button>
 											</div>
 										</TableCell>

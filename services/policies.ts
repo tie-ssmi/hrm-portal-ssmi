@@ -82,6 +82,10 @@ function toPolicyRecord(id: string, data: Record<string, unknown>): PolicyRecord
   const parsedType = parsePolicyType(data)
   const requestType = parsedType ?? name ?? businessId
 
+  const docReq = data.documentRequired
+  const documentRequired: 'yes' | 'option' | 'no' | undefined =
+    docReq === 'yes' || docReq === 'option' || docReq === 'no' ? docReq : undefined
+
   return {
     id: businessId,
     uuid: id,
@@ -94,6 +98,7 @@ function toPolicyRecord(id: string, data: Record<string, unknown>): PolicyRecord
     limitType: typeof data.limitType === 'string' ? data.limitType : undefined,
     requestType,
     leavePolicy: parseLeavePolicy(data),
+    documentRequired,
   }
 }
 

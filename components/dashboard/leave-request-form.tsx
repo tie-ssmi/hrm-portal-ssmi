@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { useHRM } from '@/lib/hrm-context'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -15,7 +15,7 @@ import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Calendar as CalendarIcon, Send, Clock, CheckCircle, XCircle,
-  Sun, Sunset, FileText, Users, ArrowRight, User
+  Sun, Sunset, FileText, Users, ArrowRight, User, Upload, Timer, X
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { format, isWeekend } from 'date-fns'
@@ -26,6 +26,8 @@ import { fetchPoliciesForGender } from '@/services/policies'
 import { getEmployees } from '@/services/employees'
 import { useQuery } from '@tanstack/react-query'
 import { Combobox } from '@/components/ui/combobox'
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { storage } from '@/lib/firebase'
 
 type Period = 'morning' | 'afternoon'
 type LeaveTypeOption = {
@@ -35,7 +37,10 @@ type LeaveTypeOption = {
   policyId: string
   policyName: string | undefined
   label: string
+  documentRequired?: 'yes' | 'option' | 'no'
 }
+
+type DocUploadChoice = 'now' | 'later' | 'skip' | null
 
 function calcDuration(startDate?: Date, startPeriod: Period = 'morning', endDate?: Date, endPeriod: Period = 'afternoon'): number | null {
   if (!startDate || !endDate) return null
@@ -132,7 +137,8 @@ export default function LeaveRequestForm() {
   const [endPeriod, setEndPeriod] = useState<Period>('afternoon')
   const [leaveReason, setLeaveReason] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [selectedLeave, setSelectedLeave] = useState<typeof myCurrentLeaveRequests[number] | null>(null)
+  const [docUploadChoice, setDocUploadChoice] = useState<DocUploadChoice>(null)
+  const [docFile, setDocFile] = useState<File | null>(null)
 
   const annualRemaining = leaveBalance.annual - leaveBalance.annualUsed
   const sickRemaining = leaveBalance.sick - leaveBalance.sickUsed
@@ -159,6 +165,9 @@ export default function LeaveRequestForm() {
     queryFn: () => fetchLeavesByUserUuidFromToday(loggedInUserUuid),
     enabled: !!loggedInUserUuid,
   })
+
+  // Declared after myCurrentLeaveRequests so typeof resolves correctly
+  const [selectedLeave, setSelectedLeave] = useState<typeof myCurrentLeaveRequests[number] | null>(null)
 
   const { data: employeesData = [] } = useQuery({
     queryKey: ['employees', departmentUuid ?? null],
@@ -192,9 +201,9 @@ export default function LeaveRequestForm() {
         seen.add(value)
         const baseLabel = p.name?.trim() || p.requestType
         const limitLabel = formatPolicyLimit(p.limitDay, p.limitType)
-        return { value, requestType: p.requestType, policyUuid: p.uuid, policyId: p.id, policyName: p.name, label: limitLabel ? `${baseLabel} (${limitLabel})` : baseLabel }
+        return { value, requestType: p.requestType, policyUuid: p.uuid, policyId: p.id, policyName: p.name, label: limitLabel ? `${baseLabel} (${limitLabel})` : baseLabel, documentRequired: p.documentRequired }
       })
-      .filter((o): o is LeaveTypeOption => o !== null)
+      .filter((o) => o !== null) as LeaveTypeOption[]
     return filtered.length > 0 ? filtered : fallback
   }, [annualRemaining, leaveBalance.annualUsed, leaveBalance.personalUsed, leaveBalance.sickUsed, personalRemaining, policyRecords, sickRemaining])
 
@@ -203,10 +212,26 @@ export default function LeaveRequestForm() {
     [leaveTypeOptions, selectedPolicyValue]
   )
 
+  const documentRequired = useMemo(
+    () => selectedPolicy?.documentRequired ?? 'no',
+    [selectedPolicy]
+  )
+
   useEffect(() => {
-    if (!selectedPolicy || selectedPolicy.value === selectedPolicyValue) return
-    setSelectedPolicyValue(selectedPolicy.value)
-  }, [selectedPolicy, selectedPolicyValue])
+    setDocUploadChoice(null)
+    setDocFile(null)
+  }, [selectedPolicyValue])
+
+  const prevOptionsRef = useRef<string>('')
+  useEffect(() => {
+    const firstValue = leaveTypeOptions[0]?.value
+    if (!firstValue) return
+    const optionsKey = leaveTypeOptions.map((o) => o.value).join(',')
+    if (optionsKey === prevOptionsRef.current) return
+    prevOptionsRef.current = optionsKey
+    const exists = leaveTypeOptions.some((o) => o.value === selectedPolicyValue)
+    if (!exists) setSelectedPolicyValue(firstValue)
+  }, [leaveTypeOptions, selectedPolicyValue])
 
   useEffect(() => {
     if (myCurrentLeavesError) {
@@ -233,11 +258,22 @@ export default function LeaveRequestForm() {
     if (isWeekend(leaveStartDate) || isWeekend(leaveEndDate)) { toast.error('ບໍ່ສາມາດລາໃນວັນເສົາ-ອາທິດ'); return }
     if (!duration || duration <= 0) { toast.error('ວັນສິ້ນສຸດຕ້ອງຫຼັງວັນເລີ່ມ'); return }
     if (!leaveReason.trim()) { toast.error('ກະລຸນາໃສ່ເຫດຜົນ'); return }
+    if ((documentRequired === 'yes' || documentRequired === 'option') && docUploadChoice === null) { toast.error('ກະລຸນາເລືອກວິທີອັບໂຫຼດເອກະສານ'); return }
+    if (docUploadChoice === 'now' && !docFile) { toast.error('ກະລຸນາເລືອກໄຟລ໌ເອກະສານ'); return }
 
     setIsSubmitting(true)
     try {
       const createdBy = [user?.firstNameLo || user?.firstName, user?.lastNameLo || user?.lastName].filter(Boolean).join(' ') || undefined
       const dept = typeof user?.department === 'object' && user.department ? user.department as any : undefined
+
+      // Upload file to Firebase Storage if user chose 'now'
+      let docLink: string | undefined = undefined
+      if (docUploadChoice === 'now' && docFile) {
+        const ext = docFile.name.split('.').pop() ?? 'file'
+        const storageRef = ref(storage, `leaves/${loggedInUserUuid}/${Date.now()}.${ext}`)
+        const snapshot = await uploadBytes(storageRef, docFile)
+        docLink = await getDownloadURL(snapshot.ref)
+      }
 
       await submitLeaveRequest({
         leaveUserUuid: loggedInUserUuid || undefined,
@@ -263,6 +299,8 @@ export default function LeaveRequestForm() {
         successorNameEn: selectedSuccessor ? [selectedSuccessor.firstNameEn, selectedSuccessor.lastNameEn].filter(Boolean).join(' ') : undefined,
         jobTitle: user?.jobTitle || user?.position,
         workLocationUid: workLocationUuid,
+        docStatus: docUploadChoice === 'now' ? 'now' : docUploadChoice === 'later' ? 'later' : null,
+        docLink,
       })
       await refetchMyCurrentLeaves()
       toast.success('ສົ່ງຄໍາຮ້ອງຂໍສໍາເລັດ')
@@ -273,6 +311,8 @@ export default function LeaveRequestForm() {
       setLeaveEndDate(undefined)
       setEndPeriod('afternoon')
       setLeaveReason('')
+      setDocUploadChoice(null)
+      setDocFile(null)
     } catch (err) {
       toast.error('ບໍ່ສາມາດສົ່ງຄໍາຮ້ອງຂໍໄດ້')
       console.error(err)
@@ -414,6 +454,122 @@ export default function LeaveRequestForm() {
               )}
             </div>
 
+            {/* Section 4: Document Upload */}
+            {documentRequired !== 'no' && (
+              <div className="rounded-lg border bg-card p-4 space-y-3">
+                <SectionHeader number={4} icon={Upload} title={
+                  documentRequired === 'yes' ? 'ເອກະສານປະກອບ (ຕ້ອງການ)' : 'ເອກະສານປະກອບ (ທາງເລືອກ)'
+                } />
+
+                {documentRequired === 'yes' && (
+                  <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                    ປະເພດການລານີ້ຕ້ອງການເອກະສານ — ກະລຸນາເລືອກ
+                  </p>
+                )}
+
+                <div className="grid grid-cols-1 gap-2">
+                  {/* Upload now */}
+                  <button
+                    type="button"
+                    onClick={() => setDocUploadChoice('now')}
+                    className={cn(
+                      'flex items-center gap-3 rounded-lg border px-4 py-3 text-sm text-left transition-colors',
+                      docUploadChoice === 'now'
+                        ? 'border-primary bg-primary/5 text-primary'
+                        : 'border-input hover:bg-muted'
+                    )}
+                  >
+                    <Upload className="w-4 h-4 shrink-0" />
+                    <div>
+                      <p className="font-medium">ອັບໂຫຼດໃນຕອນນີ້</p>
+                      <p className="text-xs text-muted-foreground">ເລືອກໄຟລ໌ແນບທັນທີ</p>
+                    </div>
+                    {docUploadChoice === 'now' && <CheckCircle className="w-4 h-4 ml-auto shrink-0" />}
+                  </button>
+
+                  {/* Upload later */}
+                  <button
+                    type="button"
+                    onClick={() => { setDocUploadChoice('later'); setDocFile(null) }}
+                    className={cn(
+                      'flex items-center gap-3 rounded-lg border px-4 py-3 text-sm text-left transition-colors',
+                      docUploadChoice === 'later'
+                        ? 'border-primary bg-primary/5 text-primary'
+                        : 'border-input hover:bg-muted'
+                    )}
+                  >
+                    <Timer className="w-4 h-4 shrink-0" />
+                    <div>
+                      <p className="font-medium">ອັບໂຫຼດທີ່ຫຼັງ</p>
+                      <p className="text-xs text-muted-foreground">ສົ່ງຄໍາຮ້ອງກ່ອນ ແລ້ວຄ່ອຍແນບໃຫ້ທີ່ຫຼັງ</p>
+                    </div>
+                    {docUploadChoice === 'later' && <CheckCircle className="w-4 h-4 ml-auto shrink-0" />}
+                  </button>
+
+                  {/* Skip — only for optional */}
+                  {documentRequired === 'option' && (
+                    <button
+                      type="button"
+                      onClick={() => { setDocUploadChoice('skip'); setDocFile(null) }}
+                      className={cn(
+                        'flex items-center gap-3 rounded-lg border px-4 py-3 text-sm text-left transition-colors',
+                        docUploadChoice === 'skip'
+                          ? 'border-primary bg-primary/5 text-primary'
+                          : 'border-input hover:bg-muted'
+                      )}
+                    >
+                      <X className="w-4 h-4 shrink-0" />
+                      <div>
+                        <p className="font-medium">ບໍ່ຕ້ອງການເອກະສານ</p>
+                        <p className="text-xs text-muted-foreground">ດໍາເນີນການໂດຍບໍ່ຕ້ອງແນບໄຟລ໌</p>
+                      </div>
+                      {docUploadChoice === 'skip' && <CheckCircle className="w-4 h-4 ml-auto shrink-0" />}
+                    </button>
+                  )}
+                </div>
+
+                {/* File input — shown when 'now' selected */}
+                {docUploadChoice === 'now' && (
+                  <div className="space-y-2">
+                    <label className="block">
+                      <div className={cn(
+                        'flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-6 cursor-pointer transition-colors',
+                        docFile ? 'border-primary bg-primary/5' : 'border-input hover:bg-muted'
+                      )}>
+                        <Upload className="w-6 h-6 text-muted-foreground" />
+                        {docFile ? (
+                          <div className="text-center">
+                            <p className="text-sm font-medium text-primary">{docFile.name}</p>
+                            <p className="text-xs text-muted-foreground">{(docFile.size / 1024).toFixed(1)} KB</p>
+                          </div>
+                        ) : (
+                          <div className="text-center">
+                            <p className="text-sm text-muted-foreground">ກົດເພື່ອເລືອກໄຟລ໌</p>
+                            <p className="text-xs text-muted-foreground">PDF, JPG, PNG (ສູງສຸດ 10MB)</p>
+                          </div>
+                        )}
+                        <input
+                          type="file"
+                          accept=".pdf,.jpg,.jpeg,.png"
+                          className="hidden"
+                          onChange={(e) => setDocFile(e.target.files?.[0] ?? null)}
+                        />
+                      </div>
+                    </label>
+                    {docFile && (
+                      <button
+                        type="button"
+                        onClick={() => setDocFile(null)}
+                        className="flex items-center gap-1 text-xs text-destructive hover:underline"
+                      >
+                        <X className="w-3 h-3" /> ລຶບໄຟລ໌
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             <Button type="submit" className="w-full h-11" size="lg" disabled={isSubmitting}>
               {isSubmitting ? <Spinner className="mr-2" /> : <Send className="w-4 h-4 mr-2" />}
               ສົ່ງຄໍາຮ້ອງຂໍ
@@ -481,7 +637,7 @@ export default function LeaveRequestForm() {
                 </Badge>
               </div>
               <Separator />
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-0.5">
                   <p className="text-xs text-muted-foreground">ວັນເລີ່ມຕົ້ນ</p>
                   <p className="font-medium">{format(new Date(selectedLeave.startDate), 'dd MMM yyyy')}</p>
@@ -507,6 +663,9 @@ export default function LeaveRequestForm() {
               <div>
                 <p className="text-xs text-muted-foreground mb-1">ເຫດຜົນ</p>
                 <p>{selectedLeave.reason}</p>
+                {selectedLeave.species === 'instead' && (
+                  <p className="mt-2 text-sm text-muted-foreground">ແທນດ້ວຍ: {selectedLeave.createdBy}</p>
+                )}
               </div>
               {selectedLeave.approvals && selectedLeave.approvals.length > 0 && (
                 <>

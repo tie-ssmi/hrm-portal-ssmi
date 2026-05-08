@@ -1,6 +1,43 @@
-import { addDoc, collection, getDocs, query, where, orderBy } from 'firebase/firestore'
+import { addDoc, collection, doc, getDoc, getDocs, query, updateDoc, where } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import type { LeaveRequest } from '@/lib/types'
+import type { LeaveApprovalStep, LeaveRequest } from '@/lib/types'
+import { resolveLeaveRequestStatus } from '@/services/leave-approval'
+
+export async function fetchLeaveById(leaveId: string): Promise<LeaveRequest | null> {
+  const snapshot = await getDoc(doc(db, 'leaves', leaveId))
+  if (!snapshot.exists()) return null
+  return { id: snapshot.id, ...(snapshot.data() as Omit<LeaveRequest, 'id'>) }
+}
+
+export async function updateLeaveApproval(params: {
+  leaveId: string
+  approvalIndex: number
+  decision: 'approved' | 'rejected'
+  reviewedBy: string
+  reviewedByUid: string
+}): Promise<void> {
+  const { leaveId, approvalIndex, decision, reviewedBy, reviewedByUid } = params
+  const leaveRef = doc(db, 'leaves', leaveId)
+  const snapshot = await getDoc(leaveRef)
+  if (!snapshot.exists()) throw new Error('Leave request not found')
+
+  const data = snapshot.data() as Omit<LeaveRequest, 'id'>
+  const approvals: LeaveApprovalStep[] = data.approvals ?? []
+
+  const updatedApprovals = approvals.map((a, i) =>
+    i === approvalIndex
+      ? { ...a, decision, reviewedBy, reviewedAt: new Date().toISOString() }
+      : a
+  )
+
+  const status = resolveLeaveRequestStatus(updatedApprovals)
+
+  await updateDoc(leaveRef, {
+    approvals: updatedApprovals,
+    status,
+    ...(status !== 'pending' ? { reviewedBy, reviewedByUid, reviewedAt: new Date().toISOString() } : {}),
+  })
+}
 
 export async function createLeaveRequest(payload: Omit<LeaveRequest, 'id'>): Promise<string> {
   // Remove undefined fields to avoid Firebase errors

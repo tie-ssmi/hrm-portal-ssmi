@@ -139,6 +139,7 @@ export interface LeaveRequest {
   jobTitle?: string
   doc?: string
   docLink?: string
+  docStatus?: 'now' | 'later' | null
   requiredApprovers?: LeaveApproverRole[]
   approvals?: LeaveApprovalStep[]
   status: 'pending' | 'approved' | 'rejected'
@@ -197,6 +198,7 @@ export interface PolicyRecord {
   limitType?: string
   requestType: string
   leavePolicy: LeavePolicy
+  documentRequired?: 'yes' | 'option' | 'no'
 }
 
 export interface LateRecord {

@@ -1,308 +1,389 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAuth } from '@/lib/auth-context'
+import { fetchLeaveById, updateLeaveApproval } from '@/services/leaves'
+import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Separator } from '@/components/ui/separator'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
-	ArrowLeft,
-	Briefcase,
-	Building2,
-	CalendarRange,
-	CirclePlus,
-	FileText,
-	NotebookPen,
-	ShieldUser,
-	Tag,
-	UserRound,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Separator } from '@/components/ui/separator'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  ArrowLeft,
+  Briefcase,
+  Building2,
+  CalendarRange,
+  CheckCircle2,
+  ExternalLink,
+  FileText,
+  ShieldUser,
+  Timer,
+  UserRound,
+  XCircle,
 } from 'lucide-react'
+import type { LeaveApprovalStep, LeaveApproverRole } from '@/lib/types'
 
-type LeaveType = {
-	id: string
-	name: string
+const roleLabel: Record<LeaveApproverRole, string> = {
+  departmentHead: 'ຫົວໜ້າພະແນກ',
+  hr: 'ຝ່າຍ HR',
+  manager: 'ຜູ້ຈັດການ',
 }
 
-type LeaveDetail = {
-	id: string
-	name: string
-	department: string
-	successor: string
-	startDate: string
-	endDate: string
-	reason: string
-	position: string
-	note: string
-	type: LeaveType
+const periodLabel: Record<string, string> = {
+  morning: 'ເຊົ້າ',
+  afternoon: 'ບ່າຍ',
+  monning: 'ເຊົ້າ',
 }
 
-const leaveDetails: LeaveDetail[] = [
-	{
-		id: 'L-001',
-		name: 'SINA AI',
-		department: 'IT',
-		successor: 'Admin',
-		startDate: '2026-04-01',
-		endDate: '2026-04-01',
-		reason: 'System Optimization',
-		position: 'Virtual Assistant',
-		note: 'Official rebranding from Nong Khai complete',
-		type: { id: '01', name: 'Annual Leave' },
-	},
-	{
-		id: 'L-002',
-		name: 'Marcus Holloway',
-		department: 'IT',
-		successor: 'Victor Stone',
-		startDate: '2026-04-05',
-		endDate: '2026-04-07',
-		reason: 'Security Conference',
-		position: 'Network Sec',
-		note: 'Available on SINA chat for emergencies',
-		type: { id: '01', name: 'Annual Leave' },
-	},
-	{
-		id: 'L-003',
-		name: 'Lara Croft',
-		department: 'Research',
-		successor: 'Indiana Jones',
-		startDate: '2026-04-10',
-		endDate: '2026-04-15',
-		reason: 'Expedition',
-		position: 'Lead Researcher',
-		note: 'Satellite phone only',
-		type: { id: '05', name: 'Unpaid Leave' },
-	},
-	{
-		id: 'L-004',
-		name: 'Barry Allen',
-		department: 'IT',
-		successor: 'Iris West',
-		startDate: '2026-04-12',
-		endDate: '2026-04-12',
-		reason: 'Personal errand',
-		position: 'Forensics',
-		note: 'Back in a flash (literally)',
-		type: { id: '02', name: 'Sick Leave' },
-	},
-	{
-		id: 'L-005',
-		name: 'Walter White',
-		department: 'R&D',
-		successor: 'Jesse Pinkman',
-		startDate: '2026-04-14',
-		endDate: '2026-04-16',
-		reason: 'Health checkup',
-		position: 'Chemist',
-		note: 'Jesse knows the protocol',
-		type: { id: '02', name: 'Sick Leave' },
-	},
-	{
-		id: 'L-006',
-		name: 'Natasha Romanoff',
-		department: 'Security',
-		successor: 'Clint Barton',
-		startDate: '2026-04-18',
-		endDate: '2026-04-18',
-		reason: 'Offsite training',
-		position: 'Specialist',
-		note: 'Budapest assignment',
-		type: { id: '01', name: 'Annual Leave' },
-	},
-	{
-		id: 'L-007',
-		name: 'Jim Halpert',
-		department: 'Sales',
-		successor: 'Dwight Schrute',
-		startDate: '2026-04-20',
-		endDate: '2026-04-24',
-		reason: 'Family trip',
-		position: 'Sales Rep',
-		note: "Please don't let Dwight touch my desk",
-		type: { id: '01', name: 'Annual Leave' },
-	},
-	{
-		id: 'L-008',
-		name: 'Din Djarin',
-		department: 'Logistics',
-		successor: 'Bo-Katan',
-		startDate: '2026-04-25',
-		endDate: '2026-04-26',
-		reason: 'Vehicle maintenance',
-		position: 'Fleet Driver',
-		note: 'Razor Crest in the shop',
-		type: { id: '01', name: 'Annual Leave' },
-	},
-	{
-		id: 'L-009',
-		name: 'Ted Lasso',
-		department: 'HR',
-		successor: 'Beard',
-		startDate: '2026-04-28',
-		endDate: '2026-04-28',
-		reason: 'Mental health',
-		position: 'Coach',
-		note: 'Believe!',
-		type: { id: '02', name: 'Sick Leave' },
-	},
-	{
-		id: 'L-010',
-		name: 'Master Chief',
-		department: 'Security',
-		successor: 'Cortana',
-		startDate: '2026-04-29',
-		endDate: '2026-05-02',
-		reason: 'System Update',
-		position: 'Chief',
-		note: 'Finishing the fight',
-		type: { id: '01', name: 'Annual Leave' },
-	},
-]
+function ApprovalStepRow({ step, index, total }: { step: LeaveApprovalStep; index: number; total: number }) {
+  const isApproved = step.decision === 'approved'
+  const isRejected = step.decision === 'rejected'
+  const isPending = step.decision === 'pending'
 
-function Field({
-	label,
-	value,
-	icon,
-}: {
-	label: string
-	value: string
-	icon: React.ReactNode
-}) {
-	return (
-		<div className="rounded-lg border bg-card p-3">
-			<div className="mb-1.5 inline-flex items-center gap-2 text-xs text-muted-foreground">
-				{icon}
-				<span>{label}</span>
-			</div>
-			<p className="text-sm font-medium text-foreground">{value}</p>
-		</div>
-	)
+  return (
+    <div className="flex items-start gap-3">
+      <div className="flex flex-col items-center">
+        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 text-sm font-bold
+          ${isApproved ? 'border-emerald-500 bg-emerald-50 text-emerald-600 dark:bg-emerald-950' : ''}
+          ${isRejected ? 'border-destructive bg-destructive/10 text-destructive' : ''}
+          ${isPending ? 'border-muted-foreground/30 bg-muted text-muted-foreground' : ''}
+        `}>
+          {isApproved ? <CheckCircle2 className="h-4 w-4" /> : isRejected ? <XCircle className="h-4 w-4" /> : <span>{index + 1}</span>}
+        </div>
+        {index < total - 1 && <div className={`mt-1 h-6 w-0.5 ${isApproved ? 'bg-emerald-300' : 'bg-muted'}`} />}
+      </div>
+
+      <div className="flex-1 pb-4">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-semibold text-foreground">{roleLabel[step.role]}</p>
+          <Badge
+            variant={isApproved ? 'default' : isRejected ? 'destructive' : 'secondary'}
+            className={`text-xs ${isApproved ? 'bg-emerald-600 hover:bg-emerald-600' : ''}`}
+          >
+            {isApproved ? 'ອະນຸມັດແລ້ວ' : isRejected ? 'ປະຕິເສດ' : 'ລໍຖ້າ'}
+          </Badge>
+        </div>
+        {step.reviewedBy && <p className="mt-0.5 text-xs text-muted-foreground">ໂດຍ: {step.reviewedBy}</p>}
+        {step.reviewedAt && (
+          <p className="text-xs text-muted-foreground">
+            {new Date(step.reviewedAt).toLocaleDateString('lo-LA', { day: '2-digit', month: 'short', year: 'numeric' })}
+          </p>
+        )}
+        {isPending && <p className="mt-0.5 text-xs text-muted-foreground/60">ຍັງບໍ່ໄດ້ດຳເນີນການ</p>}
+      </div>
+    </div>
+  )
+}
+
+function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className="flex items-start gap-3 rounded-lg border bg-card p-3">
+      <span className="mt-0.5 shrink-0 text-muted-foreground">{icon}</span>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs text-muted-foreground">{label}</p>
+        <p className="text-sm font-medium text-foreground break-words">{value || '-'}</p>
+      </div>
+    </div>
+  )
+}
+
+function DetailSkeleton() {
+  return (
+    <div className="space-y-4">
+      <Skeleton className="h-8 w-48" />
+      <Skeleton className="h-24 w-full rounded-xl" />
+      <div className="grid grid-cols-2 gap-3">
+        {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-16 rounded-lg" />)}
+      </div>
+      <Skeleton className="h-40 w-full rounded-xl" />
+    </div>
+  )
 }
 
 export default function LeaveDetailClient({ leaveId }: { leaveId?: string }) {
-	const router = useRouter()
-	const searchParams = useSearchParams()
-	const id = leaveId || searchParams.get('id') || ''
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const queryClient = useQueryClient()
+  const { user } = useAuth()
 
-	const detail = useMemo(() => {
-		const queryName = searchParams.get('name')
+  const id = leaveId || searchParams.get('id') || ''
 
-		if (queryName) {
-			return {
-				id,
-				name: queryName,
-				department: searchParams.get('department') || '-',
-				successor: searchParams.get('successor') || '-',
-				startDate: searchParams.get('startDate') || '-',
-				endDate: searchParams.get('endDate') || '-',
-				reason: searchParams.get('reason') || '-',
-				position: searchParams.get('position') || '-',
-				note: searchParams.get('note') || '-',
-				type: {
-					id: searchParams.get('typeId') || '-',
-					name: searchParams.get('typeName') || 'Leave',
-				},
-			}
-		}
+  const { data: leave, isLoading } = useQuery({
+    queryKey: ['leave', id],
+    queryFn: () => fetchLeaveById(id),
+    enabled: !!id,
+  })
 
-		return leaveDetails.find((item) => item.id.toLowerCase() === id.toLowerCase())
-	}, [leaveId, searchParams])
+  const [approveOpen, setApproveOpen] = useState(false)
+  const [rejectOpen, setRejectOpen] = useState(false)
+  const [confirmChecked, setConfirmChecked] = useState(false)
+  const [rejectReason, setRejectReason] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
-	if (!detail) {
-		return (
-			<div className="space-y-4">
-				<Button type="button" variant="outline" size="sm" onClick={() => router.back()}>
-					<ArrowLeft className="mr-2 h-4 w-4" />
-					Back
-				</Button>
-				<Card>
-					<CardContent className="py-12 text-center">
-						<p className="text-lg font-semibold">Leave not found</p>
-						<p className="mt-1 text-sm text-muted-foreground">Try one of: L-001 to L-010</p>
-					</CardContent>
-				</Card>
-			</div>
-		)
-	}
+  const pendingIndex = leave?.approvals?.findIndex((a) => a.decision === 'pending') ?? -1
+  const canAct = leave?.status === 'pending' && pendingIndex >= 0
 
-	return (
-		<div className="space-y-6 pb-8">
-			<div className="flex flex-wrap items-center justify-between gap-3">
-				<div>
-					<p className="text-sm text-muted-foreground">Leave Request Detail</p>
-					<h1 className="text-2xl font-bold leading-tight">{detail.name}</h1>
-				</div>
+  const reviewedBy = [user?.firstNameLo || user?.firstName, user?.lastNameLo || user?.lastName]
+    .filter(Boolean).join(' ') || user?.uid || user?.id || ''
+  const reviewedByUid = user?.uid || user?.id || ''
 
-				<div className="flex flex-wrap items-center gap-2">
-					<Badge variant="secondary" className="px-2.5 py-1">
-						Type {detail.type.id}
-					</Badge>
-					<Badge variant="outline" className="px-2.5 py-1">
-						{detail.type.name}
-					</Badge>
-					<Button type="button" size="sm" onClick={() => router.push('/dashboard/request')}>
-						<CirclePlus className="mr-2 h-4 w-4" />
-						Add New
-					</Button>
-				</div>
-			</div>
+  const handleConfirmApprove = async () => {
+    if (!leave || !confirmChecked) return
+    setIsSubmitting(true)
+    try {
+      await updateLeaveApproval({ leaveId: leave.id, approvalIndex: pendingIndex, decision: 'approved', reviewedBy, reviewedByUid })
+      await queryClient.invalidateQueries({ queryKey: ['leave', id] })
+      await queryClient.invalidateQueries({ queryKey: ['leaves'] })
+      toast.success('ອະນຸມັດສຳເລັດ')
+      setApproveOpen(false)
+      setConfirmChecked(false)
+    } catch {
+      toast.error('ເກີດຂໍ້ຜິດພາດ ກະລຸນາລອງໃໝ່')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
 
-			<Card className="border-primary/20 bg-gradient-to-b from-primary/5 via-background to-background">
-				<CardHeader className="pb-3">
-					<div className="flex items-center justify-between gap-3">
-						<div>
-							<CardTitle className="text-lg">{detail.position}</CardTitle>
-							<CardDescription>{detail.department}</CardDescription>
-						</div>
-						<div className="flex items-center gap-2">
-							<Button type="button" variant="outline" size="sm" onClick={() => router.back()}>
-								<ArrowLeft className="mr-2 h-4 w-4" />
-								Back
-							</Button>
-							<Button type="button" size="sm" onClick={() => router.push('/dashboard/request')}>
-								<CirclePlus className="mr-2 h-4 w-4" />
-								Add New
-							</Button>
-						</div>
-					</div>
-				</CardHeader>
-				<CardContent className="space-y-4">
-					<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-						<Field label="Employee" value={detail.name} icon={<UserRound className="h-3.5 w-3.5" />} />
-						<Field label="Department" value={detail.department} icon={<Building2 className="h-3.5 w-3.5" />} />
-						<Field label="Position" value={detail.position} icon={<Briefcase className="h-3.5 w-3.5" />} />
-						<Field label="Successor" value={detail.successor} icon={<ShieldUser className="h-3.5 w-3.5" />} />
-						<Field label="Start Date" value={detail.startDate} icon={<CalendarRange className="h-3.5 w-3.5" />} />
-						<Field label="End Date" value={detail.endDate} icon={<CalendarRange className="h-3.5 w-3.5" />} />
-					</div>
+  const handleConfirmReject = async () => {
+    if (!leave) return
+    setIsSubmitting(true)
+    try {
+      await updateLeaveApproval({ leaveId: leave.id, approvalIndex: pendingIndex, decision: 'rejected', reviewedBy, reviewedByUid })
+      await queryClient.invalidateQueries({ queryKey: ['leave', id] })
+      await queryClient.invalidateQueries({ queryKey: ['leaves'] })
+      toast.success('ປະຕິເສດສຳເລັດ')
+      setRejectOpen(false)
+      setRejectReason('')
+    } catch {
+      toast.error('ເກີດຂໍ້ຜິດພາດ ກະລຸນາລອງໃໝ່')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
 
-					<Separator />
+  if (isLoading) return <DetailSkeleton />
 
-					<div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-						<div className="rounded-lg border p-4">
-							<p className="mb-2 inline-flex items-center gap-2 text-xs text-muted-foreground">
-								<FileText className="h-3.5 w-3.5" />
-								Reason
-							</p>
-							<p className="text-sm leading-6">{detail.reason}</p>
-						</div>
+  if (!leave) {
+    return (
+      <div className="space-y-4">
+        <Button type="button" variant="outline" size="sm" onClick={() => router.back()}>
+          <ArrowLeft className="mr-2 h-4 w-4" /> ກັບຄືນ
+        </Button>
+        <Card>
+          <CardContent className="py-12 text-center">
+            <p className="text-lg font-semibold">ບໍ່ພົບຂໍ້ມູນ</p>
+            <p className="mt-1 text-sm text-muted-foreground">ID: {id}</p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
-						<div className="rounded-lg border p-4">
-							<p className="mb-2 inline-flex items-center gap-2 text-xs text-muted-foreground">
-								<NotebookPen className="h-3.5 w-3.5" />
-								Note
-							</p>
-							<p className="text-sm leading-6">{detail.note}</p>
-						</div>
-					</div>
+  const overallStatus = leave.status
+  const startLabel = periodLabel[leave.startPeriod ?? ''] ?? ''
+  const endLabel = periodLabel[leave.endPeriod ?? ''] ?? ''
 
-					<div className="rounded-lg border border-dashed bg-muted/30 p-3 text-xs text-muted-foreground">
-						<Tag className="mr-1 inline h-3.5 w-3.5" />
-						ID: {detail.id}
-					</div>
-				</CardContent>
-			</Card>
-		</div>
-	)
+  return (
+    <>
+      <div className="space-y-4 pb-4">
+        {/* Header */}
+        <div className="flex items-center gap-3">
+          {/* <Button type="button" variant="outline" size="sm" onClick={() => router.back()}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button> */}
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-muted-foreground">ລາຍລະອຽດຄໍາຂໍລາພັກ</p>
+            <h1 className="text-lg font-bold leading-tight truncate">{leave.leaveUserName || leave.createdBy}</h1>
+          </div>
+          <Badge
+            variant={overallStatus === 'approved' ? 'default' : overallStatus === 'rejected' ? 'destructive' : 'secondary'}
+            className={`shrink-0 ${overallStatus === 'approved' ? 'bg-emerald-600 hover:bg-emerald-600' : ''}`}
+          >
+            {overallStatus === 'approved' ? 'ອະນຸມັດແລ້ວ' : overallStatus === 'rejected' ? 'ປະຕິເສດ' : 'ລໍຖ້າອະນຸມັດ'}
+          </Badge>
+        </div>
+
+        {/* Leave Type Banner */}
+        <div className="rounded-xl border border-primary/20 bg-gradient-to-r from-primary/8 to-background p-4">
+          <p className="text-xs text-muted-foreground">ປະເພດລາພັກ</p>
+          <p className="mt-0.5 text-base font-semibold text-foreground">{leave.policyName || leave.type}</p>
+          {leave.createdAt && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              ຍື່ນວັນທີ: {new Date(leave.createdAt).toLocaleDateString('lo-LA', { day: '2-digit', month: 'short', year: 'numeric' })}
+            </p>
+          )}
+        </div>
+
+        {/* Info Grid */}
+        <div className="grid grid-cols-2 gap-2.5">
+          <InfoRow icon={<UserRound className="h-4 w-4" />} label="ພະນັກງານ" value={leave.leaveUserName || leave.createdBy || ''} />
+          <InfoRow icon={<Briefcase className="h-4 w-4" />} label="ຕໍາແໜ່ງ" value={leave.jobTitle || ''} />
+          <InfoRow icon={<Building2 className="h-4 w-4" />} label="ພະແນກ" value={leave.departmentNameLo || leave.departmentNameEn || ''} />
+          <InfoRow icon={<ShieldUser className="h-4 w-4" />} label="ຜູ້ຮັບວຽກຕໍ່" value={leave.successorNameLo || leave.successorNameEn || ''} />
+          <InfoRow
+            icon={<CalendarRange className="h-4 w-4" />}
+            label="ວັນເລີ່ມ"
+            value={`${leave.startDate}${startLabel ? ` (${startLabel})` : ''}`}
+          />
+          <InfoRow
+            icon={<CalendarRange className="h-4 w-4" />}
+            label="ວັນສິ້ນສຸດ"
+            value={`${leave.endDate}${endLabel ? ` (${endLabel})` : ''}`}
+          />
+          <div className="col-span-2">
+            <InfoRow
+              icon={<Timer className="h-4 w-4" />}
+              label="ຈຳນວນວັນ"
+              value={leave.duration != null ? (leave.duration === 0.5 ? '0.5 ວັນ' : `${leave.duration} ວັນ`) : '-'}
+            />
+          </div>
+        </div>
+
+        {/* Reason */}
+        <div className="rounded-lg border p-3">
+          <p className="mb-1.5 inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+            <FileText className="h-3.5 w-3.5" /> ເຫດຜົນ
+          </p>
+          <p className="text-sm leading-6 text-foreground">{leave.reason || '-'}</p>
+        </div>
+
+        {/* Document */}
+        {(leave.docStatus === 'now' || leave.docLink) && (
+          leave.docLink ? (
+            <a href={leave.docLink} target="_blank" rel="noopener noreferrer">
+              <div className="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm text-primary hover:bg-primary/10 transition-colors">
+                <FileText className="h-4 w-4 shrink-0" />
+                <span className="flex-1 truncate">ເບິ່ງເອກະສານທີ່ແນບ</span>
+                <ExternalLink className="h-4 w-4 shrink-0" />
+              </div>
+            </a>
+          ) : (
+            <div className="flex items-center gap-2 rounded-lg border border-muted bg-muted/30 p-3 text-sm text-muted-foreground">
+              <FileText className="h-4 w-4 shrink-0" />
+              <span>ເອກະສານຖືກແນບມາ (ລໍຖ້າໂຫລດ...)</span>
+            </div>
+          )
+        )}
+
+        {/* Approval Timeline */}
+        {leave.approvals && leave.approvals.length > 0 && (
+          <Card>
+            <CardHeader className="pb-3 pt-4 px-4">
+              <CardTitle className="text-sm font-semibold">ຂັ້ນຕອນການອະນຸມັດ</CardTitle>
+            </CardHeader>
+            <Separator />
+            <CardContent className="pt-4 px-4 pb-2">
+              {leave.approvals.map((step, i) => (
+                <ApprovalStepRow key={step.role} step={step} index={i} total={leave.approvals!.length} />
+              ))}
+            </CardContent>
+          </Card>
+        )}
+
+        {canAct && (
+          <div className="flex gap-3 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1 gap-2"
+              onClick={() => setRejectOpen(true)}
+              disabled={isSubmitting}
+            >
+              <XCircle className="h-4 w-4" /> ປະຕິເສດ
+            </Button>
+            <Button
+              type="button"
+              className="flex-1 gap-2 "
+              onClick={() => setApproveOpen(true)}
+              disabled={isSubmitting}
+            >
+              <CheckCircle2 className="h-4 w-4" /> ອະນຸມັດ
+            </Button>
+          </div>
+        )}
+
+        <p className="text-center text-xs text-muted-foreground/40">ID: {leave.id}</p>
+      </div>
+
+      {/* Approve Dialog */}
+      <Dialog open={approveOpen} onOpenChange={(o) => { setApproveOpen(o); if (!o) setConfirmChecked(false) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>ຢືນຢັນການອະນຸມັດ</DialogTitle>
+            <DialogDescription>
+              ອະນຸມັດຄໍາຮ້ອງຂໍຂອງ <strong>{leave.leaveUserName || leave.createdBy}</strong>
+            </DialogDescription>
+          </DialogHeader>
+          <label htmlFor="detail-confirm-approve" className="flex cursor-pointer select-none items-start gap-3 rounded-lg border p-3 hover:bg-muted/50 transition-colors">
+            <Checkbox
+              id="detail-confirm-approve"
+              checked={confirmChecked}
+              onCheckedChange={(v) => setConfirmChecked(v === true)}
+              className="mt-0.5 shrink-0"
+            />
+            <span className="text-sm leading-relaxed">ຂ້ອຍໄດ້ກວດສອບຂໍ້ມູນແລ້ວ ແລະ ຢືນຢັນການອະນຸມັດ</span>
+          </label>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline" disabled={isSubmitting}>ຍົກເລີກ</Button>
+            </DialogClose>
+            <Button
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              onClick={handleConfirmApprove}
+              disabled={!confirmChecked || isSubmitting}
+            >
+              {isSubmitting ? 'ກຳລັງອະນຸມັດ...' : 'ອະນຸມັດ'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reject Dialog */}
+      <Dialog open={rejectOpen} onOpenChange={(o) => { setRejectOpen(o); if (!o) setRejectReason('') }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>ຢືນຢັນການປະຕິເສດ</DialogTitle>
+            <DialogDescription>
+              ປະຕິເສດຄໍາຮ້ອງຂໍຂອງ <strong>{leave.leaveUserName || leave.createdBy}</strong>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground">ເຫດຜົນການປະຕິເສດ (ທາງເລືອກ)</p>
+            <Textarea
+              placeholder="ລະບຸເຫດຜົນ..."
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              rows={3}
+            />
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline" disabled={isSubmitting}>ຍົກເລີກ</Button>
+            </DialogClose>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmReject}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? 'ກຳລັງດຳເນີນການ...' : 'ປະຕິເສດ'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
 }
