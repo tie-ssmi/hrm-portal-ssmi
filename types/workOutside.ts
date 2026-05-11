@@ -22,6 +22,7 @@ export interface TeammateEntry {
   jobTitle: string
   department: Department
   roleInTrip: RoleInTrip
+  photoUrl?: string
 }
 
 export type RequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled'
@@ -87,4 +88,6 @@ export interface EmployeeDoc {
   jobTitle: string
   department: Department
   status?: string
+  profileImage?: string
+  photo3x4Url?: string
 }

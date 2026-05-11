@@ -9,7 +9,6 @@ import {
   addDoc,
   doc,
   updateDoc,
-  getCountFromServer,
 } from 'firebase/firestore'
 import { useQuery } from '@tanstack/react-query'
 import { format, differenceInCalendarDays, parseISO } from 'date-fns'
@@ -66,6 +65,7 @@ import type {
   WorkLocation,
   OffsiteRequestDoc,
 } from '@/types/workOutside'
+import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -120,19 +120,6 @@ interface Props {
 
 // ─── Small helpers ────────────────────────────────────────────────────────────
 
-function AvatarInitials({ name }: { name: string }) {
-  const initials = name
-    .split(' ')
-    .map((w) => w[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase()
-  return (
-    <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-semibold shrink-0">
-      {initials}
-    </div>
-  )
-}
 
 function StepIndicator({ current }: { current: number }) {
   const steps = ['ປະເພດກິດຈະກຳ', 'ລາຍລະອຽດ', 'ທີມ & ກວດສອບ']
@@ -225,11 +212,12 @@ function stripUndefined<T>(obj: T): T {
   return JSON.parse(JSON.stringify(obj)) as T
 }
 
-async function generateRequestNo(): Promise<string> {
-  const year = new Date().getFullYear()
-  const snap = await getCountFromServer(collection(db, 'workOutside'))
-  const count = snap.data().count + 1
-  return `WO-${year}-${String(count).padStart(4, '0')}`
+function generateRequestNo(): string {
+  const now = new Date()
+  const year = now.getFullYear()
+  // base36 last-6 chars of epoch ms — unique per ms, no Firestore read needed
+  const suffix = now.getTime().toString(36).slice(-6).toUpperCase()
+  return `WO-${year}-${suffix}`
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -349,6 +337,7 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
         jobTitle: emp.jobTitle,
         department: emp.department,
         roleInTrip: 'Support',
+        photoUrl: emp.profileImage ?? emp.photo3x4Url,
       },
     ])
     setTeammateSearchOpen(false)
@@ -401,6 +390,7 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
 
       const fullNameEn = `${user.firstNameEn ?? user.firstName ?? ''} ${user.lastNameEn ?? user.lastName ?? ''}`.trim()
       const fullNameLo = `${user.firstNameLo ?? ''} ${user.lastNameLo ?? ''}`.trim()
+      const userImage = user.profileImage || user.photo3x4Url
 
       const payload = {
         requester: {
@@ -435,7 +425,7 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
         await updateDoc(doc(db, 'workOutside', initialData.id), stripUndefined(payload))
         toast.success(`ແກ້ໄຂສຳເລັດ — ${initialData.requestNo}`)
       } else {
-        const requestNo = await generateRequestNo()
+        const requestNo = generateRequestNo()
         await addDoc(collection(db, 'workOutside'), stripUndefined({
           ...payload,
           requestNo,
@@ -691,14 +681,27 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
                       <CommandGroup>
                         {employeesList
                           .filter((e) => !teammates.some((t) => t.uid === e.uid))
-                          .map((emp) => (
+                          .map((emp, idx) => (
                             <CommandItem
-                              key={emp.uid}
+                              key={emp.uid || emp.email || idx}
                               value={`${emp.firstNameLo} ${emp.lastNameLo} ${emp.firstNameEn} ${emp.lastNameEn}`}
                               onSelect={() => addTeammate(emp)}
                             >
                               <div className="flex items-center gap-2 w-full min-w-0">
-                                <AvatarInitials name={`${emp.firstNameLo} ${emp.lastNameLo}`} />
+                                <Avatar className="w-8 h-8 shrink-0">
+                                  <AvatarImage
+                                    src={emp.profileImage ?? emp.photo3x4Url}
+                                    alt={`${emp.firstNameLo} ${emp.lastNameLo}`}
+                                  />
+                                  <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
+                                    {`${emp.firstNameLo} ${emp.lastNameLo}`
+                                      .split(' ')
+                                      .map((w) => w[0])
+                                      .join('')
+                                      .slice(0, 2)
+                                      .toUpperCase()}
+                                  </AvatarFallback>
+                                </Avatar>
                                 <div className="min-w-0">
                                   <p className="text-sm font-medium truncate">
                                     {emp.firstNameLo} {emp.lastNameLo}
@@ -726,7 +729,17 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
               <div className="space-y-2">
                 {teammates.map((tm) => (
                   <div key={tm.uid} className="flex items-center gap-3 p-3 rounded-lg border bg-card">
-                    <AvatarInitials name={tm.fullNameLo || tm.fullNameEn} />
+                    <Avatar className="w-9 h-9">
+                      <AvatarImage src={tm.photoUrl} alt={tm.fullNameLo || tm.fullNameEn} />
+                      <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
+                        {(tm.fullNameLo || tm.fullNameEn)
+                          .split(' ')
+                          .map((w) => w[0])
+                          .join('')
+                          .slice(0, 2)
+                          .toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{tm.fullNameLo}</p>
                       <p className="text-xs text-muted-foreground truncate">{tm.jobTitle}</p>

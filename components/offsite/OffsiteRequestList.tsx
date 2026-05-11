@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, Fragment } from 'react'
 import { Briefcase, Plus, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -153,9 +153,8 @@ export function OffsiteRequestList({
           </thead>
           <tbody>
             {pageDocs.map((doc) => (
-              <>
+              <Fragment key={doc.id}>
                 <OffsiteRequestRow
-                  key={doc.id}
                   doc={doc}
                   currentUid={currentUid}
                   onView={handleView}
@@ -163,13 +162,13 @@ export function OffsiteRequestList({
                   onCancel={onCancel}
                 />
                 {expandedId === doc.id && (
-                  <tr key={`${doc.id}-expand`} className="bg-muted/20">
+                  <tr className="bg-muted/20">
                     <td colSpan={8} className="px-4 py-3">
                       <ExpandedDetail doc={doc} />
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>
