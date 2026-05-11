@@ -29,6 +29,7 @@ type LeaveTableProps = {
 	data: LeaveTableItem[]
 	onViewDetail?: (item: LeaveTableItem) => void
 	onApprove?: (item: LeaveTableItem) => void
+	onReject?: (item: LeaveTableItem) => void
 	className?: string
 }
 
@@ -49,7 +50,7 @@ function statusVariant(status?: LeaveTableStatus): 'default' | 'destructive' | '
 	return 'secondary'
 }
 
-export default function OffsiteTable({ data, onViewDetail, onApprove, className }: LeaveTableProps) {
+export default function OffsiteTable({ data, onViewDetail, onApprove, onReject, className }: LeaveTableProps) {
 	if (data.length === 0) {
 		return (
 			<Card className={className}>
@@ -111,13 +112,24 @@ export default function OffsiteTable({ data, onViewDetail, onApprove, className 
 										<span className="font-medium text-foreground">{item.successor || '-'}</span>
 									</div>
 
-									<div className="grid grid-cols-2 gap-2 pt-1">
+									<div className="grid grid-cols-3 gap-2 pt-1">
 										<Button type="button" variant="outline" size="sm" onClick={() => onViewDetail?.(item)}>
 											ລາຍລະອຽດ
 										</Button>
-										<Button type="button" size="sm" onClick={() => onApprove?.(item)} disabled={!canApprove}>
-											{canApprove ? 'ອະນຸມັດ' : 'ສໍາເລັດ'}
-										</Button>
+										{canApprove ? (
+											<>
+												<Button type="button" size="sm" onClick={() => onApprove?.(item)}>
+													ອະນຸມັດ
+												</Button>
+												<Button type="button" variant="destructive" size="sm" onClick={() => onReject?.(item)}>
+													ປະຕິເສດ
+												</Button>
+											</>
+										) : (
+											<div className="col-span-2 flex items-center justify-center text-xs text-muted-foreground">
+												{item.status === 'approved' ? 'ອະນຸມັດແລ້ວ' : 'ປະຕິເສດແລ້ວ'}
+											</div>
+										)}
 									</div>
 								</CardContent>
 							</Card>
@@ -199,15 +211,31 @@ export default function OffsiteTable({ data, onViewDetail, onApprove, className 
 												>
 													ລາຍລະອຽດ
 												</Button>
-												<Button
-													type="button"
-													size="sm"
-													className="min-w-[84px]"
-													onClick={() => onApprove?.(item)}
-													disabled={!canApprove}
-												>
-													{canApprove ? 'ອະນຸມັດ' : 'ສໍາເລັດ'}
-												</Button>
+												{canApprove ? (
+													<>
+														<Button
+															type="button"
+															size="sm"
+															className="min-w-[84px]"
+															onClick={() => onApprove?.(item)}
+														>
+															ອະນຸມັດ
+														</Button>
+														<Button
+															type="button"
+															variant="destructive"
+															size="sm"
+															className="min-w-[84px]"
+															onClick={() => onReject?.(item)}
+														>
+															ປະຕິເສດ
+														</Button>
+													</>
+												) : (
+													<span className="text-xs text-muted-foreground min-w-[84px] text-right">
+														{item.status === 'approved' ? 'ອະນຸມັດແລ້ວ' : 'ປະຕິເສດແລ້ວ'}
+													</span>
+												)}
 											</div>
 										</TableCell>
 									</TableRow>

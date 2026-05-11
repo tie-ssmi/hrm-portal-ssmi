@@ -4,7 +4,8 @@
       "Bash(claude plugin *)",
       "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\muale\\\\Desktop\\\\SSMI\\\\hrm-portal-ssmi\" -Directory)",
       "Bash(Select-Object Name)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(cmd /c \"npm run build 2>&1\")"
     ]
   }
 }

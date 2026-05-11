@@ -134,8 +134,9 @@ export default function LeaveDetailClient({ leaveId }: { leaveId?: string }) {
   const [rejectReason, setRejectReason] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  const pendingMai = leave?.approvals?.find((a) => a.decision === 'pending' && a.role === 'departmentHead')
   const pendingIndex = leave?.approvals?.findIndex((a) => a.decision === 'pending') ?? -1
-  const canAct = leave?.status === 'pending' && pendingIndex >= 0
+  const canAct = leave?.status === 'pending' && pendingMai && pendingMai.role === 'departmentHead' // Only department head can approve/reject for now, and only when it's pending
 
   const reviewedBy = [user?.firstNameLo || user?.firstName, user?.lastNameLo || user?.lastName]
     .filter(Boolean).join(' ') || user?.uid || user?.id || ''

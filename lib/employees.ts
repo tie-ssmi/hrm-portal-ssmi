@@ -1,6 +1,6 @@
-import { collection, doc, getDocs, query, updateDoc, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, query, updateDoc, where } from 'firebase/firestore'
 import { db } from './firebase'
-import type { Employee } from './types'
+import type { Employee, RolePermissions } from './types'
 
 export async function fetchEmployeeByUid(uid: string): Promise<Partial<Employee> | null> {
   try {
@@ -60,6 +60,18 @@ export async function fetchEmployeeByEmail(email: string): Promise<Partial<Emplo
     } as Partial<Employee>
   } catch (error) {
     console.error('Error fetching employee data by email:', error)
+    return null
+  }
+}
+
+export async function fetchRoleByUid(rolesUid: string): Promise<RolePermissions | null> {
+  try {
+    const roleSnap = await getDoc(doc(db, 'roles', rolesUid))
+    if (!roleSnap.exists()) return null
+    const data = roleSnap.data()
+    return (data.role ?? null) as RolePermissions | null
+  } catch (error) {
+    console.error('Error fetching role permissions:', error)
     return null
   }
 }

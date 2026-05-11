@@ -16,7 +16,7 @@ import type { AuthContextType, Employee } from './types'
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 async function resolveEmployeeForFirebaseUser(firebaseUser: FirebaseUser): Promise<Partial<Employee> | null> {
-  const { fetchEmployeeByEmail, fetchEmployeeByUid, updateEmployeeUidByEmail } = await import('./employees')
+  const { fetchEmployeeByEmail, fetchEmployeeByUid, fetchRoleByUid, updateEmployeeUidByEmail } = await import('./employees')
   let employeeData = await fetchEmployeeByUid(firebaseUser.uid)
 
   if (!employeeData && firebaseUser.email) {
@@ -37,6 +37,14 @@ async function resolveEmployeeForFirebaseUser(firebaseUser: FirebaseUser): Promi
         uid: firebaseUser.uid,
         email: employeeData.email || firebaseUser.email,
       }
+    }
+  }
+
+  // Fetch role permissions using rolesUid from employee doc
+  if (employeeData?.rolesUid) {
+    const rolePermissions = await fetchRoleByUid(employeeData.rolesUid)
+    if (rolePermissions) {
+      employeeData = { ...employeeData, rolePermissions }
     }
   }
 

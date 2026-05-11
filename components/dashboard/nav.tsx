@@ -17,9 +17,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { Field, FieldGroup } from "@/components/ui/field"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+
 //Themes
 import TheThemes from '@/components/themes'
 import { PWAInstallButton } from '@/components/pwa-install-button'
@@ -30,8 +28,9 @@ import {
   Clock,
   FileText,
   History,
-  LogOut,Newspaper, 
-  FileExclamationPoint
+  LogOut,
+  Newspaper,
+  ClipboardCheck,
 } from 'lucide-react'
 
 function formatDepartment(value: unknown): string {
@@ -47,28 +46,29 @@ function formatDepartment(value: unknown): string {
   return String(value)
 }
 
-const navItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/dashboard/profile', label: 'My Profile', icon: User },
-  { href: '/dashboard/attendance', label: 'Check-In/Out', icon: Clock },
-  { href: '/dashboard/news', label: 'News', icon: Newspaper  },
 
-  { href: '/dashboard/request', label: 'Request Forms', icon: FileText },
-  { href: '/dashboard/approv', label: 'Approval Forms', icon: FileExclamationPoint  },
-  { href: '/dashboard/history', label: 'History', icon: History },
-]
 
 export function DashboardNav() {
   const pathname = usePathname()
   const router = useRouter()
   const { user, logout } = useAuth()
-
-  const initials = user 
-    ? `${user.firstName[0]}${user.lastName[0]}`.toUpperCase()
+  const canApproveDept  = user?.rolePermissions?.approveDepartment ?? false
+const canApproveBranch = user?.rolePermissions?.approveBranch ?? false
+const canSee=canApproveBranch || canApproveDept
+  const initials = user
+    ? (`${user.firstName?.[0] ?? ''}${user.lastName?.[0] ?? ''}`.toUpperCase() || 'U')
     : 'U'
 const profileImage = user?.profileImage || user?.photo3x4Url || user?.avatar || (String(user?.gender).toLowerCase() === 'male' ? '/info/man.jpg' : '/info/woman.jpg')
+ const navItems = [
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, show: true },
+  { href: '/dashboard/profile', label: 'My Profile', icon: User, show: true },
+  { href: '/dashboard/attendance', label: 'Check-In/Out', icon: Clock, show: true },
+  { href: '/dashboard/news', label: 'News', icon: Newspaper, show: true },
 
- 
+  { href: '/dashboard/request', label: 'Request Forms', icon: FileText, show: true },
+  { href: '/dashboard/approv', label: 'Approval Forms', icon: ClipboardCheck, show: canSee },
+  { href: '/dashboard/history', label: 'History', icon: History, show: true },
+]
 
   return (
     <div className="flex flex-col h-full bg-sidebar text-sidebar-foreground">
@@ -109,6 +109,8 @@ const profileImage = user?.profileImage || user?.photo3x4Url || user?.avatar || 
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1">
         {navItems.map((item) => {
+          if (!item.show) return null
+
           const isActive = pathname === item.href || 
             (item.href !== '/dashboard' && pathname.startsWith(item.href))
           

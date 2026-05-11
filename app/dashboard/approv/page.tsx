@@ -3,6 +3,8 @@ import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { collection, doc, getDocs, query, updateDoc, where } from 'firebase/firestore'
+import { db } from '@/lib/firebase'
 import { fetchLeavesForApproval, updateLeaveApproval } from '@/services/leaves'
 import { toast } from 'sonner'
 import type { LeaveTableItem } from '@/components/leaveTable'
@@ -13,33 +15,9 @@ import { Palmtree, MapPin } from 'lucide-react'
 import LeaveTable from '@/components/leaveTable'
 import OffsiteTable from '@/components/offSiteTable'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Checkbox } from "@/components/ui/checkbox"
-
-const demoOffsiteData = [
-  {
-    id: 'OS-001',
-    name: 'ນາງ ຈັນສະໝອນ ອິນທະວົງ',
-    position: 'Sales Executive',
-    department: 'Sales',
-    reason: 'ເຂົ້າພົບລູກຄ້າປະຈໍາເດືອນ',
-    successor: 'ທ້າວ ຄໍາແພງ ແກ້ວສະຫວັດ',
-    startDate: '2026-04-14',
-    endDate: '2026-04-14',
-    status: 'pending' as const,
-  },
-  {
-    id: 'OS-002',
-    name: 'ທ້າວ ວິຊານ ສຸວັນນະວົງ',
-    position: 'HR Officer',
-    department: 'HR',
-    reason: 'ອອກໄປສໍາພາດພະນັກງານໃໝ່',
-    successor: 'ນາງ ກິດສະດາ ອິນທະລາ',
-    startDate: '2026-04-16',
-    endDate: '2026-04-16',
-    status: 'approved' as const,
-  },
-]
+import type { OffsiteRequestDoc } from '@/types/workOutside'
 
 export default function ApprovePage() {
   const router = useRouter()
@@ -49,7 +27,13 @@ export default function ApprovePage() {
   const loggedInUserUuid = user?.uid || user?.id || ''
   const departmentUuid = typeof user?.department === 'object' ? (user.department as { uuid?: string })?.uuid : undefined
   const workLocationUuid = typeof user?.workLocation === 'object' ? (user.workLocation as { uuid?: string })?.uuid : undefined
-
+  const canApproveDept  = user?.rolePermissions?.approveDepartment ?? false
+  const canApproveBranch = user?.rolePermissions?.approveBranch ?? false
+  // go to dashboard if canApproveDept and canApproveBranch are both false, to prevent unauthorized access to this page
+  if (!isLoading && !canApproveDept && !canApproveBranch) {
+    router.push('/dashboard')
+    return null
+  }
   const queryKey = ['leaves', 'approval', departmentUuid ?? null, workLocationUuid ?? null, loggedInUserUuid]
 
   const { data: leaveRequests = [] } = useQuery({
@@ -78,11 +62,68 @@ export default function ApprovePage() {
     approvals: r.approvals,
   })), [leaveRequests])
 
-  const workOutSide = demoOffsiteData.length
+  // ── Offsite approval query ──────────────────────────────────────────────────
+  // canApproveBranch → same workLocation, all departments
+  // canApproveDept   → same workLocation + same department
+  // both cases: exclude records created by current user (client-side filter)
+  const offsiteQueryKey = [
+    'workOutside', 'approval',
+    workLocationUuid ?? null,
+    canApproveBranch ? 'branch' : departmentUuid ?? null,
+    loggedInUserUuid,
+  ]
+
+  const { data: offsiteRequests = [] } = useQuery<OffsiteRequestDoc[]>({
+    queryKey: offsiteQueryKey,
+    queryFn: async () => {
+      if (!workLocationUuid) return []
+      const coll = collection(db, 'workOutside')
+      const constraints = canApproveBranch
+        ? [where('requester.workLocation.uuid', '==', workLocationUuid)]
+        : [
+            where('requester.workLocation.uuid', '==', workLocationUuid),
+            where('requester.department.uuid', '==', departmentUuid),
+          ]
+      const snap = await getDocs(query(coll, ...constraints))
+      return snap.docs
+        .map((d) => ({ id: d.id, ...d.data() } as OffsiteRequestDoc))
+        .filter((d) => d.createdByUid !== loggedInUserUuid)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    },
+    enabled: !!workLocationUuid && !!loggedInUserUuid && (canApproveDept || canApproveBranch),
+  })
+
+  const offsiteTableData = useMemo(() =>
+    offsiteRequests.map((r) => ({
+      id: r.id,
+      name: r.requester.fullNameLo || r.requester.fullNameEn,
+      position: r.requester.jobTitle,
+      department: r.requester.department.title || r.requester.department.department,
+      reason: r.subject,
+      successor: r.teammate.length > 0
+        ? r.teammate.map((t) => t.fullNameLo || t.fullNameEn).join(', ')
+        : '-',
+      startDate: r.startDate,
+      endDate: r.endDate,
+      status: (r.status === 'cancelled' ? 'rejected' : r.status) as 'pending' | 'approved' | 'rejected',
+    })),
+    [offsiteRequests],
+  )
+
+  const workOutSide = offsiteTableData.length
+
+  // ── Leave approval state ─────────────────────────────────────────────────
   const [openConfirmDialog, setOpenConfirmDialog] = useState(false)
   const [confirmLeave, setConfirmLeave] = useState(false)
   const [pendingApproveItem, setPendingApproveItem] = useState<LeaveTableItem | null>(null)
   const [isApproving, setIsApproving] = useState(false)
+
+  // ── Offsite approval state ───────────────────────────────────────────────
+  const [openOffsiteDialog, setOpenOffsiteDialog] = useState(false)
+  const [offsiteAction, setOffsiteAction] = useState<'approve' | 'reject' | null>(null)
+  const [pendingOffsiteItem, setPendingOffsiteItem] = useState<LeaveTableItem | null>(null)
+  const [confirmOffsite, setConfirmOffsite] = useState(false)
+  const [isProcessingOffsite, setIsProcessingOffsite] = useState(false)
 
   const handleConfirmLeaveChange = (checked: boolean | 'indeterminate') => {
     setConfirmLeave(checked === true)
@@ -99,6 +140,67 @@ export default function ApprovePage() {
   const handleApprove = (item: LeaveTableItem) => {
     setPendingApproveItem(item)
     setOpenConfirmDialog(true)
+  }
+
+  // ── Offsite handlers ─────────────────────────────────────────────────────
+  const handleOffsiteApprove = (item: LeaveTableItem) => {
+    setPendingOffsiteItem(item)
+    setOffsiteAction('approve')
+    setOpenOffsiteDialog(true)
+  }
+
+  const handleOffsiteReject = (item: LeaveTableItem) => {
+    setPendingOffsiteItem(item)
+    setOffsiteAction('reject')
+    setOpenOffsiteDialog(true)
+  }
+
+  const handleOffsiteDialogOpenChange = (open: boolean) => {
+    setOpenOffsiteDialog(open)
+    if (!open) {
+      setPendingOffsiteItem(null)
+      setOffsiteAction(null)
+      setConfirmOffsite(false)
+    }
+  }
+
+  const handleConfirmOffsiteAction = async () => {
+    if (!pendingOffsiteItem || !offsiteAction || !confirmOffsite) return
+    const reviewedBy = [user?.firstNameLo || user?.firstName, user?.lastNameLo || user?.lastName]
+      .filter(Boolean).join(' ') || loggedInUserUuid
+    const now = new Date().toISOString()
+
+    setIsProcessingOffsite(true)
+    try {
+      const decision = offsiteAction === 'approve' ? 'approved' : 'rejected'
+      const approvalRole = canApproveDept ? 'departmentHead' : 'manager'
+      const fullRecord = offsiteRequests.find((r) => r.id === pendingOffsiteItem.id)
+      const approvalIndex = fullRecord?.approvals.findIndex((ap) => ap.role === approvalRole) ?? -1
+
+      const payload: Record<string, unknown> = {
+        ...(decision === 'rejected' && { status: 'rejected' }),
+        updatedAt: now,
+        updatedBy: reviewedBy,
+      }
+
+      if (approvalIndex >= 0) {
+        payload[`approvals.${approvalIndex}.decision`] = decision
+        payload[`approvals.${approvalIndex}.reviewedBy`] = reviewedBy
+        payload[`approvals.${approvalIndex}.reviewedAt`] = now
+      }
+
+      await updateDoc(doc(db, 'workOutside', pendingOffsiteItem.id), payload)
+      await queryClient.invalidateQueries({ queryKey: offsiteQueryKey })
+      toast.success(offsiteAction === 'approve' ? 'ອະນຸມັດສຳເລັດ' : 'ປະຕິເສດສຳເລັດ')
+    } catch {
+      toast.error('ເກີດຂໍ້ຜິດພາດ ກະລຸນາລອງໃໝ່')
+    } finally {
+      setIsProcessingOffsite(false)
+      setOpenOffsiteDialog(false)
+      setPendingOffsiteItem(null)
+      setOffsiteAction(null)
+      setConfirmOffsite(false)
+    }
   }
 
   const handleConfirmApprove = async () => {
@@ -190,6 +292,47 @@ export default function ApprovePage() {
         </DialogContent>
       </Dialog>
 
+      {/* Offsite Approve/Reject Confirm Dialog */}
+      <Dialog open={openOffsiteDialog} onOpenChange={handleOffsiteDialogOpenChange}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              {offsiteAction === 'approve' ? 'ຢືນຢັນການອະນຸມັດ' : 'ຢືນຢັນການປະຕິເສດ'}
+            </DialogTitle>
+            <DialogDescription>
+              {offsiteAction === 'approve' ? 'ອະນຸມັດ' : 'ປະຕິເສດ'}ຄໍາຮ້ອງຂໍຂອງ{' '}
+              <strong>{pendingOffsiteItem?.name}</strong>
+            </DialogDescription>
+          </DialogHeader>
+          <label htmlFor="confirm-offsite" className="flex items-start gap-3 py-2 cursor-pointer select-none rounded-lg border p-3 hover:bg-muted/50 transition-colors">
+            <Checkbox
+              id="confirm-offsite"
+              checked={confirmOffsite}
+              onCheckedChange={(v) => setConfirmOffsite(v === true)}
+              className="mt-0.5 shrink-0"
+            />
+            <span className="text-sm leading-relaxed">
+              ຂ້ອຍໄດ້ກວດສອບຂໍ້ມູນແລ້ວ ແລະ ຢືນຢັນການ
+              {offsiteAction === 'approve' ? 'ອະນຸມັດ' : 'ປະຕິເສດ'}
+            </span>
+          </label>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline" disabled={isProcessingOffsite}>ຍົກເລີກ</Button>
+            </DialogClose>
+            <Button
+              variant={offsiteAction === 'reject' ? 'destructive' : 'default'}
+              onClick={handleConfirmOffsiteAction}
+              disabled={!confirmOffsite || isProcessingOffsite}
+            >
+              {isProcessingOffsite
+                ? 'ກຳລັງດຳເນີນການ...'
+                : offsiteAction === 'approve' ? 'ອະນຸມັດ' : 'ປະຕິເສດ'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Tabs defaultValue="leave" className="w-full">
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="leave" className="gap-2">
@@ -214,8 +357,12 @@ export default function ApprovePage() {
         </TabsContent>
 
         <TabsContent value="offsite" className="mt-4">
-          
-          <OffsiteTable data={demoOffsiteData} />
+          <OffsiteTable
+            data={offsiteTableData}
+            onApprove={handleOffsiteApprove}
+            onReject={handleOffsiteReject}
+            onViewDetail={(item) => router.push(`/dashboard/approv/wrok-off-site?id=${item.id}`)}
+          />
         </TabsContent>
       </Tabs>
     </div>

@@ -228,7 +228,7 @@ export function OffsiteRequestList({
 
 function ExpandedDetail({ doc }: { doc: OffsiteRequestDoc }) {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-1.5 text-sm">
+    <dl className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
       <DetailRow label="ຜູ້ສ້າງ" value={doc.requester.fullNameLo || doc.requester.fullNameEn} />
       <DetailRow label="ລາຍລະອຽດ" value={doc.details} />
       <DetailRow label="ສະຖານທີ່" value={doc.location} />
@@ -238,7 +238,7 @@ function ExpandedDetail({ doc }: { doc: OffsiteRequestDoc }) {
           value={doc.teammate.map((t) => t.fullNameLo).join(', ')}
         />
       )}
-    </div>
+    </dl>
   )
 }
 

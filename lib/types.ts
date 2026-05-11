@@ -1,5 +1,28 @@
 import type { User as FirebaseUser } from 'firebase/auth'
 
+export interface RolePermissions {
+  approveBranch: boolean
+  approveDepartment: boolean
+  dashboard: boolean
+  filter: boolean
+  highDashboard: boolean
+  highManageLeave: boolean
+  highManageOffsite: boolean
+  loginAdmin: boolean
+  manageEmployee: boolean
+  manageLeave: boolean
+  manageNews: boolean
+  manageOffsite: boolean
+  managePolicy: boolean
+  manageRole: boolean
+  viewEmployee: boolean
+  viewLeave: boolean
+  viewNews: boolean
+  viewOffsite: boolean
+  viewPolicy: boolean
+  viewRole: boolean
+}
+
 export interface DepartmentInfo {
   department?: string
   title?: string
@@ -58,6 +81,9 @@ export interface Employee {
   drivingLicenseType?: string
   jobTitle?: string
   role?: string
+  rolesUid?: string
+  rolesName?: string
+  rolePermissions?: RolePermissions
   employeeType?: string
   workLocation?: string | WorkLocationInfo
   salary?: string
