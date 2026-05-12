@@ -68,7 +68,31 @@ export function MobileNav() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [showNav, setShowNav] = useState(true)  // Show initially
   const [lastScrollY, setLastScrollY] = useState(0)
+ const canApproveDept  = user?.rolePermissions?.approveDepartment ?? false
+const canApproveBranch = user?.rolePermissions?.approveBranch ?? false
+const canSee=canApproveBranch || canApproveDept
+const navItems = [
+  { href: '/dashboard', label: 'ໜ້າຫຼັກ', icon: LayoutDashboard,show: true },
+  // { href: '/dashboard/request', label: 'Forms', icon: FileText },
+  { href: '/dashboard/history', label: 'ປະຫວັດ', icon: History,show: true },
+  { href: '/dashboard/attendance', label: 'Check-In', icon: Clock,show: true },
+  { href: '/dashboard/approv', label: 'ກາານອະນຸມັດ', icon: FileExclamationPoint ,show: { canSee } },
+  { href: '/dashboard/profile', label: 'ຂໍ້ມູນສວນຕົວ', icon: User,show: true },
+  // { href: '/dashboard/news', label: 'News', icon: Newspaper },
 
+
+]
+const navMenuItems = [
+  { href: '/dashboard', label: 'ໜ້າຫຼັກ', icon: LayoutDashboard,show: true },
+  // { href: '/dashboard/request', label: 'Forms', icon: FileText },
+  { href: '/dashboard/attendance', label: 'Check-In / Check-Out', icon: Clock,show: true },
+  { href: '/dashboard/approv', label: 'ກາານອະນຸມັດ', icon: FileExclamationPoint ,show: { canSee } },
+  { href: '/dashboard/profile', label: 'ຂໍ້ມູນສວນຕົວ', icon: User,show: true },
+  { href: '/dashboard/request', label: 'ແບບຟອມ', icon: FileText, show: true },
+  { href: '/dashboard/history', label: 'ປະຫວັດ', icon: History, show: true },
+
+
+]
   useEffect(() => {
     const handleScroll = () => {
       const currentScrollY = window.scrollY
@@ -98,7 +122,7 @@ export function MobileNav() {
         style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
       >
         <div className="flex items-center justify-around h-16 px-2">
-          {navItems.map((item) => {
+          {navItems.filter(item => item.show===true).map((item) => {
             const isActive = pathname === item.href ||
               (item.href !== '/dashboard' && pathname.startsWith(item.href))
 
@@ -144,7 +168,7 @@ export function MobileNav() {
             <div className="grid flex-1 auto-rows-min gap-6 px-4">
               <TheThemes />
 
-              {navMenuItems.map((item) => {
+              {navMenuItems.filter(item => item.show===true).map((item) => {
                 const isActive = pathname === item.href ||
                   (item.href !== '/dashboard' && pathname.startsWith(item.href))
 
