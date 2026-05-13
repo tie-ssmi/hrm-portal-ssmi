@@ -27,6 +27,7 @@ import {
   UserPlus,
   Pencil,
   Plus,
+  Car,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -316,6 +317,22 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
     enabled: !!user,
   })
 
+  type VehicleDoc = {
+    nameLocation: string
+    typeVehicle: string
+    vehicleName: string
+    workLocationUid: string
+  }
+
+  const { data: vehiclesList = [] } = useQuery<VehicleDoc[]>({
+    queryKey: ['vehicles-all'],
+    queryFn: async () => {
+      const snap = await getDocs(collection(db, 'vehicles'))
+      return snap.docs.map((d) => d.data() as VehicleDoc)
+    },
+    enabled: !!user,
+  })
+
   // ─── Derived ────────────────────────────────────────────────────────────────
 
   const activityMeta = useMemo(() => ACTIVITIES.find((a) => a.code === activityCode), [activityCode])
@@ -346,7 +363,7 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
     const e: Partial<Record<string, string>> = {}
     if (!subject.trim()) e.subject = 'ກະລຸນາໃສ່ຫົວຂໍ້'
     if (!details.trim()) e.details = 'ກະລຸນາໃສ່ລາຍລະອຽດ'
-    if (needsCustomer && !customerName.trim()) e.customerName = 'ກະລຸນາໃສ່ຊື່ລູກຄ້າ / ຄູ່ຄ້າ'
+    if (needsCustomer && !customerName.trim()) e.customerName = 'ກະລຸນາເລືອກລົດ'
     if (!provinceId) e.provinceId = 'ກະລຸນາເລືອກແຂວງ'
     if (!districtId) e.districtId = 'ກະລຸນາເລືອກເມືອງ'
     if (!startDate) e.startDate = 'ກະລຸນາເລືອກວັນທີເລີ່ມ'
@@ -587,19 +604,35 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
             </Field>
 
             <Field>
-              <FieldLabel>
-                ຊື່ລູກຄ້າ / ຄູ່ຄ້າ{' '}
+              <FieldLabel className="flex items-center gap-1.5">
+                <Car className="h-4 w-4" />
+                ເລືອກລົດ{' '}
                 {needsCustomer ? (
                   <span className="text-destructive">*</span>
                 ) : (
                   <span className="text-muted-foreground text-xs">(ທາງເລືອກ)</span>
                 )}
               </FieldLabel>
-              <Input
+              <Select
                 value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                placeholder="ຊື່ລູກຄ້າ ຫຼື ອົງກອນ..."
-              />
+                onValueChange={(v) => setCustomerName(v)}
+              >
+                <SelectTrigger className={cn(!customerName && 'text-muted-foreground')}>
+                  <SelectValue placeholder="ເລືອກລົດ..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {vehiclesList.map((v) => (
+                    <SelectItem key={v.vehicleName} value={v.vehicleName}>
+                      <div className="flex flex-col">
+                        <span>{v.vehicleName}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {v.typeVehicle} · {v.nameLocation}
+                        </span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               {errors.customerName && <FieldError>{errors.customerName}</FieldError>}
             </Field>
 
