@@ -1,7 +1,7 @@
 'use client'
 
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
-import type { AttendanceRecord, HRMContextType, LeaveRequest, OffsiteRequest, ProfileUpdateRequest, LeaveBalance, LateRecord, LeaveApproverRole, GeoFence } from './types'
+import type { AttendanceRecord, HRMContextType, LeaveRequest, OffsiteRequest, ProfileUpdateRequest, LeaveBalance, LateRecord, LeaveApproverRole, GeoFence, LeaveApprovalStep } from './types'
 import { buildInitialLeaveApprovals, getRequiredLeaveApprovers, resolveLeaveRequestStatus } from '@/services/leave-approval'
 import { fetchAttendanceByUserThisMonth, formatAttendanceDocumentDate, updateAttendanceCheckInTime, updateAttendanceCheckOutTime } from '@/services/attendance'
 import { createLeaveRequest } from '@/services/leaves'
@@ -17,10 +17,10 @@ function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: numbe
   const Δφ = (lat2 - lat1) * Math.PI / 180
   const Δλ = (lng2 - lng1) * Math.PI / 180
 
-  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-            Math.cos(φ1) * Math.cos(φ2) *
-            Math.sin(Δλ/2) * Math.sin(Δλ/2)
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) *
+    Math.sin(Δλ / 2) * Math.sin(Δλ / 2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 
   return R * c // Distance in meters
 }
@@ -105,8 +105,8 @@ export function HRMProvider({ children }: { children: ReactNode }) {
 
   const workLocationUuid = typeof user?.workLocation === 'object'
     ? ((user.workLocation as { uuid?: string; uid?: string; code?: string })?.uuid
-        || (user.workLocation as { uid?: string })?.uid
-        || (user.workLocation as { code?: string })?.code)
+      || (user.workLocation as { uid?: string })?.uid
+      || (user.workLocation as { code?: string })?.code)
     : typeof user?.workLocation === 'string'
       ? user.workLocation
       : undefined
@@ -183,7 +183,7 @@ export function HRMProvider({ children }: { children: ReactNode }) {
 
   const checkIn = useCallback(async (location?: { lat: number; lng: number }) => {
     await new Promise(resolve => setTimeout(resolve, 500))
-    
+
     if (todayAttendance?.checkIn) {
       return { success: false, message: 'Already checked in today' }
     }
@@ -213,7 +213,7 @@ export function HRMProvider({ children }: { children: ReactNode }) {
       department: toDepartmentPayload(user.department),
       workLocation: toWorkLocationPayload(user.workLocation),
     })
-    
+
     const newAttendance: AttendanceRecord = {
       id: `${user.uuid}_${attendanceDate}`,
       date: now.toISOString().split('T')[0],
@@ -221,23 +221,23 @@ export function HRMProvider({ children }: { children: ReactNode }) {
       status: isLate ? 'late' : 'present',
       location
     }
-    
+
     setTodayAttendance(newAttendance)
     setAttendanceHistory(prev => [newAttendance, ...prev])
-    
-    return { 
-      success: true, 
-      message: isLate ? `Checked in late at ${checkInTime}` : `Checked in at ${checkInTime}` 
+
+    return {
+      success: true,
+      message: isLate ? `Checked in late at ${checkInTime}` : `Checked in at ${checkInTime}`
     }
   }, [todayAttendance, user])
 
   const checkOut = useCallback(async (location?: { lat: number; lng: number }) => {
     await new Promise(resolve => setTimeout(resolve, 500))
-    
+
     if (!todayAttendance?.checkIn) {
       return { success: false, message: 'Please check in first' }
     }
-    
+
     if (todayAttendance?.checkOut) {
       return { success: false, message: 'Already checked out today' }
     }
@@ -265,23 +265,24 @@ export function HRMProvider({ children }: { children: ReactNode }) {
       department: toDepartmentPayload(user.department),
       workLocation: toWorkLocationPayload(user.workLocation),
     })
-    
+
     const updatedAttendance: AttendanceRecord = {
       ...todayAttendance,
       checkOut: checkOutTime,
       location: location || todayAttendance.location,
       workHours // Simplified calculation
     }
-    
+
     setTodayAttendance(updatedAttendance)
     setAttendanceHistory(prev => prev.map(a => a.id === updatedAttendance.id ? updatedAttendance : a))
-    
+
     return { success: true, message: `Checked out at ${checkOutTime}` }
   }, [todayAttendance, user])
 
-  const submitLeaveRequest = useCallback(async (request: Omit<LeaveRequest, 'id' | 'status' | 'createdAt'>) => {
+  const submitLeaveRequest = useCallback(async (request: Omit<LeaveRequest, 'id' | 'status' | 'createdAt'>, approvalsOverride?: LeaveApprovalStep[]) => {
     const requiredApprovers = getRequiredLeaveApprovers(request.duration)
-    const approvals = buildInitialLeaveApprovals(request.duration)
+    const approvals = approvalsOverride ?? buildInitialLeaveApprovals(request.duration)
+    const status = resolveLeaveRequestStatus(approvals)
     const createdAt = new Date().toISOString().split('T')[0]
     const createdBy = [user?.firstNameLo || user?.firstName, user?.lastNameLo || user?.lastName]
       .filter(Boolean)
@@ -289,7 +290,7 @@ export function HRMProvider({ children }: { children: ReactNode }) {
 
     const payload: Omit<LeaveRequest, 'id'> = {
       ...request,
-      status: 'pending',
+      status,
       requiredApprovers,
       approvals,
       createdAt,
@@ -297,12 +298,12 @@ export function HRMProvider({ children }: { children: ReactNode }) {
     }
 
     const id = await createLeaveRequest(payload)
-    
+
     const newRequest: LeaveRequest = {
       ...payload,
       id,
     }
-    
+
     setLeaveRequests(prev => [newRequest, ...prev])
   }, [user])
 
@@ -358,27 +359,27 @@ export function HRMProvider({ children }: { children: ReactNode }) {
 
   const submitOffsiteRequest = useCallback(async (request: Omit<OffsiteRequest, 'id' | 'status' | 'createdAt'>) => {
     await new Promise(resolve => setTimeout(resolve, 500))
-    
+
     const newRequest: OffsiteRequest = {
       ...request,
       id: Date.now().toString(),
       status: 'pending',
       createdAt: new Date().toISOString().split('T')[0]
     }
-    
+
     setOffsiteRequests(prev => [newRequest, ...prev])
   }, [])
 
   const submitProfileUpdate = useCallback(async (request: Omit<ProfileUpdateRequest, 'id' | 'status' | 'createdAt'>) => {
     await new Promise(resolve => setTimeout(resolve, 500))
-    
+
     const newRequest: ProfileUpdateRequest = {
       ...request,
       id: Date.now().toString(),
       status: 'pending',
       createdAt: new Date().toISOString().split('T')[0]
     }
-    
+
     setProfileUpdateRequests(prev => [newRequest, ...prev])
   }, [])
 

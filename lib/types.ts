@@ -265,7 +265,7 @@ export interface HRMContextType {
   checkOut: (location?: { lat: number; lng: number }) => Promise<{ success: boolean; message: string }>
   leaveBalance: LeaveBalance
   leaveRequests: LeaveRequest[]
-  submitLeaveRequest: (request: Omit<LeaveRequest, 'id' | 'status' | 'createdAt'>) => Promise<void>
+  submitLeaveRequest: (request: Omit<LeaveRequest, 'id' | 'status' | 'createdAt'>, approvalsOverride?: LeaveApprovalStep[]) => Promise<void>
   reviewLeaveRequest: (
     requestId: string,
     role: LeaveApproverRole,

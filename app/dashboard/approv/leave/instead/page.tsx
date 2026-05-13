@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { useHRM } from '@/lib/hrm-context'
+import { buildInitialLeaveApprovals } from '@/services/leave-approval'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
@@ -26,6 +27,7 @@ import { fetchPoliciesForGender } from '@/services/policies'
 import { getEmployees } from '@/services/employees'
 import { useQuery } from '@tanstack/react-query'
 import { Checkbox } from '@/components/ui/checkbox'
+import { useRouter } from 'next/navigation'
 
 import { Combobox } from '@/components/ui/combobox'
 type Period = 'morning' | 'afternoon'
@@ -119,6 +121,7 @@ function SectionHeader({ number, icon: Icon, title }: { number: number; icon: Re
 }
 
 export default function InsteadLeaveRequestForm() {
+  const router = useRouter()
   const { user } = useAuth()
   const { submitLeaveRequest, leaveBalance } = useHRM()
   const loggedInUserUuid = user?.uid || user?.id || ''
@@ -272,6 +275,20 @@ export default function InsteadLeaveRequestForm() {
     try {
       const createdBy = [user?.firstNameLo || user?.firstName, user?.lastNameLo || user?.lastName].filter(Boolean).join(' ') || undefined
       const leaveUserName = employeeName(selectedLeaveFor) || undefined
+      const now = new Date().toISOString()
+
+      const initialApprovals = buildInitialLeaveApprovals(duration)
+      const autoApprovedApprovals = initialApprovals.map((step, index) => {
+        if (index === 0 && step.role === 'departmentHead') {
+          return {
+            ...step,
+            decision: 'approved' as const,
+            reviewedAt: now,
+            reviewedBy: createdBy,
+          }
+        }
+        return step
+      })
 
       await submitLeaveRequest({
         leaveUserUuid: selectedLeaveFor.uid || selectedLeaveFor.id || undefined,
@@ -297,19 +314,15 @@ export default function InsteadLeaveRequestForm() {
         successorNameEn: selectedSuccessor ? [selectedSuccessor.firstNameEn, selectedSuccessor.lastNameEn].filter(Boolean).join(' ') : undefined,
         jobTitle: selectedLeaveFor.jobTitle,
         workLocationUid: selectedLeaveFor.workLocation?.uuid,
-      })
+      }, autoApprovedApprovals)
       await refetchMyCurrentLeaves()
-      toast.success('ສົ່ງຄໍາຮ້ອງຂໍສໍາເລັດ')
+      toast.success('ສົ່ງຄໍາຮ້ອງຂໍສໍາເລັດ (ອະນຸມັດຂັ້ນຕົ້ນແລ້ວ)')
       setOpenConfirmDialog(false)
       setConfirmLeave(false)
-      setSelectedPolicyValue(leaveTypeOptions[0]?.value || 'annual')
-      setSelectedLeaveForUid('')
-      setSelectedSuccessorUid('')
-      setLeaveStartDate(undefined)
-      setStartPeriod('morning')
-      setLeaveEndDate(undefined)
-      setEndPeriod('afternoon')
-      setLeaveReason('')
+      
+      // Redirect to the approval dashboard
+      router.push('/dashboard/approv')
+      router.refresh()
     } catch (err) {
       toast.error('ບໍ່ສາມາດສົ່ງຄໍາຮ້ອງຂໍໄດ້')
       console.error(err)
