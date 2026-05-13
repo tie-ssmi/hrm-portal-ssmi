@@ -1,6 +1,15 @@
 import { collection, doc, getDocs, query, setDoc, where } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
+import { db, storage } from '@/lib/firebase'
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import type { AttendanceRecord } from '@/lib/types'
+
+export async function uploadAttendanceImage(file: File, userUuid: string, type: 'checkIn' | 'checkOut'): Promise<string> {
+  const ext = file.name.split('.').pop() ?? 'jpg'
+  const path = `attendance/${userUuid}/${type}_${Date.now()}.${ext}`
+  const ref = storageRef(storage, path)
+  await uploadBytes(ref, file)
+  return getDownloadURL(ref)
+}
 
 type ServerDateTime = {
   date: Date
@@ -28,6 +37,8 @@ type UpdateCheckInTimeParams = {
   note?: string | null
   updateBy?: string
   updateAt?: string
+  checkInImageURL?: string
+  isOffsite?: boolean
   department?: {
     name: string
     uid: string
@@ -50,6 +61,7 @@ type UpdateCheckOutTimeParams = {
   fullNameLo?: string
   jobTitle?: string
   employeeImage?: string
+  checkOutImageURL?: string
   department?: {
     name: string
     uid: string
@@ -204,6 +216,8 @@ export async function updateAttendanceCheckInTime({
   note,
   department,
   workLocation,
+  checkInImageURL,
+  isOffsite,
 }: UpdateCheckInTimeParams): Promise<string> {
   const attendanceId = `${userUuid}_${date}`
   const attendanceRef = doc(db, 'attendance', attendanceId)
@@ -217,7 +231,7 @@ export async function updateAttendanceCheckInTime({
       date,
       checkInTime,
       checkOutTime: null,
-    
+
       ...(typeof fullNameEn === 'string' ? { fullNameEn } : {}),
       ...(typeof fullNameLo === 'string' ? { fullNameLo } : {}),
       ...(typeof jobTitle === 'string' ? { jobTitle } : {}),
@@ -225,6 +239,8 @@ export async function updateAttendanceCheckInTime({
       ...(typeof note !== 'undefined' ? { note } : {}),
       ...(department ? { department } : {}),
       ...(workLocation ? { workLocation } : {}),
+      ...(checkInImageURL ? { checkInImageURL } : {}),
+      ...(isOffsite ? { isOffsite: true } : {}),
       status,
       ...(location
         ? {
@@ -256,6 +272,7 @@ export async function updateAttendanceCheckOutTime({
   employeeImage,
   department,
   workLocation,
+  checkOutImageURL,
 }: UpdateCheckOutTimeParams): Promise<string> {
   const attendanceId = `${userUuid}_${date}`
   const attendanceRef = doc(db, 'attendance', attendanceId)
@@ -275,6 +292,7 @@ export async function updateAttendanceCheckOutTime({
       ...(department ? { department } : {}),
       ...(workLocation ? { workLocation } : {}),
       ...(typeof workHours === 'number' ? { workHours } : {}),
+      ...(checkOutImageURL ? { checkOutImageURL } : {}),
       ...(location
         ? {
             location: {

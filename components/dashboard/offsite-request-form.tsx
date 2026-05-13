@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react'
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { db } from '@/lib/firebase'
 import {
@@ -26,6 +26,7 @@ import {
   Check,
   UserPlus,
   Pencil,
+  Plus,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -59,12 +60,12 @@ import type {
   ActivityCode,
   RoleInTrip,
   TeammateEntry,
-  WorkLocationDoc,
   EmployeeDoc,
   Department,
   WorkLocation,
   OffsiteRequestDoc,
 } from '@/types/workOutside'
+import { LAO_PROVINCES } from '@/public/data/laos-provinces'
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -73,7 +74,7 @@ const ACTIVITIES = [
   {
     code: 'MEET_CLIENT' as ActivityCode,
     Icon: Handshake,
-    nameLo: 'ພົບລູກຄ້າ',
+    nameLo: 'ໂຄສະນາພາຍນອກ',
     nameEn: 'Meet Client',
     desc: 'ນຳສະເໜີ ຫຼື ປະສານງານກັບລູກຄ້າ',
   },
@@ -104,6 +105,13 @@ const ACTIVITIES = [
     nameLo: 'ຝຶກອົບຮົມ',
     nameEn: 'Training',
     desc: 'ສຳມະນາ ແລະ ການອົບຮົມ',
+  },
+  {
+    code: 'OTHERS' as ActivityCode,
+    Icon: Plus,
+    nameLo: 'ອື່ນໆ',
+    nameEn: 'Others',
+    desc: 'ກິດຈະກຳອື່ນໆ ທີ່ບໍ່ໄດ້ກໍານົດຂ້າງເທິງ',
   },
 ] as const
 
@@ -212,6 +220,23 @@ function stripUndefined<T>(obj: T): T {
   return JSON.parse(JSON.stringify(obj)) as T
 }
 
+// photoUrl can be stored as string, null, or { uid: { profileImage: url } } (legacy bug)
+function resolvePhotoUrl(raw: unknown): string | undefined {
+  if (!raw || typeof raw === 'boolean') return undefined
+  if (typeof raw === 'string') return raw
+  if (typeof raw === 'object') {
+    const values = Object.values(raw as Record<string, unknown>)
+    for (const v of values) {
+      if (typeof v === 'string') return v
+      if (v && typeof v === 'object') {
+        const inner = (v as Record<string, unknown>).profileImage
+        if (typeof inner === 'string') return inner
+      }
+    }
+  }
+  return undefined
+}
+
 function generateRequestNo(): string {
   const now = new Date()
   const year = now.getFullYear()
@@ -229,6 +254,12 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
   // ── step ──
   const [step, setStep] = useState(1)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const scrollable = containerRef.current?.closest('[data-slot="dialog-content"]')
+    scrollable?.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [step])
 
   // ── step 1 ──
   const [activityCode, setActivityCode] = useState<ActivityCode | null>(
@@ -239,7 +270,13 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
   const [subject, setSubject] = useState(() => initialData?.subject ?? '')
   const [details, setDetails] = useState(() => initialData?.details ?? '')
   const [customerName, setCustomerName] = useState(() => initialData?.customerName ?? '')
-  const [workLocationUid, setWorkLocationUid] = useState(() => initialData?.workLocationUid ?? '')
+  const [provinceId, setProvinceId] = useState(() => {
+    if (!initialData?.workLocationUid) return ''
+    return LAO_PROVINCES.find((p) =>
+      p.districts.some((d) => d.id === initialData.workLocationUid),
+    )?.id ?? ''
+  })
+  const [districtId, setDistrictId] = useState(() => initialData?.workLocationUid ?? '')
   const [startDate, setStartDate] = useState<Date | undefined>(
     () => (initialData?.startDate ? parseISO(initialData.startDate) : undefined),
   )
@@ -263,20 +300,10 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
     if (activityCode !== null) markDirty()
   }, [activityCode, markDirty])
   useEffect(() => {
-    if (subject || details || customerName || workLocationUid || startDate || endDate || costDisplay) markDirty()
-  }, [subject, details, customerName, workLocationUid, startDate, endDate, costDisplay, markDirty])
+    if (subject || details || customerName || districtId || startDate || endDate || costDisplay) markDirty()
+  }, [subject, details, customerName, districtId, startDate, endDate, costDisplay, markDirty])
 
   // ─── Firestore queries ──────────────────────────────────────────────────────
-
-  const { data: workLocations = [] } = useQuery<WorkLocationDoc[]>({
-    queryKey: ['workLocations'],
-    queryFn: async () => {
-      const snap = await getDocs(collection(db, 'workLocation'))
-      return snap.docs
-        .map((d) => ({ uuid: d.id, ...d.data() } as WorkLocationDoc))
-        .filter((w) => !w.deletedAt)
-    },
-  })
 
   const { data: employeesList = [] } = useQuery<EmployeeDoc[]>({
     queryKey: ['employees-all'],
@@ -299,10 +326,17 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
     return d > 0 ? d : 0
   }, [startDate, endDate])
 
-  const selectedWorkLocation = useMemo(
-    () => workLocations.find((w) => w.uuid === workLocationUid),
-    [workLocations, workLocationUid],
+  const selectedProvince = useMemo(
+    () => LAO_PROVINCES.find((p) => p.id === provinceId),
+    [provinceId],
   )
+  const selectedDistrict = useMemo(
+    () => selectedProvince?.districts.find((d) => d.id === districtId),
+    [selectedProvince, districtId],
+  )
+  const locationDisplay = selectedProvince && selectedDistrict
+    ? `${selectedProvince.name} - ${selectedDistrict.name}`
+    : ''
 
   const needsCustomer = activityCode ? CUSTOMER_REQUIRED_TYPES.includes(activityCode) : false
 
@@ -313,7 +347,8 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
     if (!subject.trim()) e.subject = 'ກະລຸນາໃສ່ຫົວຂໍ້'
     if (!details.trim()) e.details = 'ກະລຸນາໃສ່ລາຍລະອຽດ'
     if (needsCustomer && !customerName.trim()) e.customerName = 'ກະລຸນາໃສ່ຊື່ລູກຄ້າ / ຄູ່ຄ້າ'
-    if (!workLocationUid) e.workLocationUid = 'ກະລຸນາເລືອກສະຖານທີ່'
+    if (!provinceId) e.provinceId = 'ກະລຸນາເລືອກແຂວງ'
+    if (!districtId) e.districtId = 'ກະລຸນາເລືອກເມືອງ'
     if (!startDate) e.startDate = 'ກະລຸນາເລືອກວັນທີເລີ່ມ'
     if (!endDate) e.endDate = 'ກະລຸນາເລືອກວັນທີສິ້ນສຸດ'
     if (startDate && endDate && endDate < startDate) e.endDate = 'ວັນທີສິ້ນສຸດຕ້ອງຫຼັງວັນທີເລີ່ມ'
@@ -337,7 +372,7 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
         jobTitle: emp.jobTitle,
         department: emp.department,
         roleInTrip: 'Support',
-        photoUrl: emp.profileImage ?? emp.photo3x4Url,
+        photoUrl: resolvePhotoUrl(emp.profileImage) ?? resolvePhotoUrl(emp.photo3x4Url),
       },
     ])
     setTeammateSearchOpen(false)
@@ -359,7 +394,8 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
     setSubject('')
     setDetails('')
     setCustomerName('')
-    setWorkLocationUid('')
+    setProvinceId('')
+    setDistrictId('')
     setStartDate(undefined)
     setEndDate(undefined)
     setCostDisplay('')
@@ -406,8 +442,8 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
         subject,
         details,
         customerName,
-        location: selectedWorkLocation?.nameLo ?? '',
-        workLocationUid,
+        location: locationDisplay,
+        workLocationUid: districtId,
         startDate: format(startDate!, 'yyyy-MM-dd'),
         endDate: format(endDate!, 'yyyy-MM-dd'),
         durationDays,
@@ -457,7 +493,7 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
   // ─── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-4">
+    <div ref={containerRef} className="space-y-4">
       <StepIndicator current={step} />
 
       {/* ── Step 1: Activity Type ── */}
@@ -567,23 +603,54 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
               {errors.customerName && <FieldError>{errors.customerName}</FieldError>}
             </Field>
 
+            {/* Province */}
             <Field>
               <FieldLabel>
-                ສະຖານທີ່ປະຕິບັດງານ <span className="text-destructive">*</span>
+                ແຂວງ <span className="text-destructive">*</span>
               </FieldLabel>
-              <Select value={workLocationUid} onValueChange={setWorkLocationUid}>
-                <SelectTrigger className={cn(!workLocationUid && 'text-muted-foreground')}>
-                  <SelectValue placeholder="ເລືອກສະຖານທີ່..." />
+              <Select
+                value={provinceId}
+                onValueChange={(v) => {
+                  setProvinceId(v)
+                  setDistrictId('')
+                }}
+              >
+                <SelectTrigger className={cn(!provinceId && 'text-muted-foreground')}>
+                  <SelectValue placeholder="ເລືອກແຂວງ..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {workLocations.map((w) => (
-                    <SelectItem key={w.uuid} value={w.uuid}>
-                      {w.nameLo}
+                  {LAO_PROVINCES.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              {errors.workLocationUid && <FieldError>{errors.workLocationUid}</FieldError>}
+              {errors.provinceId && <FieldError>{errors.provinceId}</FieldError>}
+            </Field>
+
+            {/* District */}
+            <Field>
+              <FieldLabel>
+                ເມືອງ <span className="text-destructive">*</span>
+              </FieldLabel>
+              <Select
+                value={districtId}
+                onValueChange={setDistrictId}
+                disabled={!provinceId}
+              >
+                <SelectTrigger className={cn(!districtId && 'text-muted-foreground')}>
+                  <SelectValue placeholder={provinceId ? 'ເລືອກເມືອງ...' : 'ກະລຸນາເລືອກແຂວງກ່ອນ'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {selectedProvince?.districts.map((d) => (
+                    <SelectItem key={d.id} value={d.id}>
+                      ເມືອງ {d.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {errors.districtId && <FieldError>{errors.districtId}</FieldError>}
             </Field>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -673,10 +740,10 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
                     ເພີ່ມສະມາຊິກ
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-80 p-0" align="end">
+                <PopoverContent className="w-80 p-0 overflow-hidden" align="end">
                   <Command>
                     <CommandInput placeholder="ຄົ້ນຫາພະນັກງານ..." />
-                    <CommandList>
+                    <CommandList className="max-h-56 overflow-y-auto overscroll-contain [touch-action:pan-y]">
                       <CommandEmpty>ບໍ່ພົບຂໍ້ມູນ</CommandEmpty>
                       <CommandGroup>
                         {employeesList
@@ -690,7 +757,7 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
                               <div className="flex items-center gap-2 w-full min-w-0">
                                 <Avatar className="w-8 h-8 shrink-0">
                                   <AvatarImage
-                                    src={emp.profileImage ?? emp.photo3x4Url}
+                                    src={resolvePhotoUrl(emp.profileImage) ?? resolvePhotoUrl(emp.photo3x4Url)}
                                     alt={`${emp.firstNameLo} ${emp.lastNameLo}`}
                                   />
                                   <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
@@ -728,9 +795,9 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
             ) : (
               <div className="space-y-2">
                 {teammates.map((tm) => (
-                  <div key={tm.uid} className="flex items-center gap-3 p-3 rounded-lg border bg-card">
+                  <div key={tm.uid || tm.email} className="flex items-center gap-3 p-3 rounded-lg border bg-card">
                     <Avatar className="w-9 h-9">
-                      <AvatarImage src={tm.photoUrl} alt={tm.fullNameLo || tm.fullNameEn} />
+                      <AvatarImage src={resolvePhotoUrl(tm.photoUrl)} alt={tm.fullNameLo || tm.fullNameEn} />
                       <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
                         {(tm.fullNameLo || tm.fullNameEn)
                           .split(' ')
@@ -834,7 +901,7 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
                   )}
 
                   <dt className="text-muted-foreground">ສະຖານທີ່</dt>
-                  <dd className="font-medium">{selectedWorkLocation?.nameLo || '—'}</dd>
+                  <dd className="font-medium">{locationDisplay || '—'}</dd>
 
                   <dt className="text-muted-foreground">ວັນທີ</dt>
                   <dd className="font-medium">

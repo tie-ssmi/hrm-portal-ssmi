@@ -119,9 +119,10 @@ export default function OffsiteDetailClient() {
       }
 
       if (approvalIndex >= 0) {
-        payload[`approvals.${approvalIndex}.decision`] = decision
-        payload[`approvals.${approvalIndex}.reviewedBy`] = reviewedBy
-        payload[`approvals.${approvalIndex}.reviewedAt`] = now
+        const updatedApprovals = record.approvals.map((ap, i) =>
+          i === approvalIndex ? { ...ap, decision, reviewedBy, reviewedAt: now } : ap
+        )
+        payload.approvals = updatedApprovals
       }
 
       await updateDoc(doc(db, 'workOutside', record.id), payload)

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { useHRM } from '@/lib/hrm-context'
 import { useQueryClient } from '@tanstack/react-query'
@@ -43,6 +43,19 @@ export default function FormsPage() {
   const { user, isLoading } = useAuth()
   const { leaveBalance } = useHRM()
   const queryClient = useQueryClient()
+
+  // ── persistent tab ──
+  const [activeTab, setActiveTab] = useState('leave')
+
+  useEffect(() => {
+    const saved = localStorage.getItem('request-tab')
+    if (saved === 'leave' || saved === 'offsite') setActiveTab(saved)
+  }, [])
+
+  function handleTabChange(value: string) {
+    setActiveTab(value)
+    localStorage.setItem('request-tab', value)
+  }
 
   // ── offsite state ──
   const [filters, setFilters] = useState<OffsiteFilters>(DEFAULT_FILTERS)
@@ -127,7 +140,7 @@ export default function FormsPage() {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="leave" className="w-full">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="leave" className="gap-2">
             <Palmtree className="w-4 h-4" />

@@ -56,7 +56,7 @@ export async function fetchLeavesForApproval(params: {
   const { departmentUid, workLocationUid, excludeUserUuid } = params
   if (!departmentUid || !workLocationUid) return []
 
-  const today = new Date().toISOString().split('T')[0]
+  const monthStart = new Date().toISOString().slice(0, 7) + '-01'
   const leavesQuery = query(
     collection(db, 'leaves'),
     where('departmentUid', '==', departmentUid),
@@ -72,7 +72,7 @@ export async function fetchLeavesForApproval(params: {
   return rows
     .filter((row) =>
       row.leaveUserUuid !== excludeUserUuid &&
-      (row.status === 'pending' || (typeof row.endDate === 'string' && row.endDate >= today))
+      (row.status === 'pending' || (typeof row.endDate === 'string' && row.endDate >= monthStart))
     )
     .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
 }

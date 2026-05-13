@@ -1,5 +1,7 @@
+'use client'
+
+import { useState, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import {
 	Table,
 	TableBody,
@@ -8,12 +10,46 @@ import {
 	TableHeader,
 	TableRow,
 } from '@/components/ui/table'
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from '@/components/ui/select'
 import { Card, CardContent } from '@/components/ui/card'
-import { CalendarRange, UserRound } from 'lucide-react'
+import { CalendarRange, Eye, Check, X, MoreHorizontal, UserRound, Users } from 'lucide-react'
+import { StatusBadge } from '@/components/offsite/StatusBadge'
 
-type LeaveTableStatus = 'pending' | 'approved' | 'rejected'
+const ROLE_LABEL: Record<string, string> = {
+	departmentHead: 'ຫົວໜ້າພະແນກ',
+	hr: 'HR',
+	manager: 'ຜູ້ຈັດການ',
+}
 
-export type LeaveTableItem = {
+function getWhoPending(approvals?: { role: string; decision: string }[]): string | null {
+	if (!Array.isArray(approvals) || approvals[0]?.decision === 'pending') return null
+	const pending = approvals
+		.filter(a => a?.decision === 'pending')
+		.map(a => ROLE_LABEL[a.role] ?? a.role)
+	return pending.length > 0 ? pending.join(', ') : null
+}
+// fun getWhoRejected
+function getWhoRejected(approvals?: { role: string; decision: string }[]): string | null {
+	if (!Array.isArray(approvals) || approvals[0]?.decision === 'rejected') return null
+	const rejected = approvals
+		.filter(a => a?.decision === 'rejected')
+		.map(a => ROLE_LABEL[a.role] ?? a.role)
+	return rejected.length > 0 ? rejected.join(', ') : null
+}
+export type OffsiteTableItem = {
 	id: string
 	name: string
 	position?: string
@@ -22,228 +58,345 @@ export type LeaveTableItem = {
 	successor?: string
 	startDate: string
 	endDate: string
-	status?: LeaveTableStatus
+	status?: 'pending' | 'approved' | 'rejected' | 'cancelled'
+	approvals?: { role: string; decision: string }[]
 }
 
-type LeaveTableProps = {
-	data: LeaveTableItem[]
-	onViewDetail?: (item: LeaveTableItem) => void
-	onApprove?: (item: LeaveTableItem) => void
-	onReject?: (item: LeaveTableItem) => void
+type OffsiteTableProps = {
+	data: OffsiteTableItem[]
+	onViewDetail?: (item: OffsiteTableItem) => void
+	onApprove?: (item: OffsiteTableItem) => void
+	onReject?: (item: OffsiteTableItem) => void
+	canApproveBranch?: boolean
 	className?: string
 }
 
-function statusLabel(status?: LeaveTableStatus) {
-	switch (status) {
-		case 'approved':
-			return 'ອະນຸມັດແລ້ວ'
-		case 'rejected':
-			return 'ປະຕິເສດ'
-		default:
-			return 'ລໍຖ້າອະນຸມັດ'
-	}
+/** @deprecated use OffsiteTableItem */
+export type LeaveTableItem = OffsiteTableItem
+
+type TabValue = 'all' | 'pending' | 'inprogress' | 'rejected'
+
+const TABS: { value: TabValue; label: string }[] = [
+	{ value: 'all',        label: 'ທັງໝົດ' },
+	{ value: 'pending',    label: 'ລໍຖ້າ' },
+	{ value: 'inprogress', label: 'ດຳເນີນການ' },
+	{ value: 'rejected',   label: 'ປະຕິເສດ' },
+]
+
+function computeRowMeta(item: OffsiteTableItem) {
+	const canApprove =
+		item.status !== 'approved' &&
+		item.status !== 'rejected' &&
+		item.status !== 'cancelled' &&
+		item.approvals?.[0]?.decision !== 'approved' &&
+		item.approvals?.[0]?.decision !== 'rejected'
+	const whoPending = getWhoPending(item.approvals)
+	const whoRejected = getWhoRejected(item.approvals)
+	return { canApprove, whoPending, whoRejected }
 }
 
-function statusVariant(status?: LeaveTableStatus): 'default' | 'destructive' | 'secondary' {
-	if (status === 'approved') return 'default'
-	if (status === 'rejected') return 'destructive'
-	return 'secondary'
+function tabMatch(item: OffsiteTableItem, tab: TabValue): boolean {
+	if (tab === 'pending')    return item.approvals?.[0]?.decision === 'pending'
+	if (tab === 'inprogress') return item.approvals?.[0]?.decision === 'approved' && item.status !== 'rejected'
+	if (tab === 'rejected')   return item.status === 'rejected'
+	return true
 }
 
-export default function OffsiteTable({ data, onViewDetail, onApprove, onReject, className }: LeaveTableProps) {
-	if (data.length === 0) {
-		return (
-			<Card className={className}>
-				<CardContent className="py-12 text-center text-sm text-muted-foreground">
-					ຍັງບໍ່ມີລາຍການຂໍອອກວຽກນອກ
-				</CardContent>
-			</Card>
-		)
-	}
+function MemberPills({ value }: { value?: string }) {
+	if (!value || value === '-') return <span className="text-sm text-muted-foreground">-</span>
+
+	const names = value.split(', ').filter(Boolean)
+	const shown = names.slice(0, 2)
+	const extra = names.length - shown.length
+
+	return (
+		<div className="flex flex-wrap gap-1">
+			{shown.map((name) => (
+				<span
+					key={name}
+					className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-foreground max-w-[100px] truncate"
+					title={name}
+				>
+					{name}
+				</span>
+			))}
+			{extra > 0 && (
+				<span className="inline-flex items-center rounded-full bg-primary/10 text-primary px-2 py-0.5 text-xs font-medium">
+					+{extra}
+				</span>
+			)}
+		</div>
+	)
+}
+
+export default function OffsiteTable({
+	data,
+	onViewDetail,
+	onApprove,
+	onReject,
+	canApproveBranch = false,
+	className,
+}: OffsiteTableProps) {
+	const [activeTab, setActiveTab] = useState<TabValue>('all')
+	const [deptFilter, setDeptFilter] = useState('all')
+
+	const departments = useMemo(() => {
+		const set = new Set<string>()
+		data.forEach(item => { if (item.department) set.add(item.department) })
+		return Array.from(set).sort()
+	}, [data])
+
+	const counts = useMemo(() => {
+		const base = canApproveBranch && deptFilter !== 'all'
+			? data.filter(i => i.department === deptFilter)
+			: data
+		return {
+			all:        base.length,
+			pending:    base.filter(i => tabMatch(i, 'pending')).length,
+			inprogress: base.filter(i => tabMatch(i, 'inprogress')).length,
+			rejected:   base.filter(i => tabMatch(i, 'rejected')).length,
+		}
+	}, [data, deptFilter, canApproveBranch])
+
+	const filtered = useMemo(() => {
+		let result = data
+		if (canApproveBranch && deptFilter !== 'all') result = result.filter(i => i.department === deptFilter)
+		if (activeTab !== 'all') result = result.filter(i => tabMatch(i, activeTab))
+		return result
+	}, [data, activeTab, deptFilter, canApproveBranch])
 
 	return (
 		<Card className={className}>
-			<CardContent className="p-0">
-				<div className="space-y-3 p-3 md:hidden">
-					{data.map((item, index) => {
-						const canApprove = item.status !== 'approved' && item.status !== 'rejected'
+			{/* Filter bar */}
+			<div className="border-b px-4 pt-3 pb-0 space-y-3">
+				{/* Dept filter — branch approvers only */}
+				{canApproveBranch && departments.length > 0 && (
+					<Select value={deptFilter} onValueChange={setDeptFilter}>
+						<SelectTrigger className="h-8 w-48 text-xs">
+							<SelectValue placeholder="ທຸກພະແນກ" />
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="all">ທຸກພະແນກ</SelectItem>
+							{departments.map(dept => (
+								<SelectItem key={dept} value={dept}>{dept}</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+				)}
 
-						return (
-							<Card key={item.id} className="border bg-background">
-								<CardContent className="space-y-3 p-3">
-									<div className="flex items-start justify-between gap-2">
-										<div className="flex items-start gap-2">
-											<span className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
-												<UserRound className="h-4 w-4" />
-											</span>
-											<div>
-												<p className="text-xs text-muted-foreground">#{index + 1}</p>
-												<p className="text-sm font-semibold text-foreground leading-tight">{item.name}</p>
-												<p className="text-xs text-muted-foreground">{item.position || '-'} • {item.department || '-'}</p>
-											</div>
-										</div>
-										<Badge variant={statusVariant(item.status)}>{statusLabel(item.status)}</Badge>
-									</div>
-
-									<div className="space-y-1">
-										<p className="text-xs text-muted-foreground">ເຫດຜົນ</p>
-										<p className="text-sm text-foreground leading-6">{item.reason || '-'}</p>
-									</div>
-
-									<div className="grid grid-cols-2 gap-2 text-xs">
-										<div className="rounded-md bg-muted p-2">
-											<p className="text-muted-foreground">ເລີ່ມຕົ້ນ</p>
-											<p className="mt-1 inline-flex items-center gap-1 font-medium text-foreground">
-												<CalendarRange className="h-3.5 w-3.5" />
-												{item.startDate}
-											</p>
-										</div>
-										<div className="rounded-md bg-muted p-2">
-											<p className="text-muted-foreground">ສິ້ນສຸດ</p>
-											<p className="mt-1 inline-flex items-center gap-1 font-medium text-foreground">
-												<CalendarRange className="h-3.5 w-3.5" />
-												{item.endDate}
-											</p>
-										</div>
-									</div>
-
-									<div className="text-xs">
-										<span className="text-muted-foreground">ຜູ້ຮັບວຽກຕໍ່: </span>
-										<span className="font-medium text-foreground">{item.successor || '-'}</span>
-									</div>
-
-									<div className="grid grid-cols-3 gap-2 pt-1">
-										<Button type="button" variant="outline" size="sm" onClick={() => onViewDetail?.(item)}>
-											ລາຍລະອຽດ
-										</Button>
-										{canApprove ? (
-											<>
-												<Button type="button" size="sm" onClick={() => onApprove?.(item)}>
-													ອະນຸມັດ
-												</Button>
-												<Button type="button" variant="destructive" size="sm" onClick={() => onReject?.(item)}>
-													ປະຕິເສດ
-												</Button>
-											</>
-										) : (
-											<div className="col-span-2 flex items-center justify-center text-xs text-muted-foreground">
-												{item.status === 'approved' ? 'ອະນຸມັດແລ້ວ' : 'ປະຕິເສດແລ້ວ'}
-											</div>
-										)}
-									</div>
-								</CardContent>
-							</Card>
-						)
-					})}
+				{/* Status tabs */}
+				<div className="flex gap-0 overflow-x-auto">
+					{TABS.map(tab => (
+						<button
+							key={tab.value}
+							type="button"
+							onClick={() => setActiveTab(tab.value)}
+							className={[
+								'relative flex items-center gap-1.5 px-3 pb-2.5 pt-1 text-sm whitespace-nowrap transition-colors',
+								activeTab === tab.value
+									? 'text-foreground font-medium after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-primary after:rounded-t'
+									: 'text-muted-foreground hover:text-foreground',
+							].join(' ')}
+						>
+							{tab.label}
+							<span className={[
+								'inline-flex items-center justify-center rounded-full px-1.5 py-0 text-[10px] font-medium min-w-[18px]',
+								activeTab === tab.value
+									? 'bg-primary/10 text-primary'
+									: 'bg-muted text-muted-foreground',
+							].join(' ')}>
+								{counts[tab.value]}
+							</span>
+						</button>
+					))}
 				</div>
+			</div>
 
-				<div className="hidden md:block">
-					<Table>
-						<TableHeader className="bg-muted/40">
-							<TableRow className="hover:bg-muted/40">
-								<TableHead className="w-14 px-4">ລໍາດັບ</TableHead>
-								<TableHead className="px-4 min-w-[180px]">ຊື່ ແລະ ນາມສະກຸນ</TableHead>
-								<TableHead className="px-4 min-w-[120px]">ຕໍາແໜ່ງ</TableHead>
-								<TableHead className="px-4 min-w-[110px]">ພະແນກ</TableHead>
-								<TableHead className="px-4 min-w-[220px]">ເຫດຜົນ</TableHead>
-								<TableHead className="px-4 min-w-[150px]">ຜູ້ຮັບວຽກຕໍ່</TableHead>
-								<TableHead className="px-4 min-w-[130px]">ມື້ເລີ່ມຕົ້ນ</TableHead>
-								<TableHead className="px-4 min-w-[130px]">ມື້ສິ້ນສຸດ</TableHead>
-								<TableHead className="px-4 min-w-[190px]">ສະຖານະ</TableHead>
-								<TableHead className="px-4 min-w-[170px] text-right">ຈັດການ</TableHead>
-							</TableRow>
-						</TableHeader>
-
-						<TableBody>
-							{data.map((item, index) => {
-								const canApprove = item.status !== 'approved' && item.status !== 'rejected'
+			<CardContent className="p-0">
+				{filtered.length === 0 ? (
+					<div className="py-12 text-center text-sm text-muted-foreground">
+						ບໍ່ມີລາຍການ
+					</div>
+				) : (
+					<>
+						{/* Mobile cards */}
+						<div className="space-y-3 p-3 md:hidden">
+							{filtered.map((item, index) => {
+								const { canApprove, whoPending, whoRejected } = computeRowMeta(item)
 
 								return (
-									<TableRow key={item.id} className="align-top">
-										<TableCell className="px-4 py-4 font-semibold text-muted-foreground">{index + 1}</TableCell>
-
-										<TableCell className="px-4 py-3">
-											<div className="flex items-center gap-2">
-												<span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
-													<UserRound className="h-4 w-4" />
-												</span>
-												<span className="font-medium text-foreground leading-tight">{item.name}</span>
+									<Card key={item.id} className="border bg-background">
+										<CardContent className="space-y-3 p-3">
+											<div className="flex items-start justify-between gap-2">
+												<div className="flex items-start gap-2 min-w-0">
+													<span className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary shrink-0">
+														<UserRound className="h-4 w-4" />
+													</span>
+													<div className="min-w-0">
+														<p className="text-xs text-muted-foreground">#{index + 1}</p>
+														<p className="text-sm font-semibold text-foreground leading-tight truncate">{item.name}</p>
+														<p className="text-xs text-muted-foreground truncate">
+															{item.position || '-'} · {item.department || '-'}
+														</p>
+													</div>
+												</div>
+												<div className="flex flex-col items-end gap-0.5 shrink-0">
+													<StatusBadge status={item.status ?? 'pending'} />
+													{item.status === 'pending' && whoPending && (
+														<span className="text-[10px] text-muted-foreground">{whoPending}</span>
+													)}
+													{item.status === 'rejected' && whoRejected && (
+														<span className="text-[10px] text-destructive">{whoRejected}</span>
+													)}
+												</div>
 											</div>
-										</TableCell>
 
-										<TableCell className="px-4 py-3 text-foreground">{item.position || '-'}</TableCell>
-										<TableCell className="px-4 py-3 text-foreground">{item.department || '-'}</TableCell>
+											{item.reason && (
+												<p className="text-sm text-foreground leading-5 line-clamp-2">{item.reason}</p>
+											)}
 
-										<TableCell className="px-4 py-3">
-											<p className="max-w-[240px] whitespace-normal break-words text-foreground leading-6">
-												{item.reason || '-'}
-											</p>
-										</TableCell>
-
-										<TableCell className="px-4 py-3 text-foreground">{item.successor || '-'}</TableCell>
-
-										<TableCell className="px-4 py-3">
-											<div className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">
-												<CalendarRange className="h-3.5 w-3.5" />
-												{item.startDate}
+											<div className="flex items-center gap-2 text-xs text-muted-foreground">
+												<CalendarRange className="h-3.5 w-3.5 shrink-0" />
+												<span>{item.startDate} – {item.endDate}</span>
 											</div>
-										</TableCell>
 
-										<TableCell className="px-4 py-3">
-											<div className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">
-												<CalendarRange className="h-3.5 w-3.5" />
-												{item.endDate}
-											</div>
-										</TableCell>
+											{item.successor && item.successor !== '-' && (
+												<div className="flex items-start gap-1.5">
+													<Users className="h-3.5 w-3.5 shrink-0 mt-0.5 text-muted-foreground" />
+													<MemberPills value={item.successor} />
+												</div>
+											)}
 
-										<TableCell className="px-4 py-3">
-											<Badge variant={statusVariant(item.status)}>{statusLabel(item.status)}</Badge>
-										</TableCell>
-
-										<TableCell className="px-4 py-3">
-											<div className="flex items-center justify-end gap-2">
-												<Button
-													type="button"
-													variant="outline"
-													size="sm"
-													className="min-w-[84px]"
-													onClick={() => onViewDetail?.(item)}
-												>
+											<div className="flex gap-2 pt-1">
+												<Button type="button" variant="outline" size="sm" className="flex-1" onClick={() => onViewDetail?.(item)}>
+													<Eye className="h-3.5 w-3.5 mr-1" />
 													ລາຍລະອຽດ
 												</Button>
-												{canApprove ? (
+												{canApprove && (
 													<>
-														<Button
-															type="button"
-															size="sm"
-															className="min-w-[84px]"
-															onClick={() => onApprove?.(item)}
-														>
+														<Button type="button" size="sm" className="flex-1" onClick={() => onApprove?.(item)}>
+															<Check className="h-3.5 w-3.5 mr-1" />
 															ອະນຸມັດ
 														</Button>
-														<Button
-															type="button"
-															variant="destructive"
-															size="sm"
-															className="min-w-[84px]"
-															onClick={() => onReject?.(item)}
-														>
+														<Button type="button" variant="destructive" size="sm" className="flex-1" onClick={() => onReject?.(item)}>
+															<X className="h-3.5 w-3.5 mr-1" />
 															ປະຕິເສດ
 														</Button>
 													</>
-												) : (
-													<span className="text-xs text-muted-foreground min-w-[84px] text-right">
-														{item.status === 'approved' ? 'ອະນຸມັດແລ້ວ' : 'ປະຕິເສດແລ້ວ'}
-													</span>
 												)}
 											</div>
-										</TableCell>
-									</TableRow>
+										</CardContent>
+									</Card>
 								)
 							})}
-						</TableBody>
-					</Table>
-				</div>
+						</div>
+
+						{/* Desktop table */}
+						<div className="hidden md:block overflow-x-auto">
+							<Table>
+								<TableHeader className="bg-muted/40">
+									<TableRow className="hover:bg-muted/40">
+										<TableHead className="w-12 px-4">#</TableHead>
+										<TableHead className="px-4 min-w-[200px]">ຊື່ / ຕໍາແໜ່ງ</TableHead>
+										<TableHead className="px-4 min-w-[200px]">ເຫດຜົນ</TableHead>
+										<TableHead className="px-4 min-w-[120px]">ວັນທີ</TableHead>
+										<TableHead className="px-4 min-w-[140px]">ສະມາຊິກ</TableHead>
+										<TableHead className="px-4 w-28">ສະຖານະ</TableHead>
+										<TableHead className="px-4 w-12 text-right">...</TableHead>
+									</TableRow>
+								</TableHeader>
+
+								<TableBody>
+									{filtered.map((item, index) => {
+										const { canApprove, whoPending, whoRejected } = computeRowMeta(item)
+										return (
+											<TableRow key={item.id} className="hover:bg-muted/30">
+												<TableCell className="px-4 py-3 font-semibold text-muted-foreground text-sm">
+													{index + 1}
+												</TableCell>
+
+												<TableCell className="px-4 py-3">
+													<div className="flex items-center gap-2 min-w-0">
+														<span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary shrink-0">
+															<UserRound className="h-4 w-4" />
+														</span>
+														<div className="min-w-0">
+															<p className="text-sm font-medium text-foreground truncate">{item.name}</p>
+															<p className="text-xs text-muted-foreground truncate">
+																{item.position || '-'} · {item.department || '-'}
+															</p>
+														</div>
+													</div>
+												</TableCell>
+
+												<TableCell className="px-4 py-3">
+													<p className="text-sm text-foreground line-clamp-2 max-w-[200px]">
+														{item.reason || '-'}
+													</p>
+												</TableCell>
+
+												<TableCell className="px-4 py-3 whitespace-nowrap">
+													<div className="flex items-center gap-1 text-xs text-muted-foreground">
+														<CalendarRange className="h-3 w-3 shrink-0" />
+														<span>{item.startDate} – {item.endDate}</span>
+													</div>
+												</TableCell>
+
+												<TableCell className="px-4 py-3">
+													<MemberPills value={item.successor} />
+												</TableCell>
+
+												<TableCell className="px-4 py-3">
+													<div className="flex flex-col gap-0.5">
+														<StatusBadge status={item.status ?? 'pending'} />
+														{item.status === 'pending' && whoPending && (
+															<span className="text-[10px] text-muted-foreground">{whoPending}</span>
+														)}
+														{item.status === 'rejected' && whoRejected && (
+															<span className="text-[10px] text-destructive">{whoRejected}</span>
+														)}
+													</div>
+												</TableCell>
+
+												<TableCell className="px-4 py-3 text-right">
+													<DropdownMenu>
+														<DropdownMenuTrigger asChild>
+															<Button variant="ghost" size="icon" className="h-8 w-8" aria-label="ຕົວເລືອກ">
+																<MoreHorizontal className="h-4 w-4" />
+															</Button>
+														</DropdownMenuTrigger>
+														<DropdownMenuContent align="end">
+															<DropdownMenuItem onClick={() => onViewDetail?.(item)}>
+																<Eye className="h-4 w-4 mr-2" />
+																ເບິ່ງລາຍລະອຽດ
+															</DropdownMenuItem>
+															{canApprove && (
+																<>
+																	<DropdownMenuSeparator />
+																	<DropdownMenuItem onClick={() => onApprove?.(item)}>
+																		<Check className="h-4 w-4 mr-2" />
+																		ອະນຸມັດ
+																	</DropdownMenuItem>
+																	<DropdownMenuItem
+																		onClick={() => onReject?.(item)}
+																		className="text-destructive focus:text-destructive"
+																	>
+																		<X className="h-4 w-4 mr-2" />
+																		ປະຕິເສດ
+																	</DropdownMenuItem>
+																</>
+															)}
+														</DropdownMenuContent>
+													</DropdownMenu>
+												</TableCell>
+											</TableRow>
+										)
+									})}
+								</TableBody>
+							</Table>
+						</div>
+					</>
+				)}
 			</CardContent>
 		</Card>
 	)

@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { useHRM } from '@/lib/hrm-context'
 import {
@@ -29,7 +29,10 @@ import {
   Navigation,
   Shield,
   ShieldX,
+  MapPinOff,
 } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { addDays, format, startOfWeek } from 'date-fns'
 
@@ -78,6 +81,19 @@ export default function AttendancePage() {
 
   const [location, setLocation] = useState<LocationState | null>(null)
   const [isLoadingLocation, setIsLoadingLocation] = useState(false)
+  const [isOffsite, setIsOffsite] = useState(false)
+  const checkInCameraRef = useRef<HTMLInputElement>(null)
+  const checkOutCameraRef = useRef<HTMLInputElement>(null)
+
+  function captureImage(ref: React.RefObject<HTMLInputElement | null>): Promise<File | null> {
+    return new Promise((resolve) => {
+      const input = ref.current
+      if (!input) { resolve(null); return }
+      input.value = ''
+      input.onchange = () => resolve(input.files?.[0] ?? null)
+      input.click()
+    })
+  }
 
   const getLocation = useCallback(async (): Promise<LocationState | null> => {
     setIsLoadingLocation(true)
@@ -140,20 +156,42 @@ export default function AttendancePage() {
       return
     }
     try {
-      const loc = await getValidatedLocation()
-      if (!loc) return
-      const payload = { user, location: { lat: loc.lat, lng: loc.lng } }
-      if (type === 'checkIn') {
-        await checkInMutation.mutateAsync(payload)
-        toast.success('ເຂົ້າການສຳເລັດແລ້ວ')
+      if (isOffsite) {
+        const imageFile = await captureImage(type === 'checkIn' ? checkInCameraRef : checkOutCameraRef)
+        if (!imageFile) {
+          toast.error('ກະລຸນາຖ່າຍຮູບກ່ອນ.')
+          return
+        }
+        const loc = await getLocation()
+        const payload = {
+          user,
+          location: loc ? { lat: loc.lat, lng: loc.lng } : undefined,
+          imageFile,
+          isOffsite: true,
+        }
+        if (type === 'checkIn') {
+          await checkInMutation.mutateAsync(payload)
+          toast.success('ເຂົ້າວຽກນອກສຳເລັດ')
+        } else {
+          await checkOutMutation.mutateAsync(payload)
+          toast.success('ອອກວຽກນອກສຳເລັດ')
+        }
       } else {
-        await checkOutMutation.mutateAsync(payload)
-        toast.success('ອອກຈາກການສຳເລັດແລ້ວ')
+        const loc = await getValidatedLocation()
+        if (!loc) return
+        const payload = { user, location: { lat: loc.lat, lng: loc.lng } }
+        if (type === 'checkIn') {
+          await checkInMutation.mutateAsync(payload)
+          toast.success('ເຂົ້າການສຳເລັດແລ້ວ')
+        } else {
+          await checkOutMutation.mutateAsync(payload)
+          toast.success('ອອກຈາກການສຳເລັດແລ້ວ')
+        }
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'ເກີດຂໍ້ຜິດພາດ. ກະລຸນາລອງໃໝ່.')
     }
-  }, [user, getValidatedLocation, checkInMutation, checkOutMutation])
+  }, [user, isOffsite, getLocation, getValidatedLocation, checkInMutation, checkOutMutation])
 
   const officeDistance = useMemo(() => {
     if (!location || location.error) return null
@@ -295,6 +333,26 @@ export default function AttendancePage() {
               )}
             </Badge>
           </div>
+
+          {/* Offsite checkbox — mobile only */}
+          <div className="flex items-center gap-2 rounded-lg border px-3 py-2.5 ">
+            <Checkbox
+              id="offsite-mode"
+              checked={isOffsite}
+              onCheckedChange={(v) => setIsOffsite(v === true)}
+            />
+            <Label htmlFor="offsite-mode" className="flex items-center gap-1.5 cursor-pointer text-sm select-none">
+              <MapPinOff className="h-3.5 w-3.5 text-muted-foreground" />
+              ອອກວຽກນອກ
+            </Label>
+            {isOffsite && (
+              <span className="ml-auto text-[10px] text-amber-600 font-medium">ບໍ່ກວດໄລຍະ · ຕ້ອງຖ່າຍຮູບ</span>
+            )}
+          </div>
+
+          {/* Hidden camera inputs */}
+          <input ref={checkInCameraRef}  type="file" accept="image/*" capture="user" className="hidden" />
+          <input ref={checkOutCameraRef} type="file" accept="image/*" capture="user" className="hidden" />
         </CardContent>
       </Card>
 
@@ -303,7 +361,7 @@ export default function AttendancePage() {
           size="lg"
           className="h-16 text-lg"
           onClick={() => handleAttendance('checkIn')}
-          disabled={checkInMutation.isPending || !!todayAttendance?.checkIn || isLoadingHistory || !isWithinOffice}
+          disabled={checkInMutation.isPending || !!todayAttendance?.checkIn || isLoadingHistory || (!isOffsite && !isWithinOffice)}
         >
           {checkInMutation.isPending ? <Spinner className="mr-2" /> : <LogIn className="mr-2 h-5 w-5" />}
           Check In
@@ -314,7 +372,7 @@ export default function AttendancePage() {
           variant="outline"
           className="h-16 text-lg"
           onClick={() => handleAttendance('checkOut')}
-          disabled={checkOutMutation.isPending || !todayAttendance?.checkIn || !!todayAttendance?.checkOut || !isWithinOffice}
+          disabled={checkOutMutation.isPending || !todayAttendance?.checkIn || !!todayAttendance?.checkOut || (!isOffsite && !isWithinOffice)}
         >
           {checkOutMutation.isPending ? <Spinner className="mr-2" /> : <LogOut className="mr-2 h-5 w-5" />}
           Check Out

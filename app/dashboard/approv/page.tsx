@@ -1,5 +1,5 @@
 'use client'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -85,9 +85,11 @@ export default function ApprovePage() {
             where('requester.department.uuid', '==', departmentUuid),
           ]
       const snap = await getDocs(query(coll, ...constraints))
+      const monthStart = new Date().toISOString().slice(0, 7) + '-01' // "YYYY-MM-01"
       return snap.docs
         .map((d) => ({ id: d.id, ...d.data() } as OffsiteRequestDoc))
         .filter((d) => d.createdByUid !== loggedInUserUuid)
+        .filter((d) => d.status === 'pending' || d.endDate >= monthStart)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     },
     enabled: !!workLocationUuid && !!loggedInUserUuid && (canApproveDept || canApproveBranch),
@@ -106,11 +108,25 @@ export default function ApprovePage() {
       startDate: r.startDate,
       endDate: r.endDate,
       status: (r.status === 'cancelled' ? 'rejected' : r.status) as 'pending' | 'approved' | 'rejected',
+      approvals: r.approvals as { role: string; decision: string }[],
     })),
     [offsiteRequests],
   )
 
   const workOutSide = offsiteTableData.length
+
+  // ── Persistent tab state ─────────────────────────────────────────────────
+  const [activeTab, setActiveTab] = useState('leave')
+
+  useEffect(() => {
+    const saved = localStorage.getItem('approv-tab')
+    if (saved === 'leave' || saved === 'offsite') setActiveTab(saved)
+  }, [])
+
+  function handleTabChange(value: string) {
+    setActiveTab(value)
+    localStorage.setItem('approv-tab', value)
+  }
 
   // ── Leave approval state ─────────────────────────────────────────────────
   const [openConfirmDialog, setOpenConfirmDialog] = useState(false)
@@ -183,10 +199,11 @@ export default function ApprovePage() {
         updatedBy: reviewedBy,
       }
 
-      if (approvalIndex >= 0) {
-        payload[`approvals.${approvalIndex}.decision`] = decision
-        payload[`approvals.${approvalIndex}.reviewedBy`] = reviewedBy
-        payload[`approvals.${approvalIndex}.reviewedAt`] = now
+      if (approvalIndex >= 0 && fullRecord) {
+        const updatedApprovals = fullRecord.approvals.map((ap, i) =>
+          i === approvalIndex ? { ...ap, decision, reviewedBy, reviewedAt: now } : ap
+        )
+        payload.approvals = updatedApprovals
       }
 
       await updateDoc(doc(db, 'workOutside', pendingOffsiteItem.id), payload)
@@ -248,7 +265,7 @@ export default function ApprovePage() {
           <CardContent className="pt-4 pb-4">
             <p className="text-xs text-muted-foreground flex items-center gap-2">
               <Palmtree className="h-3.5 w-3.5 text-chart-2" />
-              leave
+              ຂໍລາພັກ
             </p>
             <p className="text-lg font-bold text-foreground">{leaveTableData.length} list</p>
           </CardContent>
@@ -257,7 +274,7 @@ export default function ApprovePage() {
           <CardContent className="pt-4 pb-4">
             <p className="text-xs text-muted-foreground flex items-center gap-2">
               <MapPin className="h-3.5 w-3.5 text-chart-1" />
-              offsite
+              ຂໍອອກວຽກນອກ
             </p>
             <p className="text-lg font-bold text-foreground">{workOutSide} list</p>
           </CardContent>
@@ -333,7 +350,7 @@ export default function ApprovePage() {
         </DialogContent>
       </Dialog>
 
-      <Tabs defaultValue="leave" className="w-full">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="leave" className="gap-2">
             <Palmtree className="w-4 h-4" />
@@ -359,6 +376,7 @@ export default function ApprovePage() {
         <TabsContent value="offsite" className="mt-4">
           <OffsiteTable
             data={offsiteTableData}
+            canApproveBranch={canApproveBranch}
             onApprove={handleOffsiteApprove}
             onReject={handleOffsiteReject}
             onViewDetail={(item) => router.push(`/dashboard/approv/wrok-off-site?id=${item.id}`)}

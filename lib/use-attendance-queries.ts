@@ -10,6 +10,7 @@ import {
   getServerDateTimeInVientiane,
   updateAttendanceCheckInTime,
   updateAttendanceCheckOutTime,
+  uploadAttendanceImage,
 } from '@/services/attendance'
 import { fetchServerTime } from '@/lib/server-time'
 
@@ -125,6 +126,8 @@ export function useTodayCheckInAttendance() {
 type CheckInParams = {
   user: Employee
   location?: AttendanceLocation
+  imageFile?: File
+  isOffsite?: boolean
 }
 
 type CheckInServerStatus = 'present' | 'late' | 'not_check_in'
@@ -133,11 +136,20 @@ export function useCheckIn() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async ({ user, location }: CheckInParams) => {
+    mutationFn: async ({ user, location, imageFile, isOffsite }: CheckInParams) => {
       if (!user.uuid) throw new Error('User uuid is missing. Unable to update attendance.')
 
       const serverTime = await fetchServerTime(user.uuid)
-      const status = serverTime.status as CheckInServerStatus
+
+      let status = serverTime.status as CheckInServerStatus
+      if (isOffsite) {
+        const [h, m] = serverTime.checkTime.split(':').map(Number)
+        status = h < 9 || (h === 9 && m === 0) ? 'present' : 'late'
+      }
+
+      const checkInImageURL = imageFile
+        ? await uploadAttendanceImage(imageFile, user.uuid, 'checkIn')
+        : undefined
 
       await updateAttendanceCheckInTime({
         userUuid: user.uuid,
@@ -153,6 +165,8 @@ export function useCheckIn() {
         department: toDepartmentPayload(user.department),
         workLocation: toWorkLocationPayload(user.workLocation),
         note: null,
+        checkInImageURL,
+        isOffsite,
       })
 
       return {
@@ -185,16 +199,21 @@ export function useCheckIn() {
 type CheckOutParams = {
   user: Employee
   location?: AttendanceLocation
+  imageFile?: File
 }
 
 export function useCheckOut() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async ({ user, location }: CheckOutParams) => {
+    mutationFn: async ({ user, location, imageFile }: CheckOutParams) => {
       if (!user.uuid) throw new Error('User uuid is missing. Unable to update attendance.')
 
       const serverTime = await fetchServerTime(user.uuid)
+
+      const checkOutImageURL = imageFile
+        ? await uploadAttendanceImage(imageFile, user.uuid, 'checkOut')
+        : undefined
 
       await updateAttendanceCheckOutTime({
         userUuid: user.uuid,
@@ -209,6 +228,7 @@ export function useCheckOut() {
         employeeImage: user.profileImage || user.photo3x4Url || user.avatar,
         department: toDepartmentPayload(user.department),
         workLocation: toWorkLocationPayload(user.workLocation),
+        checkOutImageURL,
       })
 
       return {

@@ -1,7 +1,7 @@
 'use client'
 
+import { useState, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import {
 	Table,
 	TableBody,
@@ -10,14 +10,35 @@ import {
 	TableHeader,
 	TableRow,
 } from '@/components/ui/table'
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Card, CardContent } from '@/components/ui/card'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { CalendarRange, UserRound, CheckCircle, XCircle, Eye } from 'lucide-react'
+import { CalendarRange, Eye, Check, X, MoreHorizontal, UserRound } from 'lucide-react'
+import { StatusBadge } from '@/components/offsite/StatusBadge'
 import { useRouter } from 'next/navigation'
 import type { LeaveApprovalStep } from '@/lib/types'
 
+const ROLE_LABEL: Record<string, string> = {
+	departmentHead: 'ຫົວໜ້າພະແນກ',
+	hr: 'HR',
+	manager: 'ຜູ້ຈັດການ',
+}
+
+function getWhoPending(approvals?: LeaveApprovalStep[]): string | null {
+	if (!Array.isArray(approvals) || approvals[0]?.decision === 'pending') return null
+	const pending = approvals
+		.filter(a => a?.decision === 'pending')
+		.map(a => ROLE_LABEL[a.role ?? ''] ?? a.role)
+	return pending.length > 0 ? pending.join(', ') : null
+}
+
 type LeaveTableStatus = 'pending' | 'approved' | 'rejected'
-type LeaveApproval=[{ decision?: string , role?: string,reviewedAt?: string,reviewedBy?: string }]
+
 export type LeaveTableItem = {
 	id: string
 	name: string
@@ -29,10 +50,7 @@ export type LeaveTableItem = {
 	startDate: string
 	endDate: string
 	duration?: number
-	type?: {
-		id?: string
-		name?: string
-	}
+	type?: { id?: string; name?: string }
 	status?: LeaveTableStatus
 	approvals?: LeaveApprovalStep[]
 }
@@ -45,36 +63,55 @@ type LeaveTableProps = {
 	className?: string
 }
 
-function statusLabel(status?: LeaveTableStatus ,approved?:LeaveApproval) {
-	const depApproval = approved?.find(a => a.role === 'departmentHead')?.decision === 'approved'
-	const hrApproval = approved?.find(a => a.role === 'hr')?.decision === 'approved'
-	const managerApproval = approved?.find(a => a.role === 'manager')?.decision === 'approved'
-	
-	switch (status) {
-		case 'approved':
-			return 'ອະນຸມັດແລ້ວ'
-		case 'rejected':
-			return 'ປະຕິເສດ'
-		default:
-			return 'ລໍຖ້າອະນຸມັດ ' + (!depApproval ? ' ' : !hrApproval ? '(HR)' : approved.length>0 && !managerApproval ? '(COO)' : '')
-	}
+type TabValue = 'all' | 'pending' | 'inprogress' | 'rejected'
+
+const TABS: { value: TabValue; label: string }[] = [
+	{ value: 'all',        label: 'ທັງໝົດ' },
+	{ value: 'pending',    label: 'ລໍຖ້າ' },
+	{ value: 'inprogress', label: 'ດຳເນີນການ' },
+	{ value: 'rejected',   label: 'ປະຕິເສດ' },
+]
+
+function tabMatch(item: LeaveTableItem, tab: TabValue): boolean {
+	if (tab === 'pending')    return item.approvals?.[0]?.decision === 'pending'
+	if (tab === 'inprogress') return item.approvals?.[0]?.decision === 'approved' && item.status !== 'rejected'
+	if (tab === 'rejected')   return item.status === 'rejected'
+	return true
 }
 
-function statusVariant(status?: LeaveTableStatus): 'default' | 'destructive' | 'secondary' {
-	if (status === 'approved') return 'default'
-	if (status === 'rejected') return 'destructive'
-	return 'secondary'
+function computeRowMeta(item: LeaveTableItem) {
+	const canApprove =
+		item.status !== 'approved' &&
+		item.status !== 'rejected' &&
+		item.approvals?.[0]?.decision !== 'approved' &&
+		item.approvals?.[0]?.decision !== 'rejected'
+	const whoPending = getWhoPending(item.approvals)
+	return { canApprove, whoPending }
+}
+
+function formatDuration(duration?: number): string {
+	if (duration == null) return ''
+	return duration === 0.5 ? '0.5 ວັນ' : `${duration} ວັນ`
 }
 
 export default function LeaveTable({ data, onViewDetail, onApprove, onReject, className }: LeaveTableProps) {
 	const router = useRouter()
+	const [activeTab, setActiveTab] = useState<TabValue>('all')
 
-	const handleViewDetail = (item: LeaveTableItem) => {
-		if (onViewDetail) {
-			onViewDetail(item)
-			return
-		}
+	const counts = useMemo(() => ({
+		all:        data.length,
+		pending:    data.filter(i => tabMatch(i, 'pending')).length,
+		inprogress: data.filter(i => tabMatch(i, 'inprogress')).length,
+		rejected:   data.filter(i => tabMatch(i, 'rejected')).length,
+	}), [data])
 
+	const filtered = useMemo(() =>
+		activeTab === 'all' ? data : data.filter(i => tabMatch(i, activeTab)),
+		[data, activeTab],
+	)
+
+	function handleViewDetail(item: LeaveTableItem) {
+		if (onViewDetail) { onViewDetail(item); return }
 		const params = new URLSearchParams({
 			id: item.id,
 			name: item.name,
@@ -88,198 +125,240 @@ export default function LeaveTable({ data, onViewDetail, onApprove, onReject, cl
 			typeId: item.type?.id || '',
 			typeName: item.type?.name || '',
 		})
-
 		router.push(`/dashboard/approv/leave/detail?${params.toString()}`)
-	}
-
-	if (data.length === 0) {
-		return (
-			<Card className={className}>
-				<CardContent className="py-12 text-center text-sm text-muted-foreground">
-					ຍັງບໍ່ມີລາຍການຄໍາຂໍລາ
-				</CardContent>
-			</Card>
-		)
 	}
 
 	return (
 		<Card className={className}>
-			<CardContent className="p-0">
-				<div className="space-y-3 p-3 md:hidden">
-					{data.map((item, index) => {
-						const canApprove = item.approvals?.[0]?.decision !== 'approved' && item.approvals?.[0]?.decision !== 'rejected' && item.status !== 'rejected'&& item.status !== 'approved'
-
-						return (
-							<Card key={item.id} className="border bg-background">
-								<CardContent className="space-y-3 p-3">
-									<div className="flex items-start justify-between gap-2">
-										<div className="flex items-start gap-2">
-											<span className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
-												<UserRound className="h-4 w-4" />
-											</span>
-											<div>
-												<p className="text-xs text-muted-foreground">#{index + 1}</p>
-												<p className="text-sm font-semibold text-foreground leading-tight">{item.name}</p>
-												<p className="text-xs text-muted-foreground">{item.position || '-'} • {item.department || '-'}</p>
-											</div>
-										</div>
-										<Badge variant={statusVariant(item.status)}>{statusLabel(item.status)}</Badge>
-									</div>
-
-									<div className="space-y-1">
-										<p className="text-xs text-muted-foreground">ເຫດຜົນ</p>
-										<p className="text-sm text-foreground leading-6">{item.reason || '-'}</p>
-									</div>
-
-									<div className="grid grid-cols-2 gap-2 text-xs">
-										<div className="rounded-md bg-muted p-2">
-											<p className="text-muted-foreground">ເລີ່ມຕົ້ນ</p>
-											<p className="mt-1 inline-flex items-center gap-1 font-medium text-foreground">
-												<CalendarRange className="h-3.5 w-3.5" />
-												{item.startDate}
-											</p>
-										</div>
-										<div className="rounded-md bg-muted p-2">
-											<p className="text-muted-foreground">ສິ້ນສຸດ</p>
-											<p className="mt-1 inline-flex items-center gap-1 font-medium text-foreground">
-												<CalendarRange className="h-3.5 w-3.5" />
-												{item.endDate}
-											</p>
-										</div>
-									</div>
-
-									<div className="text-xs">
-										<span className="text-muted-foreground">ຜູ້ຮັບວຽກຕໍ່: </span>
-										<span className="font-medium text-foreground">{item.successor || '-'}</span>
-									</div>
-
-									<div className="flex items-center gap-2 pt-1">
-										<Button type="button" variant="outline" size="sm" className="flex-1 gap-1.5" onClick={() => handleViewDetail(item)}>
-											<Eye className="h-3.5 w-3.5" /> ລາຍລະອຽດ
-										</Button>
-										{canApprove ? (
-											<>
-												<Button type="button" size="sm" className="flex-1 gap-1.5 "
-													onClick={() => onApprove ? onApprove(item) : handleViewDetail(item)}>
-													<CheckCircle className="h-3.5 w-3.5" /> ອະນຸມັດ
-												</Button>
-												{onReject && (
-													<Button type="button" size="sm" variant="destructive" className="flex-1 gap-1.5 "
-														onClick={() => onReject(item)}>
-														<XCircle className="h-3.5 w-3.5" /> ປະຕິເສດ
-													</Button>
-												)}
-											</>
-										) : (
-											<Button type="button" size="sm" className="flex-1 gap-1.5 "
-												onClick={() => handleViewDetail(item)} disabled>
-													<CheckCircle className="h-3.5 w-3.5 text-green-500" /> ອະນຸມັດແລ້ວ
-												</Button>
-										)}
-									</div>
-								</CardContent>
-							</Card>
-						)
-					})}
+			{/* Filter bar */}
+			<div className="border-b px-4 pt-3 pb-0">
+				<div className="flex gap-0 overflow-x-auto">
+					{TABS.map(tab => (
+						<button
+							key={tab.value}
+							type="button"
+							onClick={() => setActiveTab(tab.value)}
+							className={[
+								'relative flex items-center gap-1.5 px-3 pb-2.5 pt-1 text-sm whitespace-nowrap transition-colors',
+								activeTab === tab.value
+									? 'text-foreground font-medium after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-primary after:rounded-t'
+									: 'text-muted-foreground hover:text-foreground',
+							].join(' ')}
+						>
+							{tab.label}
+							<span className={[
+								'inline-flex items-center justify-center rounded-full px-1.5 py-0 text-[10px] font-medium min-w-[18px]',
+								activeTab === tab.value
+									? 'bg-primary/10 text-primary'
+									: 'bg-muted text-muted-foreground',
+							].join(' ')}>
+								{counts[tab.value]}
+							</span>
+						</button>
+					))}
 				</div>
+			</div>
 
-				<div className="hidden md:block">
-					<Table>
-						<TableHeader className="bg-muted/40">
-							<TableRow className="hover:bg-muted/40">
-								<TableHead className="w-14 px-4">ລໍາດັບ</TableHead>
-								<TableHead className="px-4 min-w-[180px]">ຊື່ ແລະ ນາມສະກຸນ</TableHead>
-								<TableHead className="px-4 min-w-[120px]">ຕໍາແໜ່ງ</TableHead>
-								<TableHead className="px-4 min-w-[110px]">ພະແນກ</TableHead>
-								<TableHead className="px-4 min-w-[220px]">ເຫດຜົນ</TableHead>
-								<TableHead className="px-4 min-w-[150px]">ຜູ້ຮັບວຽກຕໍ່</TableHead>
-								<TableHead className="px-4 min-w-[130px]">ມື້ເລີ່ມຕົ້ນ</TableHead>
-								<TableHead className="px-4 min-w-[130px]">ມື້ສິ້ນສຸດ</TableHead>
-								<TableHead className="px-4 min-w-[130px]">ຈຳນວນວັນ</TableHead>
-								<TableHead className="px-4 min-w-[190px]">ສະຖານະ</TableHead>
-								<TableHead className="px-4 min-w-[170px] text-right">ຈັດການ</TableHead>
-							</TableRow>
-						</TableHeader>
-
-						<TableBody>
-							{data.map((item, index) => {
-								const canApprove = item.approvals?.[0]?.decision !== 'approved' && item.approvals?.[0]?.decision !== 'rejected' && item.status !== 'rejected' && item.status !== 'approved'
-
+			<CardContent className="p-0">
+				{filtered.length === 0 ? (
+					<div className="py-12 text-center text-sm text-muted-foreground">
+						ບໍ່ມີລາຍການ
+					</div>
+				) : (
+					<>
+						{/* Mobile cards */}
+						<div className="space-y-3 p-3 md:hidden">
+							{filtered.map((item, index) => {
+								const { canApprove, whoPending } = computeRowMeta(item)
 								return (
-									<TableRow key={item.id} className="align-top" onClick={() => handleViewDetail(item)}>
-										<TableCell className="px-4 py-4 font-semibold text-muted-foreground">{index + 1}</TableCell>
-
-										<TableCell className="px-4 py-3">
-											<div className="flex items-center gap-2">
-												<span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
-													<UserRound className="h-4 w-4" />
-												</span>
-												<span className="font-medium text-foreground leading-tight">{item.name}</span>
+									<Card key={item.id} className="border bg-background">
+										<CardContent className="space-y-3 p-3">
+											<div className="flex items-start justify-between gap-2">
+												<div className="flex items-start gap-2 min-w-0">
+													<span className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary shrink-0">
+														<UserRound className="h-4 w-4" />
+													</span>
+													<div className="min-w-0">
+														<p className="text-xs text-muted-foreground">#{index + 1}</p>
+														<p className="text-sm font-semibold text-foreground leading-tight truncate">{item.name}</p>
+														<p className="text-xs text-muted-foreground truncate">
+															{item.position || '-'} · {item.department || '-'}
+														</p>
+													</div>
+												</div>
+												<div className="flex flex-col items-end gap-0.5 shrink-0">
+													<StatusBadge status={item.status ?? 'pending'} />
+													{item.status === 'pending' && whoPending && (
+														<span className="text-[10px] text-muted-foreground">{whoPending}</span>
+													)}
+												</div>
 											</div>
-										</TableCell>
 
-										<TableCell className="px-4 py-3 text-foreground">{item.position || '-'}</TableCell>
-										<TableCell className="px-4 py-3 text-foreground">{item.department || '-'}</TableCell>
+											{item.type?.name && (
+												<p className="text-xs text-muted-foreground">
+													ປະເພດ: <span className="font-medium text-foreground">{item.type.name}</span>
+												</p>
+											)}
 
-										<TableCell className="px-4 py-3">
-											<p className="max-w-[240px] whitespace-normal break-words text-foreground leading-6">
-												{item.reason || '-'}
-											</p>
-										</TableCell>
+											{item.reason && (
+												<p className="text-sm text-foreground leading-5 line-clamp-2">{item.reason}</p>
+											)}
 
-										<TableCell className="px-4 py-3 text-foreground">{item.successor || '-'}</TableCell>
-
-										<TableCell className="px-4 py-3">
-											<div className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">
-												<CalendarRange className="h-3.5 w-3.5" />
-												{item.startDate}
+											<div className="flex items-center gap-2 text-xs text-muted-foreground">
+												<CalendarRange className="h-3.5 w-3.5 shrink-0" />
+												<span>{item.startDate} – {item.endDate}</span>
+												{item.duration != null && (
+													<span className="ml-auto font-medium text-foreground">{formatDuration(item.duration)}</span>
+												)}
 											</div>
-										</TableCell>
 
-										<TableCell className="px-4 py-3">
-											<div className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">
-												<CalendarRange className="h-3.5 w-3.5" />
-												{item.endDate}
-											</div>
-										</TableCell>
-										<TableCell className="px-4 py-3 text-foreground">
-											{item.duration != null
-												? item.duration === 0.5 ? '0.5 ວັນ' : `${item.duration} ວັນ`
-												: '-'}
-										</TableCell>
+											{item.successor && (
+												<div className="text-xs text-muted-foreground">
+													ຜູ້ຮັບວຽກຕໍ່: <span className="font-medium text-foreground">{item.successor}</span>
+												</div>
+											)}
 
-										<TableCell className="px-4 py-3">
-											<Badge variant={statusVariant(item.status)}>{statusLabel(item.status, item.approvals)} </Badge> 
-										</TableCell>
-
-										<TableCell className="px-4 py-3">
-											<div className="flex items-center justify-end gap-2">
-												<Button
-													type="button"
-													variant="outline"
-													size="sm"
-													className="min-w-[84px]"
-													onClick={(e) => { e.stopPropagation(); handleViewDetail(item) }}
-												>
+											<div className="flex gap-2 pt-1">
+												<Button type="button" variant="outline" size="sm" className="flex-1" onClick={() => handleViewDetail(item)}>
+													<Eye className="h-3.5 w-3.5 mr-1" />
 													ລາຍລະອຽດ
 												</Button>
-												<Button
-													type="button"
-													size="sm"
-													className="min-w-[84px]"
-													onClick={(e) => { e.stopPropagation(); onApprove ? onApprove(item) : handleViewDetail(item) }}
-													disabled={!canApprove}
-												>
-													{canApprove ? 'ອະນຸມັດ' : 'ອະນຸມັດແລ້ວ'}
-												</Button>
+												{canApprove && (
+													<>
+														<Button type="button" size="sm" className="flex-1" onClick={() => onApprove?.(item)}>
+															<Check className="h-3.5 w-3.5 mr-1" />
+															ອະນຸມັດ
+														</Button>
+														{onReject && (
+															<Button type="button" variant="destructive" size="sm" className="flex-1" onClick={() => onReject(item)}>
+																<X className="h-3.5 w-3.5 mr-1" />
+																ປະຕິເສດ
+															</Button>
+														)}
+													</>
+												)}
 											</div>
-										</TableCell>
-									</TableRow>
+										</CardContent>
+									</Card>
 								)
 							})}
-						</TableBody>
-					</Table>
-				</div>
+						</div>
+
+						{/* Desktop table */}
+						<div className="hidden md:block overflow-x-auto">
+							<Table>
+								<TableHeader className="bg-muted/40">
+									<TableRow className="hover:bg-muted/40">
+										<TableHead className="w-12 px-4">#</TableHead>
+										<TableHead className="px-4 min-w-[200px]">ຊື່ / ຕໍາແໜ່ງ</TableHead>
+										<TableHead className="px-4 min-w-[200px]">ເຫດຜົນ</TableHead>
+										<TableHead className="px-4 min-w-[160px]">ວັນທີ</TableHead>
+										<TableHead className="px-4 min-w-[140px]">ຜູ້ຮັບວຽກຕໍ່</TableHead>
+										<TableHead className="px-4 w-28">ສະຖານະ</TableHead>
+										<TableHead className="px-4 w-12 text-right">...</TableHead>
+									</TableRow>
+								</TableHeader>
+
+								<TableBody>
+									{filtered.map((item, index) => {
+										const { canApprove, whoPending } = computeRowMeta(item)
+										return (
+											<TableRow key={item.id} className="hover:bg-muted/30">
+												<TableCell className="px-4 py-3 font-semibold text-muted-foreground text-sm">
+													{index + 1}
+												</TableCell>
+
+												<TableCell className="px-4 py-3">
+													<div className="flex items-center gap-2 min-w-0">
+														<span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary shrink-0">
+															<UserRound className="h-4 w-4" />
+														</span>
+														<div className="min-w-0">
+															<p className="text-sm font-medium text-foreground truncate">{item.name}</p>
+															<p className="text-xs text-muted-foreground truncate">
+																{item.position || '-'} · {item.department || '-'}
+															</p>
+														</div>
+													</div>
+												</TableCell>
+
+												<TableCell className="px-4 py-3">
+													<p className="text-sm text-foreground line-clamp-2 max-w-[200px]">
+														{item.reason || '-'}
+													</p>
+													{item.type?.name && (
+														<p className="text-xs text-muted-foreground mt-0.5">{item.type.name}</p>
+													)}
+												</TableCell>
+
+												<TableCell className="px-4 py-3 whitespace-nowrap">
+													<div className="flex items-center gap-1 text-xs text-muted-foreground">
+														<CalendarRange className="h-3 w-3 shrink-0" />
+														<span>{item.startDate} – {item.endDate}</span>
+													</div>
+													{item.duration != null && (
+														<p className="text-xs text-muted-foreground mt-0.5 pl-4">
+															{formatDuration(item.duration)}
+														</p>
+													)}
+												</TableCell>
+
+												<TableCell className="px-4 py-3">
+													<p className="text-sm text-foreground truncate max-w-[140px]">
+														{item.successor || '-'}
+													</p>
+												</TableCell>
+
+												<TableCell className="px-4 py-3">
+													<div className="flex flex-col gap-0.5">
+														<StatusBadge status={item.status ?? 'pending'} />
+														{item.status === 'pending' && whoPending && (
+															<span className="text-[10px] text-muted-foreground">{whoPending}</span>
+														)}
+													</div>
+												</TableCell>
+
+												<TableCell className="px-4 py-3 text-right">
+													<DropdownMenu>
+														<DropdownMenuTrigger asChild>
+															<Button variant="ghost" size="icon" className="h-8 w-8" aria-label="ຕົວເລືອກ">
+																<MoreHorizontal className="h-4 w-4" />
+															</Button>
+														</DropdownMenuTrigger>
+														<DropdownMenuContent align="end">
+															<DropdownMenuItem onClick={() => handleViewDetail(item)}>
+																<Eye className="h-4 w-4 mr-2" />
+																ເບິ່ງລາຍລະອຽດ
+															</DropdownMenuItem>
+															{canApprove && (
+																<>
+																	<DropdownMenuSeparator />
+																	<DropdownMenuItem onClick={() => onApprove?.(item)}>
+																		<Check className="h-4 w-4 mr-2" />
+																		ອະນຸມັດ
+																	</DropdownMenuItem>
+																	{onReject && (
+																		<DropdownMenuItem
+																			onClick={() => onReject(item)}
+																			className="text-destructive focus:text-destructive"
+																		>
+																			<X className="h-4 w-4 mr-2" />
+																			ປະຕິເສດ
+																		</DropdownMenuItem>
+																	)}
+																</>
+															)}
+														</DropdownMenuContent>
+													</DropdownMenu>
+												</TableCell>
+											</TableRow>
+										)
+									})}
+								</TableBody>
+							</Table>
+						</div>
+					</>
+				)}
 			</CardContent>
 		</Card>
 	)
