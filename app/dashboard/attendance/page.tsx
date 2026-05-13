@@ -30,11 +30,13 @@ import {
   Shield,
   ShieldX,
   MapPinOff,
+  Camera,
 } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { addDays, format, startOfWeek } from 'date-fns'
+import { CameraCapture } from '@/components/camera-capture'
 
 type LocationState = {
   lat: number
@@ -82,18 +84,33 @@ export default function AttendancePage() {
   const [location, setLocation] = useState<LocationState | null>(null)
   const [isLoadingLocation, setIsLoadingLocation] = useState(false)
   const [isOffsite, setIsOffsite] = useState(false)
-  const checkInCameraRef = useRef<HTMLInputElement>(null)
-  const checkOutCameraRef = useRef<HTMLInputElement>(null)
 
-  function captureImage(ref: React.RefObject<HTMLInputElement | null>): Promise<File | null> {
+  // Camera dialog state
+  const [cameraOpen, setCameraOpen] = useState(false)
+  const [cameraType, setCameraType] = useState<'checkIn' | 'checkOut'>('checkIn')
+  const pendingResolveRef = useRef<((file: File | null) => void) | null>(null)
+
+  function captureImage(type: 'checkIn' | 'checkOut'): Promise<File | null> {
     return new Promise((resolve) => {
-      const input = ref.current
-      if (!input) { resolve(null); return }
-      input.value = ''
-      input.onchange = () => resolve(input.files?.[0] ?? null)
-      input.click()
+      pendingResolveRef.current = resolve
+      setCameraType(type)
+      setCameraOpen(true)
     })
   }
+
+  const handleCameraCapture = useCallback((file: File) => {
+    pendingResolveRef.current?.(file)
+    pendingResolveRef.current = null
+  }, [])
+
+  const handleCameraClose = useCallback((open: boolean) => {
+    setCameraOpen(open)
+    if (!open) {
+      // User closed without capturing — resolve with null
+      pendingResolveRef.current?.(null)
+      pendingResolveRef.current = null
+    }
+  }, [])
 
   const getLocation = useCallback(async (): Promise<LocationState | null> => {
     setIsLoadingLocation(true)
@@ -157,7 +174,7 @@ export default function AttendancePage() {
     }
     try {
       if (isOffsite) {
-        const imageFile = await captureImage(type === 'checkIn' ? checkInCameraRef : checkOutCameraRef)
+        const imageFile = await captureImage(type)
         if (!imageFile) {
           toast.error('ກະລຸນາຖ່າຍຮູບກ່ອນ.')
           return
@@ -191,7 +208,7 @@ export default function AttendancePage() {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'ເກີດຂໍ້ຜິດພາດ. ກະລຸນາລອງໃໝ່.')
     }
-  }, [user, isOffsite, getLocation, getValidatedLocation, checkInMutation, checkOutMutation])
+  }, [user, isOffsite, getLocation, getValidatedLocation, checkInMutation, checkOutMutation, handleCameraCapture])
 
   const officeDistance = useMemo(() => {
     if (!location || location.error) return null
@@ -350,9 +367,13 @@ export default function AttendancePage() {
             )}
           </div>
 
-          {/* Hidden camera inputs */}
-          <input ref={checkInCameraRef}  type="file" accept="image/*" capture="user" className="hidden" />
-          <input ref={checkOutCameraRef} type="file" accept="image/*" capture="user" className="hidden" />
+          {/* Camera capture dialog — replaces broken <input capture> */}
+          <CameraCapture
+            open={cameraOpen}
+            onOpenChange={handleCameraClose}
+            onCapture={handleCameraCapture}
+            title={cameraType === 'checkIn' ? 'ຖ່າຍຮູບເຂົ້າວຽກ' : 'ຖ່າຍຮູບອອກວຽກ'}
+          />
         </CardContent>
       </Card>
 
