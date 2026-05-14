@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import { useEffect, useRef, useState, useMemo } from 'react'
 import { useAuth } from '@/lib/auth-context'
@@ -673,7 +673,7 @@ export default function LeaveRequestForm() {
                   <div>
                     <p className="text-xs text-muted-foreground mb-2">ການອານຸມັດ</p>
                     <div className="space-y-1.5">
-                      {selectedLeave.approvals.map((approval, i) => (
+                      {selectedLeave.approvals.filter(Boolean).map((approval, i) => (
                         <div key={i} className="flex items-center justify-between">
                           <span className="text-xs capitalize">{approval.role}</span>
                           <Badge variant={getStatusVariant(approval.decision)} className="flex items-center gap-1 text-xs">

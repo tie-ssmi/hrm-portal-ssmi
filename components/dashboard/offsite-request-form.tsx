@@ -285,7 +285,7 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
     () => (initialData?.endDate ? parseISO(initialData.endDate) : undefined),
   )
   const [costDisplay, setCostDisplay] = useState(
-    () => (initialData ? initialData.estimatedCost.toLocaleString('en-US') : ''),
+    () => (initialData ? initialData.estimatedCost.toLocaleString('en-US') : '0'),
   )
 
   // ── step 3 ──
@@ -415,7 +415,7 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
     setDistrictId('')
     setStartDate(undefined)
     setEndDate(undefined)
-    setCostDisplay('')
+    setCostDisplay('0')
     setTeammates([])
     setErrors({})
     onDirtyChange?.(false)
