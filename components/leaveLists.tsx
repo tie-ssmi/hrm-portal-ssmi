@@ -187,38 +187,38 @@ export function CheckInToday() {
           <p className="text-sm text-muted-foreground mt-2">ບໍ່ມີພະນັກງານເຂົ້າວຽກ</p>
         </div>
       ) : (
-        <div className="flex flex-wrap gap-3 max-h-[500px] overflow-auto">
+        <div className="flex flex-wrap gap-3 ">
           {attendanceRecords?.map((record) => (
-            <Card key={record.id} className="w-full lg:w-[300px] group py-0 cursor-pointer transition-all duration-200 hover:shadow-md hover:border-primary/30 "> 
-            {/* hover:-translate-y-0.5 */}
-                <CardContent className="flex items-center gap-3 p-4">
-                  <Avatar className="h-11 w-11 shrink-0 ring-2 ring-background shadow-sm">
-                    <AvatarImage
-                      src={record.employeeImage || "https://github.com/shadcn.png"}
-                      alt={record.fullNameEn || record.fullNameLo }
-                      
-                    />
-                    <AvatarFallback className="bg-primary/10 text-primary text-sm font-bold">
-                      {record.fullNameLo?.charAt(0) || "?"}
-                    </AvatarFallback>
-                  </Avatar>
+            <Card key={record.id} className="w-full lg:w-[300px] group py-0 cursor-pointer transition-all duration-200 hover:shadow-md hover:border-primary/30 ">
+              {/* hover:-translate-y-0.5 */}
+              <CardContent className="flex items-center gap-3 p-4">
+                <Avatar className="h-11 w-11 shrink-0 ring-2 ring-background shadow-sm">
+                  <AvatarImage
+                    src={record.employeeImage || "https://github.com/shadcn.png"}
+                    alt={record.fullNameEn || record.fullNameLo}
 
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-sm text-foreground truncate" >{record?.workLocation?.name}</p>
-                    <p className="text-xs text-muted-foreground">{record?.department?.name}</p>
-                    <p className="font-semibold text-sm text-foreground truncate" title={record?.fullNameEn || record?.fullNameLo}>
-                      { record?.fullNameLo}
-                    </p>
-      
-                  </div>
+                  />
+                  <AvatarFallback className="bg-primary/10 text-primary text-sm font-bold">
+                    {record.fullNameLo?.charAt(0) || "?"}
+                  </AvatarFallback>
+                </Avatar>
 
-                  <div className="flex flex-col items-center shrink-0">
-                    <span className="text-2xl font-bold text-primary">
-                      {record.checkInTime}
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-sm text-foreground truncate" >{record?.workLocation?.name}</p>
+                  <p className="text-xs text-muted-foreground">{record?.department?.name}</p>
+                  <p className="font-semibold text-sm text-foreground truncate" title={record?.fullNameEn || record?.fullNameLo}>
+                    {record?.fullNameLo}
+                  </p>
+
+                </div>
+
+                <div className="flex flex-col items-center shrink-0">
+                  <span className="text-2xl font-bold text-primary">
+                    {record.checkInTime}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
           ))}
         </div>
       )}
