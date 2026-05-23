@@ -106,6 +106,9 @@ export interface AttendanceRecord {
     lng: number
     address?: string
   }
+  isOffsite?: boolean
+  checkInImageURL?: string
+  checkOutImageURL?: string
   workHours?: number
   uid?: string
   userUuid?: string

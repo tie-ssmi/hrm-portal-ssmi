@@ -83,6 +83,9 @@ type AttendanceDoc = {
   status?: AttendanceRecord['status'] | 'not_checked_in'
   location?: AttendanceRecord['location']
   workHours?: number
+  isOffsite?: boolean
+  checkInImageURL?: string
+  checkOutImageURL?: string
 }
 
 export function formatAttendanceDocumentDate(date: Date): string {
@@ -195,6 +198,9 @@ export async function fetchAttendanceByUserThisMonth(userUuid: string): Promise<
           : 'present',
         location: data.location,
         workHours: data.workHours,
+        ...(data.isOffsite ? { isOffsite: true } : {}),
+        ...(data.checkInImageURL ? { checkInImageURL: data.checkInImageURL } : {}),
+        ...(data.checkOutImageURL ? { checkOutImageURL: data.checkOutImageURL } : {}),
       })
   }
 

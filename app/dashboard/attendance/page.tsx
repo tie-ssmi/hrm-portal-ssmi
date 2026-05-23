@@ -18,6 +18,13 @@ import {
 } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import type { AttendanceRecord } from '@/lib/types'
 import { Spinner } from '@/components/ui/spinner'
 import {
   MapPin,
@@ -84,6 +91,7 @@ export default function AttendancePage() {
   const [location, setLocation] = useState<LocationState | null>(null)
   const [isLoadingLocation, setIsLoadingLocation] = useState(false)
   const [isOffsite, setIsOffsite] = useState(false)
+  const [offsiteDetail, setOffsiteDetail] = useState<AttendanceRecord | null>(null)
 
   // Camera dialog state
   const [cameraOpen, setCameraOpen] = useState(false)
@@ -414,7 +422,14 @@ export default function AttendancePage() {
           ) : (
             <div className="space-y-2">
               {weeklyHistory.map((record) => (
-                <div key={record.id} className="flex items-center justify-between rounded-lg bg-muted/50 p-3">
+                <div
+                  key={record.id}
+                  className={[
+                    'flex items-center justify-between rounded-lg bg-muted/50 p-3',
+                    record.isOffsite ? 'cursor-pointer hover:bg-muted/80 transition-colors' : '',
+                  ].join(' ')}
+                  onClick={() => record.isOffsite && setOffsiteDetail(record)}
+                >
                   <div>
                     <p className="text-sm font-medium">
                       {format(new Date(`${record.date}T00:00:00`), 'EEE, MMM d')}
@@ -431,7 +446,9 @@ export default function AttendancePage() {
                         : 'destructive'
                     }
                   >
-                    {record.status === 'present' ? 'ມາວຽກ'
+                    {record.isOffsite && record.status === 'present' ? 'ອອກວຽກນອກ'
+                      : record.isOffsite && record.status === 'late' ? 'ອອກວຽກນອກ (ຊ້າ)'
+                      : record.status === 'present' ? 'ມາວຽກ'
                       : record.status === 'late' ? 'ມາວຽກ (ຊ້າ)'
                       : record.status === 'leave' ? 'ພັກ'
                       : 'ບໍ່ມາວຽກ'}
@@ -442,6 +459,54 @@ export default function AttendancePage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Offsite detail dialog */}
+      <Dialog open={!!offsiteDetail} onOpenChange={(open) => { if (!open) setOffsiteDetail(null) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>ລາຍລະອຽດອອກວຽກນອກ</DialogTitle>
+          </DialogHeader>
+          {offsiteDetail && (
+            <div className="space-y-4">
+              {/* Check-in */}
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">ເຂົ້າວຽກ</p>
+                <p className="text-sm font-semibold">{offsiteDetail.checkIn || '--:--'}</p>
+                {offsiteDetail.checkInImageURL ? (
+                  <img
+                    src={offsiteDetail.checkInImageURL}
+                    alt="ຮູບເຂົ້າວຽກ"
+                    className="w-full rounded-lg object-cover max-h-48 bg-muted"
+                  />
+                ) : (
+                  <div className="flex h-24 items-center justify-center rounded-lg bg-muted text-xs text-muted-foreground">
+                    ບໍ່ມີຮູບ
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t" />
+
+              {/* Check-out */}
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">ອອກວຽກ</p>
+                <p className="text-sm font-semibold">{offsiteDetail.checkOut || '--:--'}</p>
+                {offsiteDetail.checkOutImageURL ? (
+                  <img
+                    src={offsiteDetail.checkOutImageURL}
+                    alt="ຮູບອອກວຽກ"
+                    className="w-full rounded-lg object-cover max-h-48 bg-muted"
+                  />
+                ) : (
+                  <div className="flex h-24 items-center justify-center rounded-lg bg-muted text-xs text-muted-foreground">
+                    ບໍ່ມີຮູບ
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
