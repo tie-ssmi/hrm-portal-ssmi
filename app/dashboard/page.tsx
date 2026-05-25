@@ -17,12 +17,10 @@ import {
   Clock,
   AlertTriangle,
   DollarSign,
-  Briefcase,
   HeartPulse,
   MapPinX,
   ChevronDown,
 } from 'lucide-react'
-import { format } from 'date-fns'
 import {
   Tabs,
   TabsContent,
@@ -109,7 +107,6 @@ export default function DashboardPage() {
   const { user, isLoading } = useAuth()
   const { leaveBalance, lateRecords, totalFines, leaveRequests, todayAttendance } = useHRM()
   const router = useRouter()
-  console.log('gender:', user?.gender)
 
   const { data: policies = [] } = useQuery({
     queryKey: ['policies', 'gender', user?.gender ?? null],
@@ -129,10 +126,14 @@ export default function DashboardPage() {
     return map
   }, [leaveRequests])
 
+  const workLocationUuid = typeof user?.workLocation === 'string'
+    ? user.workLocation
+    : user?.workLocation?.uuid
+
   const { data: todayLeaveRequests = [] } = useQuery({
-    queryKey: ['leaves', 'today', user?.workLocation?.uuid],
-    queryFn: () => fetchTodayLeavesByWorkLocation(user!.workLocation.uuid),
-    enabled: !!user?.workLocation?.uuid,
+    queryKey: ['leaves', 'today', workLocationUuid],
+    queryFn: () => fetchTodayLeavesByWorkLocation(workLocationUuid!),
+    enabled: !!workLocationUuid,
   })
 
   if (isLoading) {
@@ -151,8 +152,6 @@ export default function DashboardPage() {
   }
 
   const sickRemaining = effectiveLeaveBalance.sick - leaveBalance.sickUsed
-
-  const recentLeaves = leaveRequests.slice(0, 3)
 
   const leaveDataToday: LeaveData[] = todayLeaveRequests.map(r => ({
     name: r.leaveUserName ?? '',
