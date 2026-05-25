@@ -32,12 +32,8 @@ import { CheckInToday, ToDay } from '@/components/leaveLists'
 import { Button } from '@/components/ui/button'
 import { useRouter } from 'next/navigation'
 import type { PolicyRecord } from '@/lib/types'
+import { formatDayDateLao} from '@/components/laoDate'
 
-const LAO_DAYS   = ['ວັນອາທິດ','ວັນຈັນ','ວັນອັງຄານ','ວັນພຸດ','ວັນພະຫັດ','ວັນສຸກ','ວັນເສົາ']
-const LAO_MONTHS = ['ມັງກອນ','ກຸມພາ','ມີນາ','ເມສາ','ພຶດສະພາ','ມິຖຸນາ','ກໍລະກົດ','ສິງຫາ','ກັນຍາ','ຕຸລາ','ພະຈິກ','ທັນວາ']
-function formatDateLao(date: Date): string {
-  return `${LAO_DAYS[date.getDay()]}, ${date.getDate()} ${LAO_MONTHS[date.getMonth()]} ${date.getFullYear()}`
-}
 
 const VISIBLE_COUNT = 3
 
@@ -176,7 +172,7 @@ export default function DashboardPage() {
           ຍີນດີຕ້ອນຮັບ, {user?.firstNameLo}
         </h1>
         <p className="text-muted-foreground">
-          {formatDateLao(new Date())}
+          {formatDayDateLao(new Date())}
         </p>
       </div>
 

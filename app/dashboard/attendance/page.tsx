@@ -44,14 +44,18 @@ import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { addDays, format, startOfWeek } from 'date-fns'
 import { CameraCapture } from '@/components/camera-capture'
-
 type LocationState = {
   lat: number
   lng: number
   accuracy: number
   error?: string
 }
-
+import {formatDateLao, formatDayDateLao} from '@/components/laoDate'
+// const LAO_DAYS   = ['ວັນອາທິດ','ວັນຈັນ','ວັນອັງຄານ','ວັນພຸດ','ວັນພະຫັດ','ວັນສຸກ','ວັນເສົາ']
+// const LAO_MONTHS = ['ມັງກອນ (1)','ກຸມພາ (2)','ມີນາ (3)','ເມສາ (4)','ພຶດສະພາ (5)','ມິຖຸນາ (6)','ກໍລະກົດ (7)','ສິງຫາ (8)','ກັນຍາ (9)','ຕຸລາ (10)','ພະຈິກ (11)','ທັນວາ (12)']
+// function formatDateLao(date: Date): string {
+//   return `${LAO_DAYS[date.getDay()]}, ${date.getDate()} ${LAO_MONTHS[date.getMonth()]} ${date.getFullYear()}`
+// }
 // Isolated component — 1s interval only re-renders this, not the whole page
 const LiveClock = memo(function LiveClock() {
   const [time, setTime] = useState<Date | null>(null)
@@ -71,7 +75,7 @@ const LiveClock = memo(function LiveClock() {
             {time ? format(time, 'HH:mm:ss') : '--:--:--'}
           </p>
           <p className="mt-2 text-sm opacity-80">
-            {time ? format(time, 'EEEE, MMMM d, yyyy') : ''}
+            {time ? formatDayDateLao(new Date()) : ''}
           </p>
         </div>
       </CardContent>
@@ -432,7 +436,7 @@ export default function AttendancePage() {
                 >
                   <div>
                     <p className="text-sm font-medium">
-                      {format(new Date(`${record.date}T00:00:00`), 'EEE, MMM d')}
+                      {formatDateLao(new Date(record.date))}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {record.checkIn || '--:--'} - {record.checkOut || '--:--'}

@@ -52,7 +52,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-
+import {formatDayDateLao} from '@/components/laoDate'
 // Firestore may store reference fields as objects { nameLo, uuid, code }
 function toStr(value: unknown): string {
   if (value === null || value === undefined) return '-'
@@ -233,7 +233,7 @@ export default function ProfilePage() {
   const personalFields: InfoField[] = [
     { label: 'ຊື່ (ພາສາອັງກິດ)', value: `${profileUser?.firstNameEn || profileUser?.firstName} ${profileUser?.lastNameEn || profileUser?.lastName}`, icon: User },
     { label: 'ຊື່ (ພາສາລາວ)', value: profileUser?.firstNameLo && profileUser?.lastNameLo ? `${profileUser.firstNameLo} ${profileUser.lastNameLo}` : '-', icon: User },
-    { label: 'ວັນເກີດ', value: profileUser?.dateOfBirth ? format(new Date(profileUser.dateOfBirth), 'MMM d, yyyy') : '-', icon: Calendar },
+    { label: 'ວັນເກີດ', value: profileUser?.dateOfBirth ? formatDayDateLao(new Date(profileUser.dateOfBirth)) : '-', icon: Calendar },
     { label: 'ເພດ', value: toStr(profileUser?.gender), icon: User },
     { label: 'ກຸ່ມເລືອດ', value: toStr(profileUser?.bloodType), icon: Heart },
     { label: 'ສະຖານະຄົນຄອບຄົວ', value: toStr(profileUser?.maritalStatus), icon: Users },
@@ -397,7 +397,7 @@ export default function ProfilePage() {
       </Card>
 
       {/* Update requests */}
-      <Card>
+      {/* <Card>
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             <Clock className="w-5 h-5" />
@@ -430,7 +430,7 @@ export default function ProfilePage() {
             </div>
           )}
         </CardContent>
-      </Card>
+      </Card> */}
 
    
     </div>
