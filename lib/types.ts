@@ -33,6 +33,7 @@ export interface DepartmentInfo {
 
 export interface WorkLocationInfo {
   uuid?: string
+  name?: string
   nameLo?: string
   code?: string
 }

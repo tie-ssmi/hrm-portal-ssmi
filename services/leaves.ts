@@ -77,6 +77,18 @@ export async function fetchLeavesForApproval(params: {
     .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
 }
 
+export async function fetchAllLeavesByUserUuid(userUuid: string): Promise<LeaveRequest[]> {
+  if (!userUuid) return []
+
+  const snapshot = await getDocs(
+    query(collection(db, 'leaves'), where('leaveUserUuid', '==', userUuid))
+  )
+
+  return snapshot.docs
+    .map((d) => ({ id: d.id, ...(d.data() as Omit<LeaveRequest, 'id'>) }))
+    .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
+}
+
 export async function fetchLeavesByUserUuidFromToday(userUuid: string): Promise<LeaveRequest[]> {
   if (!userUuid) {
     return []

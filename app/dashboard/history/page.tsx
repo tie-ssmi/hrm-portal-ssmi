@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { useHRM } from '@/lib/hrm-context'
+import { useQuery } from '@tanstack/react-query'
+import { fetchAllLeavesByUserUuid } from '@/services/leaves'
 import HistorySkeleton from '@/components/skeletons/historySkeleton'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -23,14 +24,19 @@ import {
 import { format } from 'date-fns'
 
 export default function HistoryPage() {
-  const { isLoading } = useAuth()
-  const { 
-    attendanceHistory, 
-    leaveRequests, 
+  const { user, isLoading } = useAuth()
+  const {
+    attendanceHistory,
     offsiteRequests,
     lateRecords,
     totalFines
   } = useHRM()
+
+  const { data: leaveRequests = [] } = useQuery({
+    queryKey: ['leaves', 'user', user?.uuid ?? null],
+    queryFn: () => fetchAllLeavesByUserUuid(user!.uuid!),
+    enabled: !!user?.uuid,
+  })
 
   const getStatusVariant = (status: string) => {
     switch (status) {

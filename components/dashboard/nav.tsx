@@ -60,14 +60,14 @@ const canSee=canApproveBranch || canApproveDept
     : 'U'
 const profileImage = user?.profileImage || user?.photo3x4Url || user?.avatar || (String(user?.gender).toLowerCase() === 'male' ? '/info/man.jpg' : '/info/woman.jpg')
  const navItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, show: true },
-  { href: '/dashboard/profile', label: 'My Profile', icon: User, show: true },
+  { href: '/dashboard', label: 'ໜ້າຫຼັກ', icon: LayoutDashboard, show: true },
+  { href: '/dashboard/profile', label: 'ຂໍ້ມູນສວນຕົວ', icon: User, show: true },
   { href: '/dashboard/attendance', label: 'Check-In/Out', icon: Clock, show: true },
-  { href: '/dashboard/news', label: 'News', icon: Newspaper, show: true },
+  { href: '/dashboard/news', label: 'ຂ່າວສານ', icon: Newspaper, show: true },
 
-  { href: '/dashboard/request', label: 'Request Forms', icon: FileText, show: true },
-  { href: '/dashboard/approv', label: 'Approval Forms', icon: ClipboardCheck, show: canSee },
-  { href: '/dashboard/history', label: 'History', icon: History, show: true },
+  { href: '/dashboard/request', label: 'ແບບຟອມ', icon: FileText, show: true },
+  { href: '/dashboard/approv', label: 'ການອະນຸມັດ', icon: ClipboardCheck, show: canSee },
+  { href: '/dashboard/history', label: 'ປະຫວັດ', icon: History, show: true },
 ]
 
   return (

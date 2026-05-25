@@ -196,6 +196,7 @@ export function CheckInToday() {
                   <AvatarImage
                     src={record.employeeImage || "https://github.com/shadcn.png"}
                     alt={record.fullNameEn || record.fullNameLo}
+                    className="object-cover"
 
                   />
                   <AvatarFallback className="bg-primary/10 text-primary text-sm font-bold">

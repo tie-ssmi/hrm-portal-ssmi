@@ -362,6 +362,9 @@ export async function fetchTodayCheckInAttendance(): Promise<AttendanceRecord[]>
       note: data.note,
       department: data.department,
       workLocation: data.workLocation,
+      ...(data.isOffsite ? { isOffsite: true } : {}),
+      ...(data.checkInImageURL ? { checkInImageURL: data.checkInImageURL } : {}),
+      ...(data.checkOutImageURL ? { checkOutImageURL: data.checkOutImageURL } : {}),
     })
   }
 

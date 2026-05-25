@@ -64,7 +64,8 @@ function parsePolicyType(data: Record<string, unknown>): LeaveRequest['type'] | 
 }
 
 function toPolicyRecord(id: string, data: Record<string, unknown>): PolicyRecord {
-  const role = typeof data.role === 'string' ? data.role : data.role === null ? null : undefined
+  const rawRole = data.role ?? data.canUse
+  const role = typeof rawRole === 'string' ? rawRole : rawRole === null ? null : undefined
   const businessId =
     typeof data.id === 'string'
       ? data.id
@@ -130,7 +131,7 @@ export async function fetchPoliciesForGender(gender?: string | null): Promise<Po
       .map((docSnapshot) => toPolicyRecord(docSnapshot.id, docSnapshot.data() as Record<string, unknown>))
       .filter((policy) => {
         const normalizedRole = normalizeValue(policy.role)
-        return normalizedRole === '' || normalizedRole === normalizedGender
+        return normalizedRole === 'all' || normalizedRole === normalizedGender
       })
   } catch (error) {
     console.error('Error fetching policies for gender:', error)

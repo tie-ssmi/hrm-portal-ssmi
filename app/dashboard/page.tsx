@@ -1,26 +1,28 @@
 'use client'
 
+import { useMemo, useState } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { useHRM } from '@/lib/hrm-context'
 import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import HomeSkeleton from '@/components/skeletons/homeSkeleton'
-import { fetchPolicyByUuid } from '@/services/policies'
+import { fetchPoliciesForGender } from '@/services/policies'
 import type { LeaveData } from '@/types/employee'
 import {
   Calendar,
   Clock,
   AlertTriangle,
   DollarSign,
-  Palmtree,
   Briefcase,
   HeartPulse,
-  User,
-  MapPinX
+  MapPinX,
+  ChevronDown,
 } from 'lucide-react'
 import { format } from 'date-fns'
+import { lo } from 'date-fns/locale'
 import {
   Tabs,
   TabsContent,
@@ -29,29 +31,114 @@ import {
 } from "@/components/ui/tabs"
 import { CheckInToday, ToDay } from '@/components/leaveLists'
 import { Button } from '@/components/ui/button'
+import { useRouter } from 'next/navigation'
+import type { PolicyRecord } from '@/lib/types'
+
+const VISIBLE_COUNT = 3
+
+function PolicyRow({ policy, used }: { policy: PolicyRecord; used: number }) {
+  const total = policy.days ?? 0
+  const pct = total > 0 ? Math.min((used / total) * 100, 100) : 0
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between text-sm">
+        <span className="flex items-center gap-2">
+          <Calendar className="w-4 h-4 text-chart-2" />
+          {policy.name || policy.requestType}
+        </span>
+        <span className="text-muted-foreground">{used} / {total} ວັນ</span>
+      </div>
+      <Progress value={pct} className="h-2" />
+    </div>
+  )
+}
+
+function PolicyList({
+  policies,
+  usedByPolicy,
+}: {
+  policies: PolicyRecord[]
+  usedByPolicy: Map<string, number>
+}) {
+  const [open, setOpen] = useState(false)
+  const visible = policies.slice(0, VISIBLE_COUNT)
+  const hidden  = policies.slice(VISIBLE_COUNT)
+  const hasMore = hidden.length > 0
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="space-y-4">
+      {visible.map(policy => (
+        <PolicyRow
+          key={policy.uuid ?? policy.id}
+          policy={policy}
+          used={usedByPolicy.get(policy.uuid ?? '') ?? usedByPolicy.get(policy.id) ?? 0}
+        />
+      ))}
+
+      {hasMore && (
+        <>
+          <CollapsibleContent className="space-y-4">
+            {hidden.map(policy => (
+              <PolicyRow
+                key={policy.uuid ?? policy.id}
+                policy={policy}
+                used={usedByPolicy.get(policy.uuid ?? '') ?? usedByPolicy.get(policy.id) ?? 0}
+              />
+            ))}
+          </CollapsibleContent>
+
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" size="sm" className="w-full gap-1 text-xs text-muted-foreground">
+              <ChevronDown className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+              {open ? 'ຫຍໍ້ລົງ' : `ເບິ່ງທັງໝົດ (${hidden.length} ລາຍການ)`}
+            </Button>
+          </CollapsibleTrigger>
+        </>
+      )}
+    </Collapsible>
+  )
+}
+
 export default function DashboardPage() {
   const { user, isLoading } = useAuth()
   const { leaveBalance, lateRecords, totalFines, leaveRequests, todayAttendance } = useHRM()
+  const router = useRouter()
+  console.log('gender:', user?.gender)
 
-  const { data: policyData } = useQuery({
-    queryKey: ['policy', 'POL-001'],
-    queryFn: () => fetchPolicyByUuid('POL-001'),
+  const { data: policies = [] } = useQuery({
+    queryKey: ['policies', 'gender', user?.gender ?? null],
+    queryFn: () => fetchPoliciesForGender(user?.gender),
+    enabled: !!user,
   })
+
+  // used days per policy UUID or ID (approved leaves only)
+  const usedByPolicy = useMemo(() => {
+    const map = new Map<string, number>()
+    leaveRequests.forEach(req => {
+      if (req.status !== 'approved') return
+      const key = req.policyUuid || req.policyId
+      if (!key) return
+      map.set(key, (map.get(key) ?? 0) + (req.duration ?? 1))
+    })
+    return map
+  }, [leaveRequests])
 
   if (isLoading) {
     return <HomeSkeleton />
   }
 
+  // Keep stat cards working: derive totals from the matching policy types
+  const annualPolicy = policies.find(p => p.requestType === 'annual')
+  const sickPolicy   = policies.find(p => p.requestType === 'sick')
+
   const effectiveLeaveBalance = {
     ...leaveBalance,
-    annual: policyData?.leavePolicy.annual ?? leaveBalance.annual,
-    sick: policyData?.leavePolicy.sick ?? leaveBalance.sick,
-    personal: policyData?.leavePolicy.personal ?? leaveBalance.personal,
+    annual:   annualPolicy?.days ?? leaveBalance.annual,
+    sick:     sickPolicy?.days   ?? leaveBalance.sick,
+    personal: leaveBalance.personal,
   }
 
-  const annualRemaining = effectiveLeaveBalance.annual - leaveBalance.annualUsed
   const sickRemaining = effectiveLeaveBalance.sick - leaveBalance.sickUsed
-  const personalRemaining = effectiveLeaveBalance.personal - leaveBalance.personalUsed
 
   const recentLeaves = leaveRequests.slice(0, 3)
   const leaveData: LeaveData[] = [
@@ -135,7 +222,7 @@ export default function DashboardPage() {
           ຍີນດີຕ້ອນຮັບ, {user?.firstNameLo}
         </h1>
         <p className="text-muted-foreground">
-          {format(new Date(), "EEEE, d MMMM (MM), yyyy")}
+          {format(new Date(), "EEEE, d MMMM yyyy", { locale: lo })}
         </p>
       </div>
 
@@ -237,48 +324,15 @@ export default function DashboardPage() {
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             <Calendar className="w-5 h-5" />
-            Leave Balance
+            ປະເພດມື້ພັກ
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="flex items-center gap-2">
-                <Palmtree className="w-4 h-4 text-chart-2" />
-                Annual Leave
-              </span>
-              <span className="text-muted-foreground">
-                {leaveBalance.annualUsed} used / {effectiveLeaveBalance.annual} days
-              </span>
-            </div>
-            <Progress value={(leaveBalance.annualUsed / effectiveLeaveBalance.annual) * 100} className="h-2" />
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="flex items-center gap-2">
-                <HeartPulse className="w-4 h-4 text-chart-1" />
-                Sick Leave
-              </span>
-              <span className="text-muted-foreground">
-                {leaveBalance.sickUsed} used / {effectiveLeaveBalance.sick} days
-              </span>
-            </div>
-            <Progress value={(leaveBalance.sickUsed / effectiveLeaveBalance.sick) * 100} className="h-2" />
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="flex items-center gap-2">
-                <User className="w-4 h-4 text-chart-5" />
-                Personal Leave
-              </span>
-              <span className="text-muted-foreground">
-                {leaveBalance.personalUsed} used / {effectiveLeaveBalance.personal} days
-              </span>
-            </div>
-            <Progress value={(leaveBalance.personalUsed / effectiveLeaveBalance.personal) * 100} className="h-2" />
-          </div>
+          {policies.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-2">ບໍ່ມີຂໍ້ມູນນະໂຍບາຍ</p>
+          ) : (
+            <PolicyList policies={policies} usedByPolicy={usedByPolicy} />
+          )}
         </CardContent>
       </Card>
 
@@ -288,7 +342,7 @@ export default function DashboardPage() {
         <TabsList>
           <TabsTrigger value="checkIn">ເຂົ້າວຽກ</TabsTrigger>
           <TabsTrigger value="leave">ລາພັກ</TabsTrigger>
-          <TabsTrigger value="off_site">ບອອກວຽກນອກ</TabsTrigger>
+          <TabsTrigger value="off_site">ອອກວຽກນອກ</TabsTrigger>
           <TabsTrigger value="topLeave">ມາຊ້າ (Top)</TabsTrigger>
         </TabsList>
         <TabsContent value="checkIn">
@@ -300,7 +354,14 @@ export default function DashboardPage() {
               <CardContent className="text-muted-foreground text-sm h-auto max-h-[500px] overflow-auto">
                 <div className="flex items-center justify-between mb-4">
                                  <p className="mb-2 font-semibold text-lg">ລາຍການມາວຽກມື້ນີ້ </p>
-                <Button variant="link">ທັງໝົດ</Button>
+                <Button variant="link" onClick={() => {
+                  const today = new Date();
+                  const formattedToday = today.toISOString().split('T')[0];
+                  const url = `/dashboard/check-in?date=${formattedToday}`;
+                  router.push(url);
+                }}>
+                  ທັງໝົດ
+                </Button>
                 </div>
                 <CheckInToday />
               </CardContent>
@@ -354,7 +415,7 @@ export default function DashboardPage() {
 
 
       {/* Recent Leaves */}
-      <Card>
+      {/* <Card>
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             <Briefcase className="w-5 h-5" />
@@ -395,7 +456,7 @@ export default function DashboardPage() {
             </div>
           )}
         </CardContent>
-      </Card>
+      </Card> */}
     </div>
   )
 }
