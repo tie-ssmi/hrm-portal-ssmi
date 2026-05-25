@@ -10,6 +10,7 @@ import { Progress } from '@/components/ui/progress'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import HomeSkeleton from '@/components/skeletons/homeSkeleton'
 import { fetchPoliciesForGender } from '@/services/policies'
+import { fetchTodayLeavesByWorkLocation } from '@/services/leaves'
 import type { LeaveData } from '@/types/employee'
 import {
   Calendar,
@@ -22,7 +23,6 @@ import {
   ChevronDown,
 } from 'lucide-react'
 import { format } from 'date-fns'
-import { lo } from 'date-fns/locale'
 import {
   Tabs,
   TabsContent,
@@ -33,6 +33,12 @@ import { CheckInToday, ToDay } from '@/components/leaveLists'
 import { Button } from '@/components/ui/button'
 import { useRouter } from 'next/navigation'
 import type { PolicyRecord } from '@/lib/types'
+
+const LAO_DAYS   = ['ວັນອາທິດ','ວັນຈັນ','ວັນອັງຄານ','ວັນພຸດ','ວັນພະຫັດ','ວັນສຸກ','ວັນເສົາ']
+const LAO_MONTHS = ['ມັງກອນ','ກຸມພາ','ມີນາ','ເມສາ','ພຶດສະພາ','ມິຖຸນາ','ກໍລະກົດ','ສິງຫາ','ກັນຍາ','ຕຸລາ','ພະຈິກ','ທັນວາ']
+function formatDateLao(date: Date): string {
+  return `${LAO_DAYS[date.getDay()]}, ${date.getDate()} ${LAO_MONTHS[date.getMonth()]} ${date.getFullYear()}`
+}
 
 const VISIBLE_COUNT = 3
 
@@ -123,6 +129,12 @@ export default function DashboardPage() {
     return map
   }, [leaveRequests])
 
+  const { data: todayLeaveRequests = [] } = useQuery({
+    queryKey: ['leaves', 'today', user?.workLocation?.uuid],
+    queryFn: () => fetchTodayLeavesByWorkLocation(user!.workLocation.uuid),
+    enabled: !!user?.workLocation?.uuid,
+  })
+
   if (isLoading) {
     return <HomeSkeleton />
   }
@@ -141,77 +153,18 @@ export default function DashboardPage() {
   const sickRemaining = effectiveLeaveBalance.sick - leaveBalance.sickUsed
 
   const recentLeaves = leaveRequests.slice(0, 3)
-  const leaveData: LeaveData[] = [
-    { "name": "Alice Johnson", "department": "Engineering", "successor": "Bob Smith", "startDate": "2026-02-01", "endDate": "2026-02-01", "reason": "Personal errands", "position": "Senior Dev", "note": "Reachable via Slack", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Mark Davis", "department": "Marketing", "successor": "Sarah Lee", "startDate": "2026-02-02", "endDate": "2026-02-05", "reason": "Family vacation", "position": "Manager", "note": "Overseeing campaign launch", "type": { "id": "02", "name": "Sick Leave" } },
-    { "name": "Chloe Chen", "department": "HR", "successor": "James Wilson", "startDate": "2026-02-03", "endDate": "2026-02-03", "reason": "Doctor appointment", "position": "Generalist", "note": "Half day morning", "type": { "id": "03", "name": "Maternity Leave" } },
-    { "name": "David Miller", "department": "Sales", "successor": "Emma Brown", "startDate": "2026-02-04", "endDate": "2026-02-08", "reason": "Rest and recovery", "position": "Executive", "note": "Handed over current leads", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Elena Rodriguez", "department": "Design", "successor": "Tom Hardy", "startDate": "2026-02-05", "endDate": "2026-02-05", "reason": "Home maintenance", "position": "UI Designer", "note": "Emergency plumbing", "type": { "id": "04", "name": "Paternity Leave" } },
-    { "name": "Frank Wright", "department": "Support", "successor": "Grace Hopper", "startDate": "2026-02-06", "endDate": "2026-02-09", "reason": "Travel", "position": "Support Lead", "note": "Back on Friday", "type": { "id": "05", "name": "Unpaid Leave" } },
-    { "name": "Gina Kim", "department": "Finance", "successor": "Harry Potter", "startDate": "2026-02-07", "endDate": "2026-02-07", "reason": "Wedding attendance", "position": "Accountant", "note": "Approved by CFO", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Ian Somer", "department": "Engineering", "successor": "Alice Johnson", "startDate": "2026-02-08", "endDate": "2026-02-11", "reason": "Fever", "position": "Junior Dev", "note": "Medical certificate attached", "type": { "id": "02", "name": "Sick Leave" } },
-    { "name": "Julia Roberts", "department": "Legal", "successor": "Kevin Hart", "startDate": "2026-02-09", "endDate": "2026-02-09", "reason": "Renewal of ID", "position": "Counsel", "note": "Away for 4 hours", "type": { "id": "05", "name": "Unpaid Leave" } },
-    { "name": "Leo Messi", "department": "Sports Ops", "successor": "Neymar Jr", "startDate": "2026-02-10", "endDate": "2026-02-14", "reason": "Tournament travel", "position": "Captain", "note": "National duty", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Monica Geller", "department": "Operations", "successor": "Rachel Green", "startDate": "2026-02-11", "endDate": "2026-02-11", "reason": "Catering event", "position": "Chef", "note": "Kitchen managed by Rachel", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Nathan Drake", "department": "IT", "successor": "Elena Fisher", "startDate": "2026-02-12", "endDate": "2026-02-16", "reason": "Hiking trip", "position": "SysAdmin", "note": "No signal area", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Olivia Pope", "department": "PR", "successor": "Quinn Perkins", "startDate": "2026-02-13", "endDate": "2026-02-13", "reason": "Client meeting", "position": "Director", "note": "Will return by EOD", "type": { "id": "05", "name": "Unpaid Leave" } },
-    { "name": "Peter Parker", "department": "Photography", "successor": "Mary Jane", "startDate": "2026-02-14", "endDate": "2026-02-16", "reason": "Family emergency", "position": "Staff Photographer", "note": "Urgent leave", "type": { "id": "02", "name": "Sick Leave" } },
-    { "name": "Quentin Tarantino", "department": "Production", "successor": "Uma Thurman", "startDate": "2026-02-15", "endDate": "2026-02-15", "reason": "Script review", "position": "Director", "note": "Offsite work", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Riley Reid", "department": "Social Media", "successor": "Chris Evans", "startDate": "2026-02-16", "endDate": "2026-02-20", "reason": "Short break", "position": "Influencer", "note": "Scheduling posts ahead", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Steve Rogers", "department": "Security", "successor": "Bucky Barnes", "startDate": "2026-02-17", "endDate": "2026-02-17", "reason": "Volunteer work", "position": "Chief", "note": "Bucky is in charge", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Tina Fey", "department": "Content", "successor": "Amy Poehler", "startDate": "2026-02-18", "endDate": "2026-02-22", "reason": "Writing retreat", "position": "Writer", "note": "Developing new sketches", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Ursula Corbero", "department": "Sales", "successor": "Alvaro Morte", "startDate": "2026-02-19", "endDate": "2026-02-19", "reason": "Dental checkup", "position": "Sales Manager", "note": "Back in 2 hours", "type": { "id": "02", "name": "Sick Leave" } },
-    { "name": "Victor Stone", "department": "IT", "successor": "Barry Allen", "startDate": "2026-02-20", "endDate": "2026-02-24", "reason": "Tech conference", "position": "DevOps", "note": "Attending AWS Summit", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Wanda Maximoff", "department": "R&D", "successor": "Vision", "startDate": "2026-02-21", "endDate": "2026-02-21", "reason": "Mental health day", "position": "Researcher", "note": "Switching off", "type": { "id": "02", "name": "Sick Leave" } },
-    { "name": "Xavier Renegade", "department": "Philosophy", "successor": "Socrates", "startDate": "2026-02-22", "endDate": "2026-02-26", "reason": "Soul searching", "position": "Lead Thinker", "note": "Not reachable", "type": { "id": "05", "name": "Unpaid Leave" } },
-    { "name": "Yara Greyjoy", "department": "Logistics", "successor": "Theon Greyjoy", "startDate": "2026-02-23", "endDate": "2026-02-23", "reason": "Family gathering", "position": "Fleet Manager", "note": "Back tomorrow", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Zane Gray", "department": "Engineering", "successor": "Yuri Boyka", "startDate": "2026-02-24", "endDate": "2026-02-28", "reason": "Exhaustion", "position": "Lead Dev", "note": "Needs rest", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Arthur Curry", "department": "Environment", "successor": "Mera", "startDate": "2026-02-25", "endDate": "2026-02-25", "reason": "Ocean cleanup", "position": "Advocate", "note": "Field work", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Bruce Wayne", "department": "Executive", "successor": "Alfred", "startDate": "2026-02-26", "endDate": "2026-03-02", "reason": "Charity gala", "position": "CEO", "note": "Contact Alfred", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Clark Kent", "department": "Editorial", "successor": "Lois Lane", "startDate": "2026-02-27", "endDate": "2026-02-27", "reason": "Interview", "position": "Reporter", "note": "Filing story remotely", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Diana Prince", "department": "Museum", "successor": "Steve Trevor", "startDate": "2026-02-28", "endDate": "2026-03-04", "reason": "Artifact research", "position": "Curator", "note": "In the archives", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Edward Stark", "department": "Admin", "successor": "Robb Stark", "startDate": "2026-03-01", "endDate": "2026-03-01", "reason": "Winter prep", "position": "Head of House", "note": "Short leave", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Fiona Gallagher", "department": "Operations", "successor": "Lip", "startDate": "2026-03-02", "endDate": "2026-03-05", "reason": "Family issues", "position": "Supervisor", "note": "Urgent", "type": { "id": "05", "name": "Unpaid Leave" } },
-    { "name": "George Weasley", "department": "Sales", "successor": "Fred", "startDate": "2026-03-03", "endDate": "2026-03-03", "reason": "Product testing", "position": "Co-owner", "note": "Joke shop duties", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Hermione Granger", "department": "Education", "successor": "Ron", "startDate": "2026-03-04", "endDate": "2026-03-05", "reason": "Library visit", "position": "Librarian", "note": "Studying hard", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Iris West", "department": "Media", "successor": "Barry", "startDate": "2026-03-05", "endDate": "2026-03-05", "reason": "Photography gig", "position": "Journalist", "note": "Freelance day", "type": { "id": "05", "name": "Unpaid Leave" } },
-    { "name": "Jack Sparrow", "department": "Logistics", "successor": "Will", "startDate": "2026-03-09", "endDate": "2026-03-10", "reason": "Ship repair", "position": "Captain", "note": "At the docks", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Katniss Everdeen", "department": "Security", "successor": "Peeta", "startDate": "2026-03-07", "endDate": "2026-03-07", "reason": "Hunting trip", "position": "Specialist", "note": "District 12 trip", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Luke Skywalker", "department": "Training", "successor": "Rey", "startDate": "2026-03-08", "endDate": "2026-03-12", "reason": "Meditation", "position": "Master", "note": "On Ahch-To", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Marty McFly", "department": "Engineering", "successor": "Doc Brown", "startDate": "2026-03-09", "endDate": "2026-03-09", "reason": "Time conflict", "position": "Tester", "note": "Back to the future", "type": { "id": "05", "name": "Unpaid Leave" } },
-    { "name": "Neo", "department": "IT", "successor": "Trinity", "startDate": "2026-03-10", "endDate": "2026-03-14", "reason": "System reboot", "position": "The One", "note": "Unplugging", "type": { "id": "02", "name": "Sick Leave" } },
-    { "name": "Optimus Prime", "department": "Transport", "successor": "Bumblebee", "startDate": "2026-03-11", "endDate": "2026-03-11", "reason": "Maintenance", "position": "Leader", "note": "Oil change", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Peggy Carter", "department": "HR", "successor": "Howard Stark", "startDate": "2026-03-12", "endDate": "2026-03-16", "reason": "Strategic travel", "position": "Director", "note": "Founding S.H.I.E.L.D.", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Quinn Fabray", "department": "Arts", "successor": "Rachel", "startDate": "2026-03-13", "endDate": "2026-03-13", "reason": "Choir practice", "position": "Singer", "note": "Glee club", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Robin Hood", "department": "Finance", "successor": "Little John", "startDate": "2026-03-14", "endDate": "2026-03-18", "reason": "Redistribution", "position": "Analyst", "note": "Helping the poor", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Sherlock Holmes", "department": "Legal", "successor": "Watson", "startDate": "2026-03-15", "endDate": "2026-03-15", "reason": "Investigation", "position": "Consultant", "note": "Game is afoot", "type": { "id": "05", "name": "Unpaid Leave" } },
-    { "name": "Tony Stark", "department": "R&D", "successor": "Pepper", "startDate": "2026-03-16", "endDate": "2026-03-20", "reason": "Workshop upgrade", "position": "Innovator", "note": "Jarvis is online", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Ultron", "department": "IT", "successor": "Vision", "startDate": "2026-03-17", "endDate": "2026-03-17", "reason": "Update", "position": "AI", "note": "Upgrading servers", "type": { "id": "02", "name": "Sick Leave" } },
-    { "name": "V", "department": "Cyber", "successor": "Johnny", "startDate": "2026-03-18", "endDate": "2026-03-22", "reason": "Neural chip", "position": "Mercenary", "note": "Cyberware shop", "type": { "id": "02", "name": "Sick Leave" } },
-    { "name": "Wade Wilson", "department": "Security", "successor": "Cable", "startDate": "2026-03-19", "endDate": "2026-03-19", "reason": "Chimichanga", "position": "Contractor", "note": "Maximum effort", "type": { "id": "05", "name": "Unpaid Leave" } },
-    { "name": "Xena", "department": "Operations", "successor": "Gabrielle", "startDate": "2026-03-20", "endDate": "2026-03-24", "reason": "Warrior training", "position": "Manager", "note": "Traveling offsite", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Yoda", "department": "Training", "successor": "Windu", "startDate": "2026-03-21", "endDate": "2026-03-21", "reason": "Quiet time", "position": "Master", "note": "Meditate I must", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Zorro", "department": "Legal", "successor": "Bernardo", "startDate": "2026-03-22", "endDate": "2026-03-26", "reason": "Night patrol", "position": "Advocate", "note": "Mark of the Z", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Anna Scott", "department": "PR", "successor": "William", "startDate": "2026-03-23", "endDate": "2026-03-23", "reason": "Press junket", "position": "Actress", "note": "London trip", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Billy Butcher", "department": "Compliance", "successor": "Hughie", "startDate": "2026-03-24", "endDate": "2026-03-28", "reason": "Audit", "position": "Inspector", "note": "Diabolical", "type": { "id": "05", "name": "Unpaid Leave" } },
-    { "name": "Ciri", "department": "Logistics", "successor": "Geralt", "startDate": "2026-03-25", "endDate": "2026-03-25", "reason": "Portal travel", "position": "Specialist", "note": "Back in a flash", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Darth Vader", "department": "Executive", "successor": "Piett", "startDate": "2026-03-26", "endDate": "2026-03-30", "reason": "Maintenance", "position": "VP", "note": "Meditation chamber", "type": { "id": "02", "name": "Sick Leave" } },
-    { "name": "Ellie Williams", "department": "Field Ops", "successor": "Joel", "startDate": "2026-03-27", "endDate": "2026-03-27", "reason": "Supply run", "position": "Scout", "note": "Watch out for clickers", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Frodo Baggins", "department": "Logistics", "successor": "Samwise", "startDate": "2026-03-28", "endDate": "2026-03-31", "reason": "Long walk", "position": "Courier", "note": "Going to Mordor", "type": { "id": "05", "name": "Unpaid Leave" } },
-    { "name": "Geralt of Rivia", "department": "Security", "successor": "Yennefer", "startDate": "2026-03-29", "endDate": "2026-03-29", "reason": "Contract", "position": "Contractor", "note": "Toss a coin", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Holly Golightly", "department": "Marketing", "successor": "Paul", "startDate": "2026-03-30", "endDate": "2026-03-31", "reason": "Socializing", "position": "Socialite", "note": "Tiffany's visit", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "Indiana Jones", "department": "Research", "successor": "Marcus", "startDate": "2026-03-31", "endDate": "2026-03-31", "reason": "Field trip", "position": "Professor", "note": "Museum duty", "type": { "id": "01", "name": "Annual Leave" } },
-    { "name": "John McClane", "department": "Security", "successor": "Al Powell", "startDate": "2026-03-31", "endDate": "2026-03-31", "reason": "Visit family", "position": "Consultant", "note": "Yippee-ki-yay", "type": { "id": "01", "name": "Annual Leave" } }
-  ]
-  const leaveDataToday = leaveData.filter((leave) => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0); // Ensure midnight
-    const startDate = new Date(leave.startDate);
-    const endDate = new Date(leave.endDate);
-    startDate.setHours(0, 0, 0, 0);
-    endDate.setHours(0, 0, 0, 0);
-    return startDate.getTime() <= today.getTime() && endDate.getTime() >= today.getTime();
-  });
+
+  const leaveDataToday: LeaveData[] = todayLeaveRequests.map(r => ({
+    name: r.leaveUserName ?? '',
+    department: r.departmentNameLo ?? r.departmentNameEn ?? '',
+    successor: r.successorNameLo ?? r.successorNameEn ?? '',
+    startDate: r.startDate,
+    endDate: r.endDate,
+    reason: r.reason,
+    position: r.jobTitle ?? '',
+    note: r.doc ?? '',
+    type: { id: r.policyId ?? '', name: r.policyName ?? r.type },
+  }))
 
 
   return (
@@ -222,7 +175,7 @@ export default function DashboardPage() {
           ຍີນດີຕ້ອນຮັບ, {user?.firstNameLo}
         </h1>
         <p className="text-muted-foreground">
-          {format(new Date(), "EEEE, d MMMM yyyy", { locale: lo })}
+          {formatDateLao(new Date())}
         </p>
       </div>
 
@@ -244,7 +197,8 @@ export default function DashboardPage() {
                 </p>
               </div>
             </div>
-            <Badge variant={todayAttendance?.checkIn ? 'default' : 'secondary'}>
+            <Badge variant={todayAttendance?.checkIn ? 'default' : 'secondary'} 
+            onClick={() => router.push('/dashboard/attendance')}>
               {todayAttendance?.checkOut
                 ? 'ກັບບ້ານແລ້ວ'
                 : todayAttendance?.checkIn
