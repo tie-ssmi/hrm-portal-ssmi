@@ -10,8 +10,9 @@ import { Progress } from '@/components/ui/progress'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import HomeSkeleton from '@/components/skeletons/homeSkeleton'
 import { fetchPoliciesForGender } from '@/services/policies'
-import { fetchTodayLeavesByWorkLocation } from '@/services/leaves'
 import type { LeaveData } from '@/types/employee'
+import type { LeaveRequest } from '@/lib/types'
+import { useUserLeaves, useTodayLeavesByWorkLocation } from '@/lib/use-leave-queries'
 import {
   Calendar,
   Clock,
@@ -105,7 +106,7 @@ function PolicyList({
 
 export default function DashboardPage() {
   const { user, isLoading } = useAuth()
-  const { leaveBalance, lateRecords, totalFines, leaveRequests, todayAttendance } = useHRM()
+  const { leaveBalance, lateRecords, totalFines, todayAttendance } = useHRM()
   const router = useRouter()
 
   const { data: policies = [] } = useQuery({
@@ -114,27 +115,28 @@ export default function DashboardPage() {
     enabled: !!user,
   })
 
-  // used days per policy UUID or ID (approved leaves only)
+  const workLocationUuid =
+    typeof user?.workLocation === 'string'
+      ? user.workLocation
+      : user?.workLocation?.uuid
+
+  // all leaves for policy usage calculation
+  const { data: userLeaves = [] } = useUserLeaves(user?.uuid)
+
+  // active leaves today for the leave tab
+  const { data: todayLeaveRequests = [] } = useTodayLeavesByWorkLocation(workLocationUuid)
+
+  // used days per policy (approved leaves only)
   const usedByPolicy = useMemo(() => {
     const map = new Map<string, number>()
-    leaveRequests.forEach(req => {
+    userLeaves.forEach((req: LeaveRequest) => {
       if (req.status !== 'approved') return
       const key = req.policyUuid || req.policyId
       if (!key) return
       map.set(key, (map.get(key) ?? 0) + (req.duration ?? 1))
     })
     return map
-  }, [leaveRequests])
-
-  const workLocationUuid = typeof user?.workLocation === 'string'
-    ? user.workLocation
-    : user?.workLocation?.uuid
-
-  const { data: todayLeaveRequests = [] } = useQuery({
-    queryKey: ['leaves', 'today', workLocationUuid],
-    queryFn: () => fetchTodayLeavesByWorkLocation(workLocationUuid!),
-    enabled: !!workLocationUuid,
-  })
+  }, [userLeaves])
 
   if (isLoading) {
     return <HomeSkeleton />

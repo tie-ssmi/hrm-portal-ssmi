@@ -5,7 +5,10 @@
       "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\muale\\\\Desktop\\\\SSMI\\\\hrm-portal-ssmi\" -Directory)",
       "Bash(Select-Object Name)",
       "Bash(npm run *)",
-      "Bash(cmd /c \"npm run build 2>&1\")"
+      "Bash(cmd /c \"npm run build 2>&1\")",
+      "Bash(node -e \"const p = require\\('./package.json'\\); console.log\\('next:', p.dependencies?.next || p.devDependencies?.next\\)\")",
+      "Bash(Get-Content \"c:\\\\Users\\\\muale\\\\Desktop\\\\SSMI\\\\hrm-portal-ssmi\\\\package.json\")",
+      "Bash(Select-String '\"next\"')"
     ]
   }
 }

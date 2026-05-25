@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
+import Link from 'next/link'
 import { useAuth } from '@/lib/auth-context'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -50,7 +50,6 @@ function formatDepartment(value: unknown): string {
 
 export function DashboardNav() {
   const pathname = usePathname()
-  const router = useRouter()
   const { user, logout } = useAuth()
   const canApproveDept  = user?.rolePermissions?.approveDepartment ?? false
 const canApproveBranch = user?.rolePermissions?.approveBranch ?? false
@@ -115,10 +114,9 @@ const profileImage = user?.profileImage || user?.photo3x4Url || user?.avatar || 
             (item.href !== '/dashboard' && pathname.startsWith(item.href))
           
           return (
-            <button
-              type="button"
+            <Link
               key={item.href}
-              onClick={() => router.push(item.href)}
+              href={item.href}
               aria-current={isActive ? 'page' : undefined}
               className={cn(
                 'flex w-full items-center justify-start gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
@@ -129,7 +127,7 @@ const profileImage = user?.profileImage || user?.photo3x4Url || user?.avatar || 
             >
               <item.icon className="w-5 h-5" />
               {item.label}
-            </button>
+            </Link>
           )
         })}
       </nav>

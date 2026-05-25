@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { usePathname, useRouter } from 'next/navigation'
+import { useState, useEffect, useRef } from 'react'
+import { usePathname } from 'next/navigation'
+import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import {
   LayoutDashboard,
@@ -39,11 +40,10 @@ import {
 
 export function MobileNav() {
   const pathname = usePathname()
-  const router = useRouter()
   const { user, logout } = useAuth()
   const [sheetOpen, setSheetOpen] = useState(false)
   const [showNav, setShowNav] = useState(true)
-  const [lastScrollY, setLastScrollY] = useState(0)
+  const lastScrollYRef = useRef(0)
 
   const canApproveDept = user?.rolePermissions?.approveDepartment ?? false
   const canApproveBranch = user?.rolePermissions?.approveBranch ?? false
@@ -69,17 +69,17 @@ export function MobileNav() {
   useEffect(() => {
     const handleScroll = () => {
       const currentScrollY = window.scrollY
-      if (currentScrollY < lastScrollY) {
+      if (currentScrollY < lastScrollYRef.current) {
         setShowNav(true)
-      } else if (currentScrollY > lastScrollY && currentScrollY > 50) {
+      } else if (currentScrollY > lastScrollYRef.current && currentScrollY > 50) {
         setShowNav(false)
       }
-      setLastScrollY(currentScrollY)
+      lastScrollYRef.current = currentScrollY
     }
 
-    window.addEventListener('scroll', handleScroll)
+    window.addEventListener('scroll', handleScroll, { passive: true })
     return () => window.removeEventListener('scroll', handleScroll)
-  }, [lastScrollY])
+  }, [])
 
   return (
     <>
@@ -95,10 +95,9 @@ export function MobileNav() {
               (item.href !== '/dashboard' && pathname.startsWith(item.href))
             if (!item.show) return null
             return (
-              <button
-                type="button"
+              <Link
                 key={item.href}
-                onClick={() => router.push(item.href)}
+                href={item.href}
                 aria-current={isActive ? 'page' : undefined}
                 className={cn(
                   'flex flex-col items-center justify-center gap-1 px-2 py-2 rounded-lg transition-colors min-h-[44px] min-w-[44px] select-none cursor-pointer',
@@ -109,7 +108,7 @@ export function MobileNav() {
               >
                 <item.icon className="w-5 h-5" />
                 <span className="text-[10px] font-medium text-center">{item.label}</span>
-              </button>
+              </Link>
             )
           })}
         </div>
@@ -141,13 +140,10 @@ export function MobileNav() {
                   (item.href !== '/dashboard' && pathname.startsWith(item.href))
                 if (!item.show) return null
                 return (
-                  <button
-                    type="button"
+                  <Link
                     key={item.href}
-                    onClick={() => {
-                      router.push(item.href)
-                      setSheetOpen(false)
-                    }}
+                    href={item.href}
+                    onClick={() => setSheetOpen(false)}
                     aria-current={isActive ? 'page' : undefined}
                     className={cn(
                       'flex w-full items-center justify-start gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
@@ -158,7 +154,7 @@ export function MobileNav() {
                   >
                     <item.icon className="w-5 h-5" />
                     {item.label}
-                  </button>
+                  </Link>
                 )
               })}
             </div>
