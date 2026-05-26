@@ -21,6 +21,7 @@ import {
   HeartPulse,
   MapPinX,
   ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
 import {
   Tabs,
@@ -90,7 +91,8 @@ function PolicyList({
 
           <CollapsibleTrigger asChild>
             <Button variant="ghost" size="sm" className="w-full gap-1 text-xs text-muted-foreground">
-              <ChevronDown className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+              {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              
               {open ? 'ຫຍໍ້ລົງ' : `ເບິ່ງທັງໝົດ (${hidden.length} ລາຍການ)`}
             </Button>
           </CollapsibleTrigger>

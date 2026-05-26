@@ -33,8 +33,8 @@ export default function TheThemes() {
   return (
   <Popover>
   <PopoverTrigger asChild>
-    <Button variant="outline" size="icon" className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:scale-95 transition-all touch-none select-none focus:ring-2">
-      {theme === 'light' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+    <Button variant="outline" size="icon" className="hover:bg-sidebar-accent bg-foreground hover:text-sidebar-accent-foreground active:scale-95 transition-all touch-none select-none focus:ring-2">
+      {theme === 'light' ? <Sun className="h-5 w-5"  /> : <Moon className="h-5 w-5" />}
     </Button>
   </PopoverTrigger>
   <PopoverContent className="w-auto flex flex-col space-y-1 p-2 touch-none select-none z-[100]">

@@ -2,8 +2,7 @@
 
 import { useAuth } from '@/lib/auth-context'
 import { useHRM } from '@/lib/hrm-context'
-import { useQuery } from '@tanstack/react-query'
-import { fetchAllLeavesByUserUuid } from '@/services/leaves'
+import { useUserLeaves } from '@/lib/use-leave-queries'
 import HistorySkeleton from '@/components/skeletons/historySkeleton'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -32,11 +31,7 @@ export default function HistoryPage() {
     totalFines
   } = useHRM()
 
-  const { data: leaveRequests = [] } = useQuery({
-    queryKey: ['leaves', 'user', user?.uuid ?? null],
-    queryFn: () => fetchAllLeavesByUserUuid(user!.uuid!),
-    enabled: !!user?.uuid,
-  })
+  const { data: leaveRequests = [] } = useUserLeaves(user?.uuid)
 
   const getStatusVariant = (status: string) => {
     switch (status) {

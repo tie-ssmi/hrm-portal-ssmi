@@ -12,6 +12,7 @@ import {
 import { auth } from './firebase-auth'
 import type { AuthCredential } from 'firebase/auth'
 import type { AuthContextType, Employee } from './types'
+import { queryClient } from './query-client'
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
@@ -111,15 +112,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Listen for auth state changes
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
-      if (fbUser) {
-        setFirebaseUser(fbUser)
-        const employeeData = await firebaseUserToEmployee(fbUser)
-        setUser(employeeData)
-      } else {
+      try {
+        if (fbUser) {
+          setFirebaseUser(fbUser)
+          const employeeData = await firebaseUserToEmployee(fbUser)
+          setUser(employeeData)
+        } else {
+          setFirebaseUser(null)
+          setUser(null)
+        }
+      } catch (error) {
+        console.error('Auth state change error:', error)
         setFirebaseUser(null)
         setUser(null)
+      } finally {
+        setIsLoading(false)
       }
-      setIsLoading(false)
     })
 
     return () => unsubscribe()
@@ -315,6 +323,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       clearPendingGoogleLink()
       await signOut(auth)
+      queryClient.clear()
     } catch (error) {
       console.error('Logout error:', error)
     }

@@ -243,7 +243,7 @@ export default function CheckInPage() {
                       {records.map((record) => (
                         <div key={record.id} className="flex items-center gap-3 rounded-lg border bg-background p-3">
                           <Avatar className="h-9 w-9 shrink-0">
-                            <AvatarImage src={record.employeeImage}  className="object-cover"/>
+                            <AvatarImage src={record.employeeImage}  className={`object-cover ${record.checkOut ? 'grayscale' : ' '}`}/>
                             <AvatarFallback className="text-xs bg-primary/10 text-primary">
                               {(record.fullNameLo || record.fullNameEn || '?')[0]}
                             </AvatarFallback>
@@ -307,7 +307,7 @@ export default function CheckInPage() {
                             <TableCell className="px-4 py-3">
                               <div className="flex items-center gap-2 min-w-0">
                                 <Avatar className="h-8 w-8 shrink-0">
-                                  <AvatarImage src={record.employeeImage}  className="object-cover"/>
+                                  <AvatarImage src={record.employeeImage}  className={`object-cover ${record.checkOut ? 'grayscale' : ' '}`}/>
                                   <AvatarFallback className="text-xs bg-primary/10 text-primary">
                                     {(record.fullNameLo || record.fullNameEn || '?')[0]}
                                   </AvatarFallback>

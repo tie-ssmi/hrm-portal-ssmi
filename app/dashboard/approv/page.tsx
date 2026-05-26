@@ -29,11 +29,14 @@ export default function ApprovePage() {
   const workLocationUuid = typeof user?.workLocation === 'object' ? (user.workLocation as { uuid?: string })?.uuid : undefined
   const canApproveDept  = user?.rolePermissions?.approveDepartment ?? false
   const canApproveBranch = user?.rolePermissions?.approveBranch ?? false
-  // go to dashboard if canApproveDept and canApproveBranch are both false, to prevent unauthorized access to this page
-  if (!isLoading && !canApproveDept && !canApproveBranch) {
-    router.push('/dashboard')
-    return null
-  }
+  const canApproveAny = canApproveDept || canApproveBranch
+
+  useEffect(() => {
+    if (!isLoading && !canApproveAny) {
+      router.push('/dashboard')
+    }
+  }, [isLoading, canApproveAny, router])
+
   const queryKey = ['leaves', 'approval', departmentUuid ?? null, workLocationUuid ?? null, loggedInUserUuid]
 
   const { data: leaveRequests = [] } = useQuery({
@@ -43,7 +46,7 @@ export default function ApprovePage() {
       workLocationUid: workLocationUuid!,
       excludeUserUuid: loggedInUserUuid,
     }),
-    enabled: !!departmentUuid && !!workLocationUuid && !!loggedInUserUuid,
+    enabled: !!departmentUuid && !!workLocationUuid && !!loggedInUserUuid && canApproveAny,
   })
 
   const leaveTableData = useMemo(() => leaveRequests.map((r) => ({
@@ -92,7 +95,7 @@ export default function ApprovePage() {
         .filter((d) => d.status === 'pending' || d.endDate >= monthStart)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     },
-    enabled: !!workLocationUuid && !!loggedInUserUuid && (canApproveDept || canApproveBranch),
+    enabled: !!workLocationUuid && !!loggedInUserUuid && canApproveAny,
   })
 
   const offsiteTableData = useMemo(() =>
@@ -247,9 +250,8 @@ export default function ApprovePage() {
   }
 
 
-  if (isLoading) {
-    return <FormsSkeleton />
-  }
+  if (isLoading) return <FormsSkeleton />
+  if (!canApproveAny) return null
 
   return (
     <div className="space-y-6">

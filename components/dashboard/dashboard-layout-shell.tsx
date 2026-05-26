@@ -32,7 +32,9 @@ export function DashboardLayoutShell({
           </aside>
 
           <main className="lg:pl-64 pb-20 lg:pb-0">
-            <div className="p-4 lg:p-8 mx-auto">{children}</div>
+            <div className="p-4 lg:p-8 mx-auto">
+              {children}
+            </div>
           </main>
 
           <MobileNav />
