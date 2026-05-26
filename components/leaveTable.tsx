@@ -73,7 +73,7 @@ const TABS: { value: TabValue; label: string }[] = [
 ]
 
 function tabMatch(item: LeaveTableItem, tab: TabValue): boolean {
-	if (tab === 'pending')    return item.approvals?.[0]?.decision === 'pending'
+	if (tab === 'pending')    return item.approvals?.[0]?.decision === 'pending' && item.status !== 'rejected'
 	if (tab === 'inprogress') return item.approvals?.[0]?.decision === 'approved' && item.status !== 'rejected'
 	if (tab === 'rejected')   return item.status === 'rejected'
 	return true

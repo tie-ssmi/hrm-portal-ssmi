@@ -124,7 +124,7 @@ export default function InsteadLeaveRequestForm() {
   const router = useRouter()
   const { user } = useAuth()
   const { submitLeaveRequest, leaveBalance } = useHRM()
-  const loggedInUserUuid = user?.uid || user?.id || ''
+  const loggedInUserUuid = user?.uuid || user?.uid || user?.id || ''
   const departmentUuid = typeof user?.department === 'object' ? user.department?.uuid : undefined
   const workLocationUuid = typeof user?.workLocation === 'object' && user.workLocation !== null
     ? (user.workLocation as { uuid?: string }).uuid
@@ -236,6 +236,9 @@ export default function InsteadLeaveRequestForm() {
     }
   }, [myCurrentLeavesError])
 
+  const employeeName = (emp: typeof employeesData[number] | undefined) =>
+    [emp?.firstNameLo || emp?.firstNameEn, emp?.lastNameLo || emp?.lastNameEn].filter(Boolean).join(' ') || emp?.email || ''
+
   function handleStartDateSelect(date?: Date) {
     setLeaveStartDate(date)
     if (date && leaveEndDate && date > leaveEndDate) setLeaveEndDate(undefined)
@@ -268,8 +271,10 @@ export default function InsteadLeaveRequestForm() {
       return
     }
 
-    const employeeDept = typeof selectedLeaveFor.department === 'object' && selectedLeaveFor.department
-      ? selectedLeaveFor.department as any : undefined
+    type DeptShape = { uuid?: string; nameLo?: string; nameEn?: string; title?: string; department?: string }
+    const employeeDept = typeof selectedLeaveFor.department === 'object' && selectedLeaveFor.department !== null
+      ? selectedLeaveFor.department as DeptShape
+      : undefined
 
     setIsSubmitting(true)
     try {
@@ -291,7 +296,7 @@ export default function InsteadLeaveRequestForm() {
       })
 
       await submitLeaveRequest({
-        leaveUserUuid: selectedLeaveFor.uid || selectedLeaveFor.id || undefined,
+        leaveUserUuid: selectedLeaveFor.uuid || selectedLeaveFor.uid || selectedLeaveFor.id || undefined,
         leaveUserName,
         species: 'instead',
         type: selectedPolicy?.requestType || 'annual',
@@ -299,7 +304,7 @@ export default function InsteadLeaveRequestForm() {
         policyId: selectedPolicy?.policyId || undefined,
         policyName: selectedPolicy?.policyName || selectedPolicy?.label,
         createdBy,
-        createdByUid: user?.uid || user?.id || undefined,
+        createdByUid: user?.uuid || user?.uid || user?.id || undefined,
         startDate: format(leaveStartDate, 'yyyy-MM-dd'),
         startPeriod,
         endDate: format(leaveEndDate, 'yyyy-MM-dd'),
@@ -307,22 +312,22 @@ export default function InsteadLeaveRequestForm() {
         duration,
         reason: leaveReason,
         departmentUid: employeeDept?.uuid,
-        departmentNameLo: employeeDept?.title || employeeDept?.department,
-        departmentNameEn: employeeDept?.title || employeeDept?.department,
+        departmentNameLo: employeeDept?.nameLo || employeeDept?.title || employeeDept?.department,
+        departmentNameEn: employeeDept?.nameEn || employeeDept?.title || employeeDept?.department,
         successorUid: selectedSuccessor?.uid,
         successorNameLo: selectedSuccessor ? [selectedSuccessor.firstNameLo, selectedSuccessor.lastNameLo].filter(Boolean).join(' ') : undefined,
         successorNameEn: selectedSuccessor ? [selectedSuccessor.firstNameEn, selectedSuccessor.lastNameEn].filter(Boolean).join(' ') : undefined,
         jobTitle: selectedLeaveFor.jobTitle,
-        workLocationUid: selectedLeaveFor.workLocation?.uuid,
+        workLocationUid: typeof selectedLeaveFor.workLocation === 'string'
+          ? selectedLeaveFor.workLocation
+          : selectedLeaveFor.workLocation?.uuid,
       }, autoApprovedApprovals)
       await refetchMyCurrentLeaves()
       toast.success('ສົ່ງຄໍາຮ້ອງຂໍສໍາເລັດ (ອະນຸມັດຂັ້ນຕົ້ນແລ້ວ)')
       setOpenConfirmDialog(false)
       setConfirmLeave(false)
       
-      // Redirect to the approval dashboard
       router.push('/dashboard/approv')
-      router.refresh()
     } catch (err) {
       toast.error('ບໍ່ສາມາດສົ່ງຄໍາຮ້ອງຂໍໄດ້')
       console.error(err)
@@ -330,9 +335,6 @@ export default function InsteadLeaveRequestForm() {
       setIsSubmitting(false)
     }
   }
-
-  const employeeName = (emp: typeof employeesData[number] | undefined) =>
-    [emp?.firstNameLo || emp?.firstNameEn, emp?.lastNameLo || emp?.lastNameEn].filter(Boolean).join(' ') || emp?.email || ''
 
   return (
     <>

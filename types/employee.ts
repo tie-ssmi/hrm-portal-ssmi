@@ -30,7 +30,7 @@ export interface Employee {
   major: string;
   jobTitle: string;
   employeeType: string;
-  department: EmployeeDepartment;
+  departmentUid ?: string;
   workLocation: EmployeeWorkLocation;
   salary: number;
   tel: string;
@@ -56,7 +56,8 @@ export interface LeaveType {
 
 export interface LeaveData {
   name: string;
-  department: string;
+  departmentUid ?: string;
+  department ?: string;
   successor: string;
   startDate: string;
   endDate: string;

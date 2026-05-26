@@ -25,6 +25,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import type { AttendanceRecord } from '@/lib/types'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
 import {
   MapPin,
@@ -37,7 +38,6 @@ import {
   Shield,
   ShieldX,
   MapPinOff,
-  Camera,
 } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
@@ -333,34 +333,46 @@ export default function AttendancePage() {
           <div className="grid grid-cols-2 gap-4">
             <div className="rounded-lg bg-muted/50 p-4 text-center">
               <p className="mb-1 text-xs text-muted-foreground">ເຂົ້າວຽກ</p>
-              <p className="text-xl font-bold text-foreground">{todayAttendance?.checkIn || '--:--'}</p>
+              {isLoadingHistory ? (
+                <Skeleton className="h-7 w-16 mx-auto mt-1" />
+              ) : (
+                <p className="text-xl font-bold text-foreground">{todayAttendance?.checkIn || '--:--'}</p>
+              )}
             </div>
             <div className="rounded-lg bg-muted/50 p-4 text-center">
               <p className="mb-1 text-xs text-muted-foreground">ອອກວຽກ</p>
-              <p className="text-xl font-bold text-foreground">{todayAttendance?.checkOut || '--:--'}</p>
+              {isLoadingHistory ? (
+                <Skeleton className="h-7 w-16 mx-auto mt-1" />
+              ) : (
+                <p className="text-xl font-bold text-foreground">{todayAttendance?.checkOut || '--:--'}</p>
+              )}
             </div>
           </div>
 
           <div className="flex items-center justify-center">
-            <Badge
-              variant={
-                todayAttendance?.status === 'present' ? 'default'
-                  : todayAttendance?.status === 'late' ? 'secondary'
-                  : todayAttendance?.status === 'not_check_in' ? 'destructive'
-                  : 'outline'
-              }
-              className="px-4 py-1 text-sm"
-            >
-              {todayAttendance?.checkOut ? (
-                <><CheckCircle className="mr-2 h-4 w-4" /> ກັບແລ້ວ</>
-              ) : todayAttendance?.status === 'not_check_in' ? (
-                <><AlertTriangle className="mr-2 h-4 w-4" /> ລືມກົດເຂົ້າວຽກ</>
-              ) : todayAttendance?.checkIn ? (
-                <><Clock className="mr-2 h-4 w-4" /> {todayAttendance.status === 'late' ? 'ເຂົ້າວຽກ (ຊ້າ)' : 'ເຂົ້າວຽກ'}</>
-              ) : (
-                <><AlertTriangle className="mr-2 h-4 w-4" /> ຍັງບໍ່ເຂົ້າວຽກ</>
-              )}
-            </Badge>
+            {isLoadingHistory ? (
+              <Skeleton className="h-8 w-36 rounded-full" />
+            ) : (
+              <Badge
+                variant={
+                  todayAttendance?.status === 'present' ? 'default'
+                    : todayAttendance?.status === 'late' ? 'secondary'
+                    : todayAttendance?.status === 'not_check_in' ? 'destructive'
+                    : 'outline'
+                }
+                className="px-4 py-1 text-sm"
+              >
+                {todayAttendance?.checkOut ? (
+                  <><CheckCircle className="mr-2 h-4 w-4" /> ກັບແລ້ວ</>
+                ) : todayAttendance?.status === 'not_check_in' ? (
+                  <><AlertTriangle className="mr-2 h-4 w-4" /> ລືມກົດເຂົ້າວຽກ</>
+                ) : todayAttendance?.checkIn ? (
+                  <><Clock className="mr-2 h-4 w-4" /> {todayAttendance.status === 'late' ? 'ເຂົ້າວຽກ (ຊ້າ)' : 'ເຂົ້າວຽກ'}</>
+                ) : (
+                  <><AlertTriangle className="mr-2 h-4 w-4" /> ຍັງບໍ່ເຂົ້າວຽກ</>
+                )}
+              </Badge>
+            )}
           </div>
 
           {/* Offsite checkbox — mobile only */}
@@ -389,28 +401,35 @@ export default function AttendancePage() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-2 gap-4">
-        <Button
-          size="lg"
-          className="h-16 text-lg"
-          onClick={() => handleAttendance('checkIn')}
-          disabled={checkInMutation.isPending || !!todayAttendance?.checkIn || isLoadingHistory || (!isOffsite && !isWithinOffice)}
-        >
-          {checkInMutation.isPending ? <Spinner className="mr-2" /> : <LogIn className="mr-2 h-5 w-5" />}
-          Check In
-        </Button>
+      {isLoadingHistory ? (
+        <div className="grid grid-cols-2 gap-4">
+          <Skeleton className="h-16 w-full rounded-lg" />
+          <Skeleton className="h-16 w-full rounded-lg" />
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-4">
+          <Button
+            size="lg"
+            className="h-16 text-lg"
+            onClick={() => handleAttendance('checkIn')}
+            disabled={checkInMutation.isPending || !!todayAttendance?.checkIn || (!isOffsite && !isWithinOffice)}
+          >
+            {checkInMutation.isPending ? <Spinner className="mr-2" /> : <LogIn className="mr-2 h-5 w-5" />}
+            Check In
+          </Button>
 
-        <Button
-          size="lg"
-          variant="outline"
-          className="h-16 text-lg"
-          onClick={() => handleAttendance('checkOut')}
-          disabled={checkOutMutation.isPending || !todayAttendance?.checkIn || !!todayAttendance?.checkOut || (!isOffsite && !isWithinOffice)}
-        >
-          {checkOutMutation.isPending ? <Spinner className="mr-2" /> : <LogOut className="mr-2 h-5 w-5" />}
-          Check Out
-        </Button>
-      </div>
+          <Button
+            size="lg"
+            variant="outline"
+            className="h-16 text-lg"
+            onClick={() => handleAttendance('checkOut')}
+            disabled={checkOutMutation.isPending || !todayAttendance?.checkIn || !!todayAttendance?.checkOut || (!isOffsite && !isWithinOffice)}
+          >
+            {checkOutMutation.isPending ? <Spinner className="mr-2" /> : <LogOut className="mr-2 h-5 w-5" />}
+            Check Out
+          </Button>
+        </div>
+      )}
 
       <Card>
         <CardHeader>
@@ -419,9 +438,16 @@ export default function AttendancePage() {
         </CardHeader>
         <CardContent>
           {isLoadingHistory ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Spinner />
-              ກຳລັງໂຫຼດປະຫວັດການມາວຽກ...
+            <div className="space-y-2">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="flex items-center justify-between rounded-lg bg-muted/50 p-3">
+                  <div className="space-y-1.5">
+                    <Skeleton className="h-4 w-28" />
+                    <Skeleton className="h-3 w-24" />
+                  </div>
+                  <Skeleton className="h-6 w-14 rounded-full" />
+                </div>
+              ))}
             </div>
           ) : (
             <div className="space-y-2">

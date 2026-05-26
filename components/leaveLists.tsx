@@ -16,7 +16,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-
+import { translateJobTitle } from "./translater"
 import { useState } from "react"
 import {
   CalendarDays,
@@ -67,7 +67,7 @@ function LeaveDetailSheet({
           <div className="space-y-3">
             <DetailRow icon={<User className="h-4 w-4" />} label="ຊື່ ແລະ ນາມສະກຸນ" value={leave?.name} />
             <DetailRow icon={<Building2 className="h-4 w-4" />} label="ພາກແນກ" value={leave?.department} />
-            <DetailRow icon={<Briefcase className="h-4 w-4" />} label="ຕຳແໜ່ງ" value={leave?.position} />
+            <DetailRow icon={<Briefcase className="h-4 w-4" />} label="ຕຳແໜ່ງ" value={translateJobTitle(leave?.position)} />
             <DetailRow icon={<UserCheck className="h-4 w-4" />} label="ຜູ້ຮັບວຽກຕໍ່" value={leave?.successor} />
           </div>
 
@@ -148,7 +148,7 @@ export function ToDay({ data }: { data: LeaveData[] }) {
                     <p className="font-semibold text-sm text-foreground truncate" >ສາຂາ ຫຼວງພະບາງ </p>
                     <p className="text-xs text-muted-foreground">{leave.department}</p>
                     <p className="font-semibold text-sm text-foreground truncate" title={leave.name}>
-                      {leave.name}
+                      {leave.name} 
                     </p>
                     <p className="text-xs text-muted-foreground truncate" title={leave.successor}>
                       ແທນ: {leave.successor}
