@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/popover"
 import { Button } from './ui/button'
 
-export default function TheThemes() {
+export default function TheThemes({ color }: { color?: string } = {}) {
   const [mounted, setMounted] = useState(false)
   const { theme, setTheme } = useTheme()
 
@@ -33,7 +33,7 @@ export default function TheThemes() {
   return (
   <Popover>
   <PopoverTrigger asChild>
-    <Button variant="outline" size="icon" className="hover:bg-sidebar-accent bg-foreground hover:text-sidebar-accent-foreground active:scale-95 transition-all touch-none select-none focus:ring-2">
+    <Button variant="outline" size="icon" className={`hover:bg-sidebar-accent ${color ? color : 'bg-secondary'} hover:text-sidebar-accent-foreground active:scale-95 transition-all touch-none select-none focus:ring-2`}>
       {theme === 'light' ? <Sun className="h-5 w-5"  /> : <Moon className="h-5 w-5" />}
     </Button>
   </PopoverTrigger>

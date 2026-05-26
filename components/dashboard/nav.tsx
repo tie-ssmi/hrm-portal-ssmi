@@ -51,13 +51,13 @@ function formatDepartment(value: unknown): string {
 export function DashboardNav() {
   const pathname = usePathname()
   const { user, logout } = useAuth()
-  const canApproveDept  = user?.rolePermissions?.approveDepartment ?? false
-const canApproveBranch = user?.rolePermissions?.approveBranch ?? false
-const canSee=canApproveBranch || canApproveDept
+  const canApproveDept = user?.rolePermissions?.approveDepartment ?? false
+  const canApproveBranch = user?.rolePermissions?.approveBranch ?? false
+  const canSee = canApproveBranch || canApproveDept
   const initials = user
     ? (`${user.firstName?.[0] ?? ''}${user.lastName?.[0] ?? ''}`.toUpperCase() || 'U')
     : 'U'
-const profileImage = user?.profileImage || user?.photo3x4Url || user?.avatar || (String(user?.gender).toLowerCase() === 'male' ? '/info/man.jpg' : '/info/woman.jpg')
+  const profileImage = user?.profileImage || user?.photo3x4Url || user?.avatar || (String(user?.gender).toLowerCase() === 'male' ? '/info/man.jpg' : '/info/woman.jpg')
  const navItems = [
   { href: '/dashboard', label: 'ໜ້າຫຼັກ', icon: LayoutDashboard, show: true },
   { href: '/dashboard/profile', label: 'ຂໍ້ມູນສວນຕົວ', icon: User, show: true },
@@ -78,7 +78,7 @@ const profileImage = user?.profileImage || user?.photo3x4Url || user?.avatar || 
         </div>
         <span className="font-semibold">HRM Portal</span>
         <div className="ml-auto">
-          <TheThemes />
+          <TheThemes color="bg-sidebar-accent/30 border-sidebar-border text-sidebar-foreground" />
         </div>
       </div>
 
@@ -86,7 +86,7 @@ const profileImage = user?.profileImage || user?.photo3x4Url || user?.avatar || 
       <div className="px-6 py-4">
         <div className="flex items-center gap-3">
           <Avatar  className="w-10 h-10">
-                      <AvatarImage src={profileImage} alt="@shadcn" />
+                      <AvatarImage src={profileImage} alt={`${user?.firstName ?? ''} ${user?.lastName ?? ''}`}  className='object-cover'/>
 
             <AvatarFallback className="bg-sidebar-accent text-sidebar-accent-foreground">
               {initials}
@@ -121,7 +121,7 @@ const profileImage = user?.profileImage || user?.photo3x4Url || user?.avatar || 
               className={cn(
                 'flex w-full items-center justify-start gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                 isActive
-                  ? 'bg-sidebar-accent text-sidebar-accent-foreground shadow-sm'
+                  ? 'bg-sidebar-primary text-sidebar-primary-foreground shadow-sm'
                   : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
               )}
             >
