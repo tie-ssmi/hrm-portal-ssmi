@@ -2,35 +2,53 @@
 
 @custom-variant dark (&:is(.dark *));
 :root {
-  /* Light mode - Custom brand colors */
-  /* Background: #Fad243 (golden yellow) */
-  /* Title/Primary: #114a92 (dark blue) */
-  /* Description: #B32725 (dark red) */
-  --background: #Fad243;
+  /* Brand: Navy #114a92 | Yellow #Fad243 | Red #B32725 */
+
+  /* ✅ White background — Yellow ใช้เป็น accent ไม่ใช่ background */
+  --background: #f8fafc;
   --foreground: #114a92;
-  --card: #fff8e1;
+
+  /* ✅ Card สะอาด มี yellow tint เบาๆ ผ่าน border */
+  --card: #ffffff;
   --card-foreground: #114a92;
-  --popover: #fff8e1;
+  --popover: #ffffff;
   --popover-foreground: #114a92;
+
+  /* ✅ Primary = Navy — ปุ่มหลัก, link, header */
   --primary: #114a92;
   --primary-foreground: #ffffff;
-  --secondary: #fce896;
+
+  /* ✅ Secondary = Yellow tint อ่อน — tag, badge, chip */
+  --secondary: #fef9e7;
   --secondary-foreground: #114a92;
-  --muted: #f5e6a3;
-  --muted-foreground: #9A2422;
-  --accent: #114a92;
-  --accent-foreground: #ffffff;
+
+  /* ✅ Muted = neutral gray-blue — placeholder, caption, label */
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+
+  /* ✅ Accent = Yellow เต็ม — active state, highlight, icon bg */
+  --accent: #Fad243;
+  --accent-foreground: #114a92;
+
+  /* ✅ Destructive = Red — delete/error เท่านั้น */
   --destructive: #B32725;
   --destructive-foreground: #ffffff;
-  --border: #d4a843;
-  --input: #fff3cd;
+
+  /* ✅ Border อ่อนลง — ไม่แย่ง focus จาก content */
+  --border: #e2e8f0;
+  --input: #ffffff;
   --ring: #114a92;
+
+  /* ✅ Chart — ใช้ brand colors + tints */
   --chart-1: #114a92;
-  --chart-2: #B32725;
-  --chart-3: #Fad243;
+  --chart-2: #Fad243;
+  --chart-3: #B32725;
   --chart-4: #1a6bb8;
-  --chart-5: #d43d3b;
+  --chart-5: #f59e0b;
+
   --radius: 0.75rem;
+
+  /* ✅ Sidebar = Navy เข้ม — brand identity ชัดเจน */
   --sidebar: #114a92;
   --sidebar-foreground: #ffffff;
   --sidebar-primary: #Fad243;
@@ -39,6 +57,7 @@
   --sidebar-accent-foreground: #ffffff;
   --sidebar-border: #0d3a73;
   --sidebar-ring: #Fad243;
+
   --success: #22c55e;
   --success-foreground: #ffffff;
   --warning: #f59e0b;
@@ -46,43 +65,64 @@
 }
 
 .dark {
-  /* Dark mode - Complementary dark theme */
-  --background: #1a1a2e;
-  --foreground: #e8e8e8;
-  --card: #252542;
-  --card-foreground: #e8e8e8;
-  --popover: #252542;
-  --popover-foreground: #e8e8e8;
+  /* Brand: Navy #114a92 | Yellow #Fad243 | Red #B32725 */
+
+  /* ✅ Deep Navy — ไม่ใช่ Purple, ตรงกับ brand */
+  --background: #0c1a33;
+  --foreground: #e8edf5;
+
+  /* ✅ Card สว่างกว่า background เล็กน้อย — สร้าง depth */
+  --card: #152847;
+  --card-foreground: #e8edf5;
+  --popover: #152847;
+  --popover-foreground: #e8edf5;
+
+  /* ✅ Primary = Yellow — pop บน dark background ได้ดีที่สุด */
   --primary: #Fad243;
-  --primary-foreground: #1a1a2e;
-  --secondary: #2d2d4a;
-  --secondary-foreground: #e8e8e8;
-  --muted: #2d2d4a;
-  --muted-foreground: #a0a0a0;
-  --accent: #Fad243;
-  --accent-foreground: #1a1a2e;
-  --destructive: #ef4444;
+  --primary-foreground: #0c1a33;
+
+  /* ✅ Secondary ≠ Muted — สร้าง hierarchy ชัดเจน */
+  --secondary: #1e3a5f;
+  --secondary-foreground: #e8edf5;
+
+  /* ✅ Muted เข้มกว่า secondary นิดหน่อย */
+  --muted: #162e4d;
+  --muted-foreground: #94a3b8;
+
+  /* ✅ Accent = Light Blue — ต่างจาก Primary Yellow */
+  --accent: #1a6bb8;
+  --accent-foreground: #ffffff;
+
+  /* ✅ Destructive = Brand Red (lighter สำหรับ dark mode) */
+  --destructive: #c93230;
   --destructive-foreground: #ffffff;
-  --border: #3d3d5c;
-  --input: #2d2d4a;
+
+  /* ✅ Border เบา, Input ต่างจาก muted */
+  --border: #1e3a5f;
+  --input: #1a3050;
   --ring: #Fad243;
+
+  /* ✅ Charts ใช้ brand palette — ไม่มี Purple */
   --chart-1: #Fad243;
-  --chart-2: #5b8dd9;
-  --chart-3: #e05a58;
-  --chart-4: #22c55e;
-  --chart-5: #a855f7;
-  --sidebar: #12121f;
-  --sidebar-foreground: #e8e8e8;
+  --chart-2: #4a9edd;
+  --chart-3: #c93230;
+  --chart-4: #34c16e;
+  --chart-5: #f59e0b;
+
+  /* ✅ Sidebar เข้มสุด — contrast กับ card */
+  --sidebar: #071224;
+  --sidebar-foreground: #e8edf5;
   --sidebar-primary: #Fad243;
-  --sidebar-primary-foreground: #1a1a2e;
-  --sidebar-accent: #2d2d4a;
-  --sidebar-accent-foreground: #e8e8e8;
-  --sidebar-border: #3d3d5c;
+  --sidebar-primary-foreground: #071224;
+  --sidebar-accent: #1e3a5f;
+  --sidebar-accent-foreground: #e8edf5;
+  --sidebar-border: #1a2f4a;
   --sidebar-ring: #Fad243;
+
   --success: #22c55e;
   --success-foreground: #ffffff;
   --warning: #f59e0b;
-  --warning-foreground: #1a1a1a;
+  --warning-foreground: #0c1a33;
 }
 
 @theme inline {
