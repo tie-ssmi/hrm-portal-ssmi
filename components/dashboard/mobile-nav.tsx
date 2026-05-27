@@ -1,8 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { usePathname } from 'next/navigation'
-import Link from 'next/link'
+import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import {
   LayoutDashboard,
@@ -40,6 +39,7 @@ import {
 
 export function MobileNav() {
   const pathname = usePathname()
+  const router = useRouter()
   const { user, logout } = useAuth()
   const [sheetOpen, setSheetOpen] = useState(false)
   const [showNav, setShowNav] = useState(true)
@@ -84,7 +84,7 @@ export function MobileNav() {
   return (
     <>
       <nav
-        className={`lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border pointer-events-auto select-none cursor-auto transition-transform duration-300 ${showNav ? 'translate-y-0' : 'translate-y-full'
+        className={`lg:hidden fixed bottom-0 left-0 right-0 z-[60] bg-card border-t border-border pointer-events-auto select-none cursor-auto transition-transform duration-300 ${showNav ? 'translate-y-0' : 'translate-y-full'
           }`}
         style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
       >
@@ -95,9 +95,10 @@ export function MobileNav() {
               (item.href !== '/dashboard' && pathname.startsWith(item.href))
             if (!item.show) return null
             return (
-              <Link
+              <button
                 key={item.href}
-                href={item.href}
+                type="button"
+                onClick={() => router.push(item.href)}
                 aria-current={isActive ? 'page' : undefined}
                 className={cn(
                   'flex flex-col items-center justify-center gap-1 px-2 py-2 rounded-lg transition-colors min-h-[44px] min-w-[44px] select-none cursor-pointer',
@@ -108,14 +109,14 @@ export function MobileNav() {
               >
                 <item.icon className="w-5 h-5" />
                 <span className="text-[10px] font-medium text-center">{item.label}</span>
-              </Link>
+              </button>
             )
           })}
         </div>
       </nav>
 
       <div
-        className={`pointer-events-auto fixed lg:hidden top-2 right-2 z-50 select-none flex items-center justify-center min-h-[44px] min-w-[44px] transition-opacity duration-300 ${showNav ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        className={`pointer-events-auto fixed lg:hidden top-2 right-2 z-[60] select-none flex items-center justify-center min-h-[44px] min-w-[44px] transition-opacity duration-300 ${showNav ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
           }`}
       >
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
@@ -132,7 +133,7 @@ export function MobileNav() {
               <SheetTitle>Sub menu</SheetTitle>
             </SheetHeader>
             <div className="grid flex-1 auto-rows-min gap-6 px-4">
-              <TheThemes />
+              <TheThemes  />
 
               {navMenuItems.map((item) => {
                 const isActive =
@@ -140,10 +141,10 @@ export function MobileNav() {
                   (item.href !== '/dashboard' && pathname.startsWith(item.href))
                 if (!item.show) return null
                 return (
-                  <Link
+                  <button
                     key={item.href}
-                    href={item.href}
-                    onClick={() => setSheetOpen(false)}
+                    type="button"
+                    onClick={() => { router.push(item.href); setSheetOpen(false) }}
                     aria-current={isActive ? 'page' : undefined}
                     className={cn(
                       'flex w-full items-center justify-start gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
@@ -154,7 +155,7 @@ export function MobileNav() {
                   >
                     <item.icon className="w-5 h-5" />
                     {item.label}
-                  </Link>
+                  </button>
                 )
               })}
             </div>
