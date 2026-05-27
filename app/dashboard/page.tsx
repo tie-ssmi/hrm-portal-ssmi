@@ -102,7 +102,7 @@ function PolicyList({
 
 export default function DashboardPage() {
   const { user, isLoading } = useAuth()
-  const { leaveBalance, lateRecords, totalFines, todayAttendance } = useHRM()
+  const { leaveBalance, totalFines, todayAttendance, attendanceHistory } = useHRM()
   const router = useRouter()
 
   const { data: policies = [] } = useQuery({
@@ -133,6 +133,30 @@ export default function DashboardPage() {
     })
     return map
   }, [userLeaves])
+
+  const { lateThisMonth, notCheckInThisMonth } = useMemo(() => {
+    const now = new Date()
+    const y = now.getFullYear()
+    const m = now.getMonth()
+    const todayStr = `${y}-${(m + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`
+    const isAfter10 = now.getHours() * 60 + now.getMinutes() > 10 * 60
+    const thisMonth = attendanceHistory.filter(r => {
+      const d = new Date(r.date)
+      return d.getFullYear() === y && d.getMonth() === m
+    })
+    return {
+      lateThisMonth: thisMonth.filter(r => r.status === 'late').length,
+      notCheckInThisMonth: thisMonth.reduce((sum, r) => {
+        if (r.date === todayStr) {
+          if (!isAfter10) return sum
+          return sum + (r.status === 'not_check_in' || r.checkOutTime == null ? 1 : 0)
+        }
+        if (r.status === 'not_check_in') return sum + 2
+        if (r.checkOutTime == null) return sum + 1
+        return sum
+      }, 0),
+    }
+  }, [attendanceHistory])
 
   if (isLoading) {
     return <HomeSkeleton />
@@ -218,7 +242,7 @@ export default function DashboardPage() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">ມາຊ້າ</p>
-                <p className="text-xl font-bold text-foreground">{lateRecords.length}</p>
+                <p className="text-xl font-bold text-foreground">{lateThisMonth}</p>
               </div>
             </div>
           </CardContent>
@@ -248,7 +272,7 @@ export default function DashboardPage() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">ລືມກົດເຂົ້າວຽກ</p>
-                <p className="text-xl font-bold text-foreground">3</p>
+                <p className="text-xl font-bold text-foreground">{notCheckInThisMonth}</p>
               </div>
             </div>
           </CardContent>

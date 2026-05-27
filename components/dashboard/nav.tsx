@@ -16,7 +16,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-
+import {version} from '@/package.json'
 //Themes
 import TheThemes from '@/components/themes'
 import { PWAInstallButton } from '@/components/pwa-install-button'
@@ -86,7 +86,7 @@ const profileImage = user?.profileImage || user?.photo3x4Url || user?.avatar || 
       <div className="px-6 py-4">
         <div className="flex items-center gap-3">
           <Avatar  className="w-10 h-10">
-                      <AvatarImage src={profileImage} alt="@shadcn" />
+                      <AvatarImage src={profileImage} alt="@shadcn" className="object-cover"/>
 
             <AvatarFallback className="bg-sidebar-accent text-sidebar-accent-foreground">
               {initials}
@@ -132,7 +132,11 @@ const profileImage = user?.profileImage || user?.photo3x4Url || user?.avatar || 
           )
         })}
       </nav>
-
+     <div className="px-3 py-2 text-sm flex items-center justify-center">
+         <p className="text-xs text-sidebar-foreground/70">
+          V {version}
+        </p>
+     </div>
       {/* Install App */}
       <div className="px-3 pb-2">
         <PWAInstallButton className="w-full justify-start gap-3" />
@@ -140,7 +144,7 @@ const profileImage = user?.profileImage || user?.photo3x4Url || user?.avatar || 
 
       {/* Logout */}
       <div className="px-3 py-4 border-t border-sidebar-border">
-       
+        
         <Dialog>
       
         <DialogTrigger asChild>

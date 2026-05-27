@@ -14,7 +14,7 @@ import {
   ClipboardCheck,
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
-
+import {version} from '@/package.json'
 import TheThemes from '@/components/themes'
 import { Button } from '@/components/ui/button'
 import {
@@ -36,6 +36,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
+import { PWAInstallButton } from '../pwa-install-button';
 
 export function MobileNav() {
   const pathname = usePathname()
@@ -159,8 +160,17 @@ export function MobileNav() {
                 )
               })}
             </div>
-
+              <div className="px-3 py-2 text-sm flex items-center justify-center">
+         <p className="text-xs font-medium transition-colors">
+          V {version}
+        </p>
+     </div>
+      {/* Install App */}
+ <div className="px-3 pb-2">
+        <PWAInstallButton className="w-full justify-start gap-3" />
+      </div>
             <SheetFooter>
+
               <SheetClose asChild>
                 <Button variant="outline">ປິດ</Button>
               </SheetClose>
@@ -175,6 +185,7 @@ export function MobileNav() {
                   </Button>
                 </DialogTrigger>
                 <DialogContent className="sm:max-w-sm">
+
                   <DialogHeader>
                     <DialogTitle>ອອກຈາກລະບົບ</DialogTitle>
                     <DialogDescription>ທ່ານແນ່ໃຈບໍ່? ທີຈະອອກຈາກລະບົບ</DialogDescription>

@@ -78,7 +78,8 @@ type AttendanceDoc = {
   userUuid?: string
   uid?: string
   date?: string
-  checkInTime?: string
+  dateKey?: string
+  checkInTime?: string | null
   checkOutTime?: string | null
   status?: AttendanceRecord['status'] | 'not_checked_in'
   location?: AttendanceRecord['location']
@@ -95,13 +96,24 @@ export function formatAttendanceDocumentDate(date: Date): string {
   return `${day}-${month}-${year}`
 }
 
-function parseAttendanceDocumentDate(value: string): Date | null {
-  if (!value) {
-    return null
+function parseAttendanceDocumentDate(value: string, dateKey?: string): Date | null {
+  // dateKey is YYYY-MM-DD — most reliable, use first
+  if (dateKey && /^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+    const d = new Date(`${dateKey}T00:00:00`)
+    return Number.isNaN(d.getTime()) ? null : d
   }
 
+  if (!value) return null
+
+  // DD-MM-YYYY (hyphen)
   if (/^\d{2}-\d{2}-\d{4}$/.test(value)) {
     const [day, month, year] = value.split('-').map(Number)
+    return new Date(year, month - 1, day)
+  }
+
+  // DD/MM/YYYY (slash)
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(value)) {
+    const [day, month, year] = value.split('/').map(Number)
     return new Date(year, month - 1, day)
   }
 
@@ -161,41 +173,55 @@ export async function getServerDateTimeInVientiane(): Promise<ServerDateTime> {
   return parseIsoDateAndTime(payload.datetime)
 }
 
+// Fetch all attendance docs for a user, merging by userUuid AND uid
+// System-generated not_checked_in records may only have uid (no userUuid)
+async function fetchAttendanceDocs(userUuid: string) {
+  const [byUserUuid, byUid] = await Promise.all([
+    getDocs(query(collection(db, 'attendance'), where('userUuid', '==', userUuid))),
+    getDocs(query(collection(db, 'attendance'), where('uid', '==', userUuid))),
+  ])
+  const seen = new Set<string>()
+  const merged = [...byUserUuid.docs, ...byUid.docs].filter(d => {
+    if (seen.has(d.id)) return false
+    seen.add(d.id)
+    return true
+  })
+  return merged
+}
+
 export async function fetchAttendanceByUserThisMonth(userUuid: string): Promise<AttendanceRecord[]> {
   if (!userUuid) {
     return []
   }
 
-  const attendanceQuery = query(
-    collection(db, 'attendance'),
-    where('userUuid', '==', userUuid),
-  )
-
-  const snapshot = await getDocs(attendanceQuery)
+  const docs = await fetchAttendanceDocs(userUuid)
   const now = new Date()
 
   const rows: AttendanceRecord[] = []
 
-  for (const docSnapshot of snapshot.docs) {
-      const data = docSnapshot.data() as AttendanceDoc
-      const parsedDate = parseAttendanceDocumentDate(data.date || '')
+  for (const docSnapshot of docs) {
+    const data = docSnapshot.data() as AttendanceDoc
+    const parsedDate = parseAttendanceDocumentDate(data.date || '', data.dateKey)
 
-      if (!parsedDate || !isSameMonth(parsedDate, now)) {
-        continue
-      }
+    if (!parsedDate || !isSameMonth(parsedDate, now)) {
+      continue
+    }
 
-      if (data.status === 'not_checked_in') {
-        continue
-      }
+      const normalizedStatus: AttendanceRecord['status'] =
+        data.status === 'late' ? 'late'
+        : data.status === 'absent' ? 'absent'
+        : data.status === 'leave' ? 'leave'
+        : data.status === 'offsite' ? 'offsite'
+        : data.status === 'not_check_in' || data.status === 'not_checked_in' ? 'not_check_in'
+        : 'present'
 
       rows.push({
         id: docSnapshot.id,
         date: formatLocalIsoDate(parsedDate),
-        ...(data.checkInTime ? { checkIn: data.checkInTime } : {}),
-        ...(data.checkOutTime ? { checkOut: data.checkOutTime } : {}),
-        status: (data.status === 'late' || data.status === 'absent' || data.status === 'leave' || data.status === 'offsite')
-          ? data.status
-          : 'present',
+        ...(data.checkInTime ? { checkIn: data.checkInTime, checkInTime: data.checkInTime } : { checkInTime: null }),
+        checkOut: data.checkOutTime ?? undefined,
+        checkOutTime: data.checkOutTime ?? null,
+        status: normalizedStatus,
         location: data.location,
         workHours: data.workHours,
         ...(data.isOffsite ? { isOffsite: true } : {}),
@@ -314,6 +340,43 @@ export async function updateAttendanceCheckOutTime({
   )
 
   return attendanceId
+}
+
+export async function fetchAttendanceByUser(userUuid: string): Promise<AttendanceRecord[]> {
+  if (!userUuid) return []
+
+  const docs = await fetchAttendanceDocs(userUuid)
+  const rows: AttendanceRecord[] = []
+
+  for (const docSnapshot of docs) {
+    const data = docSnapshot.data() as AttendanceDoc
+    const parsedDate = parseAttendanceDocumentDate(data.date || '', data.dateKey)
+    if (!parsedDate) continue
+
+    const normalizedStatus: AttendanceRecord['status'] =
+      data.status === 'late' ? 'late'
+      : data.status === 'absent' ? 'absent'
+      : data.status === 'leave' ? 'leave'
+      : data.status === 'offsite' ? 'offsite'
+      : data.status === 'not_check_in' || data.status === 'not_checked_in' ? 'not_check_in'
+      : 'present'
+
+    rows.push({
+      id: docSnapshot.id,
+      date: formatLocalIsoDate(parsedDate),
+      ...(data.checkInTime ? { checkIn: data.checkInTime, checkInTime: data.checkInTime } : { checkInTime: null }),
+      checkOut: data.checkOutTime ?? undefined,
+      checkOutTime: data.checkOutTime ?? null,
+      status: normalizedStatus,
+      location: data.location,
+      workHours: data.workHours,
+      ...(data.isOffsite ? { isOffsite: true } : {}),
+      ...(data.checkInImageURL ? { checkInImageURL: data.checkInImageURL } : {}),
+      ...(data.checkOutImageURL ? { checkOutImageURL: data.checkOutImageURL } : {}),
+    })
+  }
+
+  return rows.sort((a, b) => b.date.localeCompare(a.date))
 }
 
 export async function fetchTodayCheckInAttendance(): Promise<AttendanceRecord[]> {
