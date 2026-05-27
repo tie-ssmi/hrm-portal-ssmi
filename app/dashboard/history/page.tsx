@@ -130,18 +130,24 @@ export default function HistoryPage() {
     }
   }
 
-  const getStatusLabel = (status: string , checkOutTime: string | null) => {
-     const status2 = !checkOutTime ? 'ລືມກົດອອກ' : null
-   
-    switch (status ) {
-      case 'present':     return 'ມາທັນ' + (status2 ? ` ( ${status2})` : '')
-      case 'late':        return 'ມາຊ້າ' + (status2 ? ` ( ${status2})` : '')
-      case 'absent':      return 'ຂາດ'
-      case 'not_checked_in': return 'ລືມກົດເຂົ້າ' + (status2 ? ` ( ${status2})` : '')
-      case 'not_check_in': return 'ລືມກົດເຂົ້າ' + (status2 ? ` ( ${status2})` : '')
-      case 'leave':       return 'ລາພັກ'
-      case 'offsite':     return 'ອອກວຽກນອກ' + (status2 ? ` ( ${status2})` : '')
-      default:            return status
+  const getStatusLabel = (
+    status: string,
+    checkIn: string | null | undefined,
+    checkOut: string | null | undefined,
+  ) => {
+    const forgotOut = !checkOut ? ' (ລືມກົດອອກ)' : ''
+
+    switch (status) {
+      case 'present':      return 'ມາທັນ' + forgotOut
+      case 'late':         return 'ມາຊ້າ' + forgotOut
+      case 'absent':       return 'ຂາດ'
+      case 'not_checked_in':
+      case 'not_check_in':
+        if (!checkIn) return 'ຂາດ'
+        return 'ລືມກົດເຂົ້າ' + forgotOut
+      case 'leave':        return 'ລາພັກ'
+      case 'offsite':      return 'ອອກວຽກນອກ' + forgotOut
+      default:             return status
     }
   }
 
@@ -308,7 +314,7 @@ export default function HistoryPage() {
                         </div>
                         {record ? (
                           <Badge variant={getStatusVariant(record.status)}>
-                            {getStatusLabel(record.status, record?.checkOut)}
+                            {getStatusLabel(record.status, record?.checkIn, record?.checkOut)}
                           </Badge>
                         ) : (
                           <Badge variant="outline" className="text-muted-foreground">
