@@ -179,13 +179,13 @@ export default function HistoryPage() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">ຈຳນວນມື້ມາການ</p>
-                <p className="text-xl font-bold text-foreground">{allWeekdays.length}</p>
+                <p className="text-xl font-bold text-foreground">{allWeekdays.filter(d => d.record?.checkInTime != null).length}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card>
+        {/* <Card>
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-3">
               <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-chart-3/10">
@@ -197,7 +197,7 @@ export default function HistoryPage() {
               </div>
             </div>
           </CardContent>
-        </Card>
+        </Card> */}
         <Card>
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-3">
@@ -207,7 +207,24 @@ export default function HistoryPage() {
               <div>
                 <p className="text-xs text-muted-foreground">ຈຳນວນມື້ທີລາພັກ</p>
                 <p className="text-xl font-bold text-foreground">
-                  {leaveRequests.filter(r => r.status === 'approved').length}
+                  {leaveRequests.filter(r => r.status === 'approved').reduce((sum, r) => sum + (r.duration ?? 0), 0)} 
+                  
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-chart-2/10">
+                <MapPin className="w-5 h-5 text-chart-2" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">ຈຳນວນມື້ອອກວຽກນອກ</p>
+                <p className="text-xl font-bold text-foreground">
+                  {leaveRequests.filter(r => r.status === 'approved').reduce((sum, r) => sum + (r.duration ?? 0), 0)} 
+                  
                 </p>
               </div>
             </div>

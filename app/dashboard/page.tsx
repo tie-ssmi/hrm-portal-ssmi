@@ -149,10 +149,11 @@ export default function DashboardPage() {
       notCheckInThisMonth: thisMonth.reduce((sum, r) => {
         if (r.date === todayStr) {
           if (!isAfter10) return sum
-          return sum + (r.status === 'not_check_in' || r.checkOutTime == null ? 1 : 0)
+          return sum + (r.status === 'not_check_in' && r.checkOutTime == null ? 1 : 0)
         }
-        if (r.status === 'not_check_in') return sum + 2
-        if (r.checkOutTime == null) return sum + 1
+        if (r.status === 'not_check_in'&& r.checkOutTime == null) return sum + 2
+        if (r.status === 'not_check_in'&& r.checkOutTime != null) return sum + 1
+        if (r.status !== 'not_check_in' &&r.checkOutTime == null) return sum + 1
         return sum
       }, 0),
     }
