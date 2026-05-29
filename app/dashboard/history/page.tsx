@@ -32,7 +32,7 @@ import {
 } from 'lucide-react'
 import { format } from 'date-fns'
 //formatDayDateLao
-import { formatDayDateLao ,formatMonthDateLao, formatDatedayLao} from '@/components/laoDate'
+import { formatDayDateLao ,formatMonthDateLao, formatDatedayLao, formatDateLao, formatDateMonthLao} from '@/components/laoDate'
 export default function HistoryPage() {
   const { user, isLoading } = useAuth()
   const { offsiteRequests, lateRecords, totalFines } = useHRM()
@@ -270,7 +270,7 @@ export default function HistoryPage() {
             <span className="hidden sm:inline">Fines</span>
           </TabsTrigger>
         </TabsList>
-
+            {/* Checkin */}
         <TabsContent value="attendance" className="mt-4">
           <Card>
             <CardHeader>
@@ -304,40 +304,40 @@ export default function HistoryPage() {
                     {allWeekdays.map(({ date, record }) => (
                       <div
                         key={date}
-                        className="flex items-center justify-between p-4 rounded-lg bg-muted/50"
+                        className="p-3 sm:p-4 rounded-lg bg-muted/50"
                       >
-                        <div className="flex items-start gap-3">
-                          <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-background">
-                            <Calendar className="w-5 h-5 text-muted-foreground" />
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium">
-                              {formatDayDateLao(new Date(date))}
-                            </p>
-                            <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
-                              <span className="flex items-center gap-1">
-                                <LogIn className="w-3 h-3" />
-                                {record?.checkIn || '--:--'}
-                              </span>
-                              <span className="flex items-center gap-1">
-                                <LogOut className="w-3 h-3" />
-                                {record?.checkOut || '--:--'}
-                              </span>
-                              {record?.workHours && (
-                                <span>{record.workHours}h worked</span>
-                              )}
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <div className="flex items-start gap-2 min-w-0 flex-1">
+                            <Calendar className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+                            <div className="min-w-0 flex-1">
+                              <p className="md:block hidden text-sm font-medium truncate">
+                                {formatDayDateLao(new Date(date))}
+                              </p>
+                              <p className="text-sm md:hidden font-medium truncate">
+                                {formatDateLao(new Date(date))}
+                              </p>
                             </div>
                           </div>
+                          {record ? (
+                            <Badge variant={getStatusVariant(record.status)} className="flex-shrink-0">
+                              {getStatusLabel(record.status, record?.checkIn, record?.checkOut)}
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-muted-foreground flex-shrink-0">
+                              ບໍ່ມີຂໍ້ມູນ
+                            </Badge>
+                          )}
                         </div>
-                        {record ? (
-                          <Badge variant={getStatusVariant(record.status)}>
-                            {getStatusLabel(record.status, record?.checkIn, record?.checkOut)}
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="text-muted-foreground">
-                            ບໍ່ມີຂໍ້ມູນ
-                          </Badge>
-                        )}
+                        <div className="flex sm:flex-row sm:items-center gap-2 sm:gap-4 text-xs text-muted-foreground pl-6">
+                          <span className="flex items-center gap-1">
+                            <LogIn className="w-3 h-3 flex-shrink-0" />
+                            <span className="truncate">{record?.checkIn || '--:--'}</span>
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <LogOut className="w-3 h-3 flex-shrink-0" />
+                            <span className="truncate">{record?.checkOut || '--:--'}</span>
+                          </span>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -346,7 +346,7 @@ export default function HistoryPage() {
             </CardContent>
           </Card>
         </TabsContent>
-
+{/* Leave */}
         <TabsContent value="leave" className="mt-4">
           <Card>
             <CardHeader>
@@ -384,9 +384,13 @@ export default function HistoryPage() {
                             <p className="text-sm font-medium">
                               {request.policyName || request.type}
                             </p>
-                            <p className="text-xs text-muted-foreground mt-1">
+                            <p className="text-xs md:block hidden text-muted-foreground mt-1">
                               {formatMonthDateLao(new Date(request.startDate),)} -{' '}
                               {formatDatedayLao(new Date(request.endDate),)}
+                            </p>
+                            <p className="text-xs md:hidden text-muted-foreground mt-1">
+                              {formatDateMonthLao(new Date(request.startDate),)} -{' '}
+                              {formatDateLao(new Date(request.endDate),)}
                             </p>
                           </div>
                           <Badge variant={getStatusVariant(request.status)} className="flex items-center gap-1">
@@ -395,8 +399,12 @@ export default function HistoryPage() {
                           </Badge>
                         </div>
                         <p className="text-sm text-muted-foreground mt-2">{request.reason}</p>
-                        <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
+                        <div className="flex md:block hidden items-center gap-4 mt-3 text-xs text-muted-foreground">
                           <span>ມື້ສົ່ງຄຳຮອງ : {formatDayDateLao(new Date(request.createdAt))}</span>
+                          {request.reviewedBy && <span>Reviewed by: {request.reviewedBy}</span>}
+                        </div>
+                        <div className="flex md:hidden items-center gap-4 mt-3 text-xs text-muted-foreground">
+                          <span>ມື້ສົ່ງຄຳຮອງ : {formatDateLao(new Date(request.createdAt))}</span>
                           {request.reviewedBy && <span>Reviewed by: {request.reviewedBy}</span>}
                         </div>
                       </div>

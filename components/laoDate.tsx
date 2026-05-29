@@ -13,3 +13,6 @@ export function formatDatedayLao(date: Date): string {
 export function formatDateLao(date: Date): string {
   return `${date.getDate()}/${LAO_MONTHS_NUMBER[date.getMonth()]}/${date.getFullYear()}`
 }
+export function formatDateMonthLao(date: Date): string {
+  return `${date.getDate()}/${LAO_MONTHS_NUMBER[date.getMonth()]}`
+}

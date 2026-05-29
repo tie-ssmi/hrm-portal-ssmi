@@ -139,6 +139,7 @@ export default function LeaveRequestForm() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [docUploadChoice, setDocUploadChoice] = useState<DocUploadChoice>(null)
   const [docFile, setDocFile] = useState<File | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const annualRemaining = leaveBalance.annual - leaveBalance.annualUsed
   const sickRemaining = leaveBalance.sick - leaveBalance.sickUsed
@@ -531,9 +532,13 @@ export default function LeaveRequestForm() {
                 {/* File input — shown when 'now' selected */}
                 {docUploadChoice === 'now' && (
                   <div className="space-y-2">
-                    <label className="block">
+                    <label
+                      htmlFor="doc-file-input"
+                      className="block"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
                       <div className={cn(
-                        'flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-6 cursor-pointer transition-colors',
+                        'flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-6 cursor-pointer transition-colors active:bg-primary/10',
                         docFile ? 'border-primary bg-primary/5' : 'border-input hover:bg-muted'
                       )}>
                         <Upload className="w-6 h-6 text-muted-foreground" />
@@ -549,10 +554,13 @@ export default function LeaveRequestForm() {
                           </div>
                         )}
                         <input
+                          ref={fileInputRef}
+                          id="doc-file-input"
                           type="file"
                           accept=".pdf,.jpg,.jpeg,.png"
                           className="hidden"
                           onChange={(e) => setDocFile(e.target.files?.[0] ?? null)}
+                          onClick={(e) => e.stopPropagation()}
                         />
                       </div>
                     </label>

@@ -4,7 +4,6 @@ import { ThemeProvider } from '@/components/theme-provider'
 import { Toaster } from '@/components/ui/sonner'
 import { PWARegister } from '@/components/pwa-register'
 import '@/app/globals.css'
-
 export const metadata: Metadata = {
   title: 'ພະນັກງານ SSMILaos | Smart system HRM for Staff | web portal',
   description: 'ລະບົບ HRM ຂອງ SSMI Laos ຊ່ວຍພະນັກງານຈັດການການເຂົ້າວຽກ, ການລາພັກ, ການອະນຸມັດ ແລະ ຂໍ້ມູນສ່ວນຕົວ ໃນລະບົບດຽວຢ່າງປອດໄພ | SSMI Laos HRM web Portal for Staff',
