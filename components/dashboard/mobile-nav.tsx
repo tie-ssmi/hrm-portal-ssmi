@@ -114,7 +114,7 @@ export function MobileNav() {
                 <div className="relative">
                   <item.icon className="w-5 h-5" />
                   {/* 🌟 ສະແດງຕົວເລກສີແດງເທິງ Icon ຂອງ Bottom Nav */}
-                  {!!item.badge && item.badge > 0 && (
+                  {!!item.badge && item.badge > 0 && canSee && (
                     <span className="absolute -top-1.5 -right-2 bg-red-500 text-white font-bold text-[9px] min-w-[15px] h-3.5 px-0.5 rounded-full flex items-center justify-center border border-card shadow-sm">
                       {item.badge}
                     </span>
@@ -139,7 +139,7 @@ export function MobileNav() {
             >
               {!sheetOpen ? <Menu className="w-8 h-8" /> : <X className="w-8 h-8" />}
               {/* 🌟 ຖ້າມີຄຳຂໍຄ້າງ ໃຫ້ຂຶ້ນຕຸ່ມແດງເຕືອນຢູ່ປຸ່ມແຮມເບີເກີເມນູນຳ */}
-              {!sheetOpen && notifications.length > 0 && (
+              {!sheetOpen && notifications.length > 0 && canSee && (
                 <span className="absolute top-2 right-2 w-3 h-3 bg-red-500 rounded-full border border-background animate-pulse" />
               )}
             </button>
@@ -174,7 +174,7 @@ export function MobileNav() {
                       {item.label}
                     </div>
                     {/* 🌟 ສະແດງຕົວເລກສີແດງຢູ່ທ້າຍແຖວຂອງ Slide Menu */}
-                    {!!item.badge && item.badge > 0 && (
+                    {!!item.badge && item.badge > 0 && canSee && (
                       <span className="bg-red-500 text-white font-bold text-[11px] min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center shadow-sm">
                         {item.badge}
                       </span>

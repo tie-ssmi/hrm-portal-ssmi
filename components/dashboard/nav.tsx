@@ -131,7 +131,7 @@ export function DashboardNav() {
                 {item.label}
               </div>
               {/* 🌟 ສະແດງຕົວເລກສີແດງຢູ່ Sidebar ຂ້າງໆຊື່ເມນູ */}
-              {!!item.badge && item.badge > 0 && (
+              {!!item.badge && item.badge > 0 && canSee && (
                 <span className="bg-red-500 text-white font-bold text-[11px] min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center shadow-sm">
                   {item.badge}
                 </span>
