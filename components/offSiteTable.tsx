@@ -34,16 +34,18 @@ const ROLE_LABEL: Record<string, string> = {
 	manager: 'ຜູ້ຈັດການ',
 }
 
+// Bug #1 fixed: removed inverted early-return — now correctly finds pending approvers
 function getWhoPending(approvals?: { role: string; decision: string }[]): string | null {
-	if (!Array.isArray(approvals) || approvals[0]?.decision === 'pending') return null
+	if (!Array.isArray(approvals)) return null
 	const pending = approvals
 		.filter(a => a?.decision === 'pending')
 		.map(a => ROLE_LABEL[a.role] ?? a.role)
 	return pending.length > 0 ? pending.join(', ') : null
 }
-// fun getWhoRejected
+
+// Bug #2 fixed: same inverted early-return removed
 function getWhoRejected(approvals?: { role: string; decision: string }[]): string | null {
-	if (!Array.isArray(approvals) || approvals[0]?.decision === 'rejected') return null
+	if (!Array.isArray(approvals)) return null
 	const rejected = approvals
 		.filter(a => a?.decision === 'rejected')
 		.map(a => ROLE_LABEL[a.role] ?? a.role)
@@ -68,6 +70,7 @@ type OffsiteTableProps = {
 	onApprove?: (item: OffsiteTableItem) => void
 	onReject?: (item: OffsiteTableItem) => void
 	canApproveBranch?: boolean
+	currentUserRole?: string   // e.g. 'departmentHead' | 'hr' | 'manager'
 	className?: string
 }
 
@@ -83,22 +86,52 @@ const TABS: { value: TabValue; label: string }[] = [
 	{ value: 'rejected',   label: 'ປະຕິເສດ' },
 ]
 
-function computeRowMeta(item: OffsiteTableItem) {
-	const canApprove =
-		item.status !== 'approved' &&
-		item.status !== 'rejected' &&
-		item.status !== 'cancelled' &&
-		item.approvals?.[0]?.decision !== 'approved' &&
-		item.approvals?.[0]?.decision !== 'rejected'
-	const whoPending = getWhoPending(item.approvals)
-	const whoRejected = getWhoRejected(item.approvals)
+function computeRowMeta(item: OffsiteTableItem, currentUserRole?: string) {
+	// Bug #3 fixed: correct fallback is [] not [item.approvals].filter(Boolean)
+	const approvals = Array.isArray(item.approvals) ? item.approvals : []
+
+	const isFinal =
+		item.status === 'approved' ||
+		item.status === 'rejected' ||
+		item.status === 'cancelled'
+
+	// Bug #1 fixed: restore canApprove logic (was fully commented out → always false)
+	let canApprove = false
+	if (!isFinal) {
+		if (currentUserRole) {
+			// Hide button the moment THIS user's slot is no longer 'pending'
+			// (approve → 'approved', reject → 'rejected' → button gone instantly)
+			const mySlot = approvals.find(a => a.role === currentUserRole)
+			canApprove = mySlot?.decision === 'pending'
+		} else {
+			// No role context: show button while the first slot is still pending
+			canApprove = approvals[0]?.decision === 'pending'
+		}
+	}
+
+	// Bug #2 fixed: pass normalised `approvals` instead of raw item.approvals
+	const whoPending  = getWhoPending(approvals)
+	const whoRejected = getWhoRejected(approvals)
 	return { canApprove, whoPending, whoRejected }
 }
 
 function tabMatch(item: OffsiteTableItem, tab: TabValue): boolean {
-	if (tab === 'pending')    return item.approvals?.[0]?.decision === 'pending'
-	if (tab === 'inprogress') return item.approvals?.[0]?.decision === 'approved' && item.status !== 'rejected'
-	if (tab === 'rejected')   return item.status === 'rejected'
+	const approvals = item.approvals ?? []
+	if (tab === 'pending') {
+		// Waiting for the very first decision — all approvers still pending
+		return approvals.length > 0 && approvals.every(a => a.decision === 'pending')
+	}
+	if (tab === 'inprogress') {
+		// Bug #4 fixed: at least one approved AND at least one still pending (not rejected/done)
+		return (
+			item.status !== 'rejected' &&
+			item.status !== 'approved' &&
+			item.status !== 'cancelled' &&
+			approvals.some(a => a.decision === 'approved') &&
+			approvals.some(a => a.decision === 'pending')
+		)
+	}
+	if (tab === 'rejected') return item.status === 'rejected'
 	return true
 }
 
@@ -135,6 +168,7 @@ export default function OffsiteTable({
 	onApprove,
 	onReject,
 	canApproveBranch = false,
+	currentUserRole,
 	className,
 }: OffsiteTableProps) {
 	const [activeTab, setActiveTab] = useState<TabValue>('all')
@@ -222,7 +256,7 @@ export default function OffsiteTable({
 						{/* Mobile cards */}
 						<div className="space-y-3 p-3 md:hidden">
 							{filtered.map((item, index) => {
-								const { canApprove, whoPending, whoRejected } = computeRowMeta(item)
+								const { canApprove, whoPending, whoRejected } = computeRowMeta(item, currentUserRole)
 
 								return (
 									<Card key={item.id} className="border bg-background">
@@ -308,7 +342,7 @@ export default function OffsiteTable({
 
 								<TableBody>
 									{filtered.map((item, index) => {
-										const { canApprove, whoPending, whoRejected } = computeRowMeta(item)
+										const { canApprove, whoPending, whoRejected } = computeRowMeta(item, currentUserRole)
 										return (
 											<TableRow key={item.id} className="hover:bg-muted/30">
 												<TableCell className="px-4 py-3 font-semibold text-muted-foreground text-sm">
