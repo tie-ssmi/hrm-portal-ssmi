@@ -6,8 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "deploy": "pnpm build && firebase deploy --only hosting:hrm-portal-ssmi",
-    "deploy_dev": "pnpm build && firebase deploy --only hosting:ssmi-hrm-demo",
+    "deploy": "node scripts/build.js prod && firebase deploy --only hosting:hrm-portal-ssmi",
+    "deploy_dev": "node scripts/build.js staging && firebase deploy --only hosting:ssmi-hrm-demo",
     "lint": "eslint ."
   },
   "dependencies": {
