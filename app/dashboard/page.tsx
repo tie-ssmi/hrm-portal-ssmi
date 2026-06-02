@@ -151,9 +151,10 @@ export default function DashboardPage() {
           if (!isAfter10) return sum
           return sum + (r.status === 'not_check_in' && r.checkOutTime == null ? 1 : 0)
         }
-        if (r.status === 'not_check_in'&& r.checkOutTime == null) return sum + 2
-        if (r.status === 'not_check_in'&& r.checkOutTime != null) return sum + 1
-        if (r.status !== 'not_check_in' &&r.checkOutTime == null) return sum + 1
+        // absent OR came >10:01 and forgot checkout → 2 pts
+        if (r.status === 'not_check_in' && r.checkOutTime == null) return sum + 2
+        // came >10:01 but checked out → 1 pt
+        if (r.status === 'not_check_in' && r.checkOutTime != null) return sum + 1
         return sum
       }, 0),
     }
@@ -174,7 +175,7 @@ export default function DashboardPage() {
     personal: leaveBalance.personal,
   }
 
-  const sickRemaining = effectiveLeaveBalance.sick - leaveBalance.sickUsed
+  const sickRemaining = Math.max(0, effectiveLeaveBalance.sick - leaveBalance.sickUsed)
 
   const leaveDataToday: LeaveData[] = todayLeaveRequests.map(r => ({
     name: r.leaveUserName ?? '',
@@ -258,7 +259,7 @@ export default function DashboardPage() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">ຄ່າປັນ</p>
-                <p className="text-xl font-bold text-foreground">${totalFines}</p>
+                <p className="text-xl font-bold text-foreground">{totalFines.toLocaleString()} ₭</p>
               </div>
             </div>
           </CardContent>
@@ -360,29 +361,15 @@ export default function DashboardPage() {
         </TabsContent>
         <TabsContent value="off_site">
           <Card>
-            <CardHeader>
-              <CardTitle>Reports</CardTitle>
-              <CardDescription>
-                Generate and download your detailed reports. Export data in
-                multiple formats for analysis.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="text-sm text-muted-foreground">
-              You have 5 reports ready and available to export.
+            <CardContent className="text-muted-foreground text-sm h-auto max-h-[500px] overflow-auto pt-6">
+              <p className="text-center py-8">ກຳລັງພັດທະນາ...</p>
             </CardContent>
           </Card>
         </TabsContent>
         <TabsContent value="topLeave">
           <Card>
-            <CardHeader>
-              <CardTitle>Settings</CardTitle>
-              <CardDescription>
-                Manage your account preferences and options. Customize your
-                experience to fit your needs.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="text-sm text-muted-foreground">
-              Configure notifications, security, and themes.
+            <CardContent className="text-muted-foreground text-sm h-auto max-h-[500px] overflow-auto pt-6">
+              <p className="text-center py-8">ກຳລັງພັດທະນາ...</p>
             </CardContent>
           </Card>
         </TabsContent>
