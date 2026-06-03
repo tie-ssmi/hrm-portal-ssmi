@@ -102,7 +102,7 @@ function PolicyList({
 
 export default function DashboardPage() {
   const { user, isLoading } = useAuth()
-  const { leaveBalance, totalFines, todayAttendance, attendanceHistory } = useHRM()
+  const { leaveBalance, todayAttendance, attendanceHistory } = useHRM()
   const router = useRouter()
 
   const { data: policies = [] } = useQuery({
@@ -134,7 +134,7 @@ export default function DashboardPage() {
     return map
   }, [userLeaves])
 
-  const { lateThisMonth, notCheckInThisMonth } = useMemo(() => {
+  const { lateThisMonth, notCheckInThisMonth, computedTotalFines } = useMemo(() => {
     const now = new Date()
     const y = now.getFullYear()
     const m = now.getMonth()
@@ -144,19 +144,25 @@ export default function DashboardPage() {
       const d = new Date(r.date)
       return d.getFullYear() === y && d.getMonth() === m
     })
+    const late = thisMonth.filter(r => r.status === 'late').length
+    const notCheckIn = thisMonth.reduce((sum, r) => {
+      if (r.date === todayStr) {
+        if (!isAfter10) return sum
+        return sum + (r.status === 'not_check_in' ? 1 : 0)
+      }
+      // absent OR came >10:01 and forgot checkout → 2 pts
+      if (r.status === 'not_check_in' && r.checkOutTime == null) return sum + 2
+      // came >10:01 but checked out → 1 pt
+      if (r.status === 'not_check_in' && r.checkOutTime != null) return sum + 1
+      if (r.status !== 'not_check_in' && r.status !== 'leave' && r.checkOutTime == null) return sum + 1
+      return sum
+    }, 0)
+    const fines = notCheckIn * 10000 + (late > 4 ? (late - 4) * 10000 : 0)
+    console.log('[fines]', { late, notCheckIn, fines })
     return {
-      lateThisMonth: thisMonth.filter(r => r.status === 'late').length,
-      notCheckInThisMonth: thisMonth.reduce((sum, r) => {
-        if (r.date === todayStr) {
-          if (!isAfter10) return sum
-          return sum + (r.status === 'not_check_in' && r.checkOutTime == null ? 1 : 0)
-        }
-        // absent OR came >10:01 and forgot checkout → 2 pts
-        if (r.status === 'not_check_in' && r.checkOutTime == null) return sum + 2
-        // came >10:01 but checked out → 1 pt
-        if (r.status === 'not_check_in' && r.checkOutTime != null) return sum + 1
-        return sum
-      }, 0),
+      lateThisMonth: late,
+      notCheckInThisMonth: notCheckIn,
+      computedTotalFines: fines,
     }
   }, [attendanceHistory])
 
@@ -259,7 +265,7 @@ export default function DashboardPage() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">ຄ່າປັນ</p>
-                <p className="text-xl font-bold text-foreground">{totalFines.toLocaleString()} ₭</p>
+                <p className="text-xl font-bold text-foreground">{computedTotalFines.toLocaleString()} ₭</p>
               </div>
             </div>
           </CardContent>
