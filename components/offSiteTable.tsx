@@ -25,8 +25,11 @@ import {
 	SelectValue,
 } from '@/components/ui/select'
 import { Card, CardContent } from '@/components/ui/card'
-import { CalendarRange, Eye, Check, X, MoreHorizontal, UserRound, Users } from 'lucide-react'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { CalendarRange, Eye, Check, X, MoreHorizontal, UserRound } from 'lucide-react'
 import { StatusBadge } from '@/components/offsite/StatusBadge'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 const ROLE_LABEL: Record<string, string> = {
 	departmentHead: 'ຫົວໜ້າພະແນກ',
@@ -34,35 +37,61 @@ const ROLE_LABEL: Record<string, string> = {
 	manager: 'ຜູ້ຈັດການ',
 }
 
-// Bug #1 fixed: removed inverted early-return — now correctly finds pending approvers
-function getWhoPending(approvals?: { role: string; decision: string }[]): string | null {
-	if (!Array.isArray(approvals)) return null
-	const pending = approvals
-		.filter(a => a?.decision === 'pending')
-		.map(a => ROLE_LABEL[a.role] ?? a.role)
-	return pending.length > 0 ? pending.join(', ') : null
+export type ApprovalEntry = {
+	role: string
+	decision: string
+	reviewedAt?: string
+	reviewedBy?: string
 }
 
-// Bug #2 fixed: same inverted early-return removed
-function getWhoRejected(approvals?: { role: string; decision: string }[]): string | null {
-	if (!Array.isArray(approvals)) return null
-	const rejected = approvals
-		.filter(a => a?.decision === 'rejected')
-		.map(a => ROLE_LABEL[a.role] ?? a.role)
-	return rejected.length > 0 ? rejected.join(', ') : null
+export type ParticipantEntry = {
+	uid: string
+	fullNameEn: string
+	fullNameLo: string
+	department?: { uuid: string; title: string; department: string }
+	image?: string | null
 }
+
+export type TeammateEntry = {
+	uid: string
+	fullNameEn: string
+	fullNameLo: string
+	jobTitle?: string
+	photoUrl?: string
+	roleInTrip?: string
+	department?: { uuid: string; title: string; department: string }
+}
+
 export type OffsiteTableItem = {
 	id: string
-	name: string
-	position?: string
-	department?: string
-	reason?: string
-	successor?: string
+	requestNo?: string
+	requester?: {
+		uid?: string
+		fullNameEn?: string
+		fullNameLo?: string
+		jobTitle?: string
+		department?: { uuid: string; title: string; department: string }
+		workLocation?: { uuid: string; code: string; nameLo: string }
+	}
+	activityType?: { code: string; name: string }
+	subject?: string
+	details?: string
+	customerName?: string
+	location?: string
 	startDate: string
 	endDate: string
+	durationDays?: number
+	estimatedCost?: number
 	status?: 'pending' | 'approved' | 'rejected' | 'cancelled'
-	approvals?: { role: string; decision: string }[]
+	approvals?: ApprovalEntry[]
+	teammate?: TeammateEntry[]
+	participantIds?: ParticipantEntry[]
+	createdAt?: string
+	createdBy?: string
 }
+
+/** @deprecated use OffsiteTableItem */
+export type LeaveTableItem = OffsiteTableItem
 
 type OffsiteTableProps = {
 	data: OffsiteTableItem[]
@@ -70,12 +99,9 @@ type OffsiteTableProps = {
 	onApprove?: (item: OffsiteTableItem) => void
 	onReject?: (item: OffsiteTableItem) => void
 	canApproveBranch?: boolean
-	currentUserRole?: string   // e.g. 'departmentHead' | 'hr' | 'manager'
+	currentUserRole?: string
 	className?: string
 }
-
-/** @deprecated use OffsiteTableItem */
-export type LeaveTableItem = OffsiteTableItem
 
 type TabValue = 'all' | 'pending' | 'inprogress' | 'rejected'
 
@@ -86,8 +112,25 @@ const TABS: { value: TabValue; label: string }[] = [
 	{ value: 'rejected',   label: 'ປະຕິເສດ' },
 ]
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function getWhoPending(approvals?: ApprovalEntry[]): string | null {
+	if (!Array.isArray(approvals)) return null
+	const pending = approvals
+		.filter(a => a?.decision === 'pending')
+		.map(a => ROLE_LABEL[a.role] ?? a.role)
+	return pending.length > 0 ? pending.join(', ') : null
+}
+
+function getWhoRejected(approvals?: ApprovalEntry[]): string | null {
+	if (!Array.isArray(approvals)) return null
+	const rejected = approvals
+		.filter(a => a?.decision === 'rejected')
+		.map(a => ROLE_LABEL[a.role] ?? a.role)
+	return rejected.length > 0 ? rejected.join(', ') : null
+}
+
 function computeRowMeta(item: OffsiteTableItem, currentUserRole?: string) {
-	// Bug #3 fixed: correct fallback is [] not [item.approvals].filter(Boolean)
 	const approvals = Array.isArray(item.approvals) ? item.approvals : []
 
 	const isFinal =
@@ -95,21 +138,16 @@ function computeRowMeta(item: OffsiteTableItem, currentUserRole?: string) {
 		item.status === 'rejected' ||
 		item.status === 'cancelled'
 
-	// Bug #1 fixed: restore canApprove logic (was fully commented out → always false)
 	let canApprove = false
 	if (!isFinal) {
 		if (currentUserRole) {
-			// Hide button the moment THIS user's slot is no longer 'pending'
-			// (approve → 'approved', reject → 'rejected' → button gone instantly)
 			const mySlot = approvals.find(a => a.role === currentUserRole)
 			canApprove = mySlot?.decision === 'pending'
 		} else {
-			// No role context: show button while the first slot is still pending
 			canApprove = approvals[0]?.decision === 'pending'
 		}
 	}
 
-	// Bug #2 fixed: pass normalised `approvals` instead of raw item.approvals
 	const whoPending  = getWhoPending(approvals)
 	const whoRejected = getWhoRejected(approvals)
 	return { canApprove, whoPending, whoRejected }
@@ -118,11 +156,9 @@ function computeRowMeta(item: OffsiteTableItem, currentUserRole?: string) {
 function tabMatch(item: OffsiteTableItem, tab: TabValue): boolean {
 	const approvals = item.approvals ?? []
 	if (tab === 'pending') {
-		// Waiting for the very first decision — all approvers still pending
 		return approvals.length > 0 && approvals.every(a => a.decision === 'pending')
 	}
 	if (tab === 'inprogress') {
-		// Bug #4 fixed: at least one approved AND at least one still pending (not rejected/done)
 		return (
 			item.status !== 'rejected' &&
 			item.status !== 'approved' &&
@@ -135,32 +171,43 @@ function tabMatch(item: OffsiteTableItem, tab: TabValue): boolean {
 	return true
 }
 
-function MemberPills({ value }: { value?: string }) {
-	if (!value || value === '-') return <span className="text-sm text-muted-foreground">-</span>
+// ─── Sub-components ───────────────────────────────────────────────────────────
 
-	const names = value.split(', ').filter(Boolean)
-	const shown = names.slice(0, 2)
-	const extra = names.length - shown.length
+function TeamAvatars({ teammates }: { teammates?: TeammateEntry[] }) {
+	if (!teammates || teammates.length === 0)
+		return <span className="text-sm text-muted-foreground">-</span>
+
+	const shown = teammates.slice(0, 3)
+	const extra = teammates.length - shown.length
 
 	return (
-		<div className="flex flex-wrap gap-1">
-			{shown.map((name) => (
-				<span
-					key={name}
-					className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-foreground max-w-[100px] truncate"
-					title={name}
-				>
-					{name}
-				</span>
-			))}
+		<div className="flex items-center">
+			<div className="flex -space-x-2">
+				{shown.map((t) => {
+					const initials = `${t.fullNameLo || t.fullNameEn}`
+						.split(' ')
+						.map(w => w[0])
+						.join('')
+						.slice(0, 2)
+						.toUpperCase()
+					return (
+						<Avatar key={t.uid} className="w-7 h-7 border-2 border-background">
+							<AvatarImage src={t.photoUrl ?? undefined} alt={t.fullNameLo} />
+							<AvatarFallback className="bg-primary/10 text-primary text-[10px] font-semibold">
+								{initials}
+							</AvatarFallback>
+						</Avatar>
+					)
+				})}
+			</div>
 			{extra > 0 && (
-				<span className="inline-flex items-center rounded-full bg-primary/10 text-primary px-2 py-0.5 text-xs font-medium">
-					+{extra}
-				</span>
+				<span className="ml-1.5 text-xs text-muted-foreground">+{extra}</span>
 			)}
 		</div>
 	)
 }
+
+// ─── Main component ───────────────────────────────────────────────────────────
 
 export default function OffsiteTable({
 	data,
@@ -176,13 +223,16 @@ export default function OffsiteTable({
 
 	const departments = useMemo(() => {
 		const set = new Set<string>()
-		data.forEach(item => { if (item.department) set.add(item.department) })
+		data.forEach(item => {
+			const dept = item.requester?.department?.title
+			if (dept) set.add(dept)
+		})
 		return Array.from(set).sort()
 	}, [data])
 
 	const counts = useMemo(() => {
 		const base = canApproveBranch && deptFilter !== 'all'
-			? data.filter(i => i.department === deptFilter)
+			? data.filter(i => i.requester?.department?.title === deptFilter)
 			: data
 		return {
 			all:        base.length,
@@ -194,8 +244,10 @@ export default function OffsiteTable({
 
 	const filtered = useMemo(() => {
 		let result = data
-		if (canApproveBranch && deptFilter !== 'all') result = result.filter(i => i.department === deptFilter)
-		if (activeTab !== 'all') result = result.filter(i => tabMatch(i, activeTab))
+		if (canApproveBranch && deptFilter !== 'all')
+			result = result.filter(i => i.requester?.department?.title === deptFilter)
+		if (activeTab !== 'all')
+			result = result.filter(i => tabMatch(i, activeTab))
 		return result
 	}, [data, activeTab, deptFilter, canApproveBranch])
 
@@ -203,7 +255,6 @@ export default function OffsiteTable({
 		<Card className={className}>
 			{/* Filter bar */}
 			<div className="border-b px-4 pt-3 pb-0 space-y-3">
-				{/* Dept filter — branch approvers only */}
 				{canApproveBranch && departments.length > 0 && (
 					<Select value={deptFilter} onValueChange={setDeptFilter}>
 						<SelectTrigger className="h-8 w-48 text-xs">
@@ -218,7 +269,6 @@ export default function OffsiteTable({
 					</Select>
 				)}
 
-				{/* Status tabs */}
 				<div className="flex gap-0 overflow-x-auto">
 					{TABS.map(tab => (
 						<button
@@ -257,20 +307,27 @@ export default function OffsiteTable({
 						<div className="space-y-3 p-3 md:hidden">
 							{filtered.map((item, index) => {
 								const { canApprove, whoPending, whoRejected } = computeRowMeta(item, currentUserRole)
-
 								return (
 									<Card key={item.id} className="border bg-background">
 										<CardContent className="space-y-3 p-3">
 											<div className="flex items-start justify-between gap-2">
 												<div className="flex items-start gap-2 min-w-0">
-													<span className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary shrink-0">
-														<UserRound className="h-4 w-4" />
-													</span>
+													<Avatar className="mt-0.5 h-8 w-8 shrink-0">
+														<AvatarImage
+															src={item.participantIds?.[0]?.image ?? undefined}
+															alt={item.requester?.fullNameLo}
+														/>
+														<AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
+															<UserRound className="h-4 w-4" />
+														</AvatarFallback>
+													</Avatar>
 													<div className="min-w-0">
-														<p className="text-xs text-muted-foreground">#{index + 1}</p>
-														<p className="text-sm font-semibold text-foreground leading-tight truncate">{item.name}</p>
+														<p className="text-xs text-muted-foreground">#{index + 1} · {item.requestNo}</p>
+														<p className="text-sm font-semibold text-foreground leading-tight truncate">
+															{item.requester?.fullNameLo}
+														</p>
 														<p className="text-xs text-muted-foreground truncate">
-															{item.position || '-'} · {item.department || '-'}
+															{item.requester?.jobTitle || '-'} · {item.requester?.department?.title || '-'}
 														</p>
 													</div>
 												</div>
@@ -285,19 +342,32 @@ export default function OffsiteTable({
 												</div>
 											</div>
 
-											{item.reason && (
-												<p className="text-sm text-foreground leading-5 line-clamp-2">{item.reason}</p>
-											)}
+											{/* Activity + Subject */}
+											<div>
+												{item.activityType && (
+													<span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground mb-1">
+														{item.activityType.name}
+													</span>
+												)}
+												{item.subject && (
+													<p className="text-sm text-foreground leading-5 line-clamp-2">{item.subject}</p>
+												)}
+											</div>
 
 											<div className="flex items-center gap-2 text-xs text-muted-foreground">
 												<CalendarRange className="h-3.5 w-3.5 shrink-0" />
 												<span>{item.startDate} – {item.endDate}</span>
+												{item.durationDays && (
+													<span className="text-muted-foreground">({item.durationDays} ມື້)</span>
+												)}
 											</div>
 
-											{item.successor && item.successor !== '-' && (
-												<div className="flex items-start gap-1.5">
-													<Users className="h-3.5 w-3.5 shrink-0 mt-0.5 text-muted-foreground" />
-													<MemberPills value={item.successor} />
+											{(item.teammate?.length ?? 0) > 0 && (
+												<div className="flex items-center gap-2">
+													<TeamAvatars teammates={item.teammate} />
+													<span className="text-xs text-muted-foreground">
+														{item.teammate!.length} ຄົນ
+													</span>
 												</div>
 											)}
 
@@ -332,10 +402,10 @@ export default function OffsiteTable({
 									<TableRow className="hover:bg-muted/40">
 										<TableHead className="w-12 px-4">#</TableHead>
 										<TableHead className="px-4 min-w-[200px]">ຊື່ / ຕໍາແໜ່ງ</TableHead>
-										<TableHead className="px-4 min-w-[200px]">ເຫດຜົນ</TableHead>
-										<TableHead className="px-4 min-w-[120px]">ວັນທີ</TableHead>
-										<TableHead className="px-4 min-w-[140px]">ສະມາຊິກ</TableHead>
-										<TableHead className="px-4 w-28">ສະຖານະ</TableHead>
+										<TableHead className="px-4 min-w-[180px]">ກິດຈະກຳ / ຫົວຂໍ້</TableHead>
+										<TableHead className="px-4 min-w-[140px]">ວັນທີ</TableHead>
+										<TableHead className="px-4 min-w-[120px]">ສະມາຊິກ</TableHead>
+										<TableHead className="px-4 w-32">ສະຖານະ</TableHead>
 										<TableHead className="px-4 w-12 text-right">...</TableHead>
 									</TableRow>
 								</TableHeader>
@@ -349,37 +419,64 @@ export default function OffsiteTable({
 													{index + 1}
 												</TableCell>
 
+												{/* Requester */}
 												<TableCell className="px-4 py-3">
 													<div className="flex items-center gap-2 min-w-0">
-														<span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary shrink-0">
-															<UserRound className="h-4 w-4" />
-														</span>
+														<Avatar className="h-8 w-8 shrink-0">
+															<AvatarImage
+																src={item.participantIds?.[0]?.image ?? undefined}
+																alt={item.requester?.fullNameLo}
+															/>
+															<AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
+																<UserRound className="h-4 w-4" />
+															</AvatarFallback>
+														</Avatar>
 														<div className="min-w-0">
-															<p className="text-sm font-medium text-foreground truncate">{item.name}</p>
+															<p className="text-xs text-muted-foreground">{item.requestNo}</p>
+															<p className="text-sm font-medium text-foreground truncate">
+																{item.requester?.fullNameLo}
+															</p>
 															<p className="text-xs text-muted-foreground truncate">
-																{item.position || '-'} · {item.department || '-'}
+																{item.requester?.jobTitle || '-'} · {item.requester?.department?.title || '-'}
 															</p>
 														</div>
 													</div>
 												</TableCell>
 
+												{/* Activity + Subject */}
 												<TableCell className="px-4 py-3">
-													<p className="text-sm text-foreground line-clamp-2 max-w-[200px]">
-														{item.reason || '-'}
+													{item.activityType && (
+														<span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground mb-1">
+															{item.activityType.name}
+														</span>
+													)}
+													<p className="text-sm text-foreground line-clamp-2 max-w-[180px]">
+														{item.subject || '-'}
 													</p>
 												</TableCell>
 
+												{/* Dates */}
 												<TableCell className="px-4 py-3 whitespace-nowrap">
 													<div className="flex items-center gap-1 text-xs text-muted-foreground">
 														<CalendarRange className="h-3 w-3 shrink-0" />
 														<span>{item.startDate} – {item.endDate}</span>
 													</div>
+													{item.durationDays && (
+														<p className="text-xs text-muted-foreground mt-0.5">{item.durationDays} ມື້</p>
+													)}
 												</TableCell>
 
+												{/* Teammates */}
 												<TableCell className="px-4 py-3">
-													<MemberPills value={item.successor} />
+													<div className="flex flex-col gap-1">
+														<TeamAvatars teammates={item.teammate} />
+														{(item.teammate?.length ?? 0) > 0 && (
+															<span className="text-xs text-muted-foreground">{item.teammate!.length} ຄົນ</span>
+														)}
+													</div>
 												</TableCell>
 
+												{/* Status */}
 												<TableCell className="px-4 py-3">
 													<div className="flex flex-col gap-0.5">
 														<StatusBadge status={item.status ?? 'pending'} />
@@ -392,6 +489,7 @@ export default function OffsiteTable({
 													</div>
 												</TableCell>
 
+												{/* Actions */}
 												<TableCell className="px-4 py-3 text-right">
 													<DropdownMenu>
 														<DropdownMenuTrigger asChild>

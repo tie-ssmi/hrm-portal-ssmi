@@ -7,13 +7,8 @@ if (admin.apps.length === 0) {
   admin.initializeApp()
 }
 
-// Bug #3 fixed: use VAPID_PUBLIC_KEY (not NEXT_PUBLIC_VAPID_PUBLIC_KEY) in Functions
-// Set with: firebase functions:secrets:set VAPID_PUBLIC_KEY VAPID_PRIVATE_KEY
-webpush.setVapidDetails(
-  'mailto:admin@ssmi-hrm.com',
-  process.env.VAPID_PUBLIC_KEY || '',
-  process.env.VAPID_PRIVATE_KEY || ''
-)
+// VAPID keys are Firebase secrets — only available at runtime, not module load.
+// setVapidDetails() is called inside each function that needs it.
 
 const TIMEZONE = 'Asia/Vientiane'
 
@@ -143,15 +138,23 @@ export const getServerTime = onCall(
 // 🔄 2. CORE LOGIC: CHECK + SEND PUSH NOTIFICATION
 // =========================================================================
 async function sendAttendanceReminder() {
+  webpush.setVapidDetails(
+    'mailto:admin@ssmi-hrm.com',
+    process.env.VAPID_PUBLIC_KEY!,
+    process.env.VAPID_PRIVATE_KEY!
+  )
+
   const { isoDate } = getVientianeParts()
   console.log(`[Cron Job]: checking not-checked-in for ${isoDate}`)
 
   const db = admin.firestore()
 
-  // Bug #1 fixed: query 'not_check_in' to match what computeCheckInStatus writes
+  // Documents are pre-created at midnight with status 'not_check_in'.
+  // Status updates to 'present'/'late' when the employee checks in.
+  // Use 'dateKey' (YYYY-MM-DD) — 'date' field is DD-MM-YYYY which won't match isoDate.
   const snapshot = await db
-    .collection('attendances')
-    .where('date', '==', isoDate)
+    .collection('attendance')
+    .where('dateKey', '==', isoDate)
     .where('status', '==', 'not_check_in')
     .get()
 
@@ -168,29 +171,30 @@ async function sendAttendanceReminder() {
     url: '/dashboard/attendance',
   })
 
-  // Collect doc refs for batch fetch (avoids N+1 with Admin SDK getAll)
+  // attendance.uid = Firebase Auth UID (e.g. "DDJzovvTUXVdXcCLVfKndy5Ewo62")
   const userUids = [
     ...new Set(
       snapshot.docs
-        .map(doc => doc.data().createdByUid || doc.data().userUid)
-        .filter(Boolean) as string[]
+        .map(d => d.data().uid as string)
+        .filter(Boolean)
     ),
   ]
 
-  const userRefs = userUids.map(uid => db.collection('users').doc(uid))
-  const userDocs = await db.getAll(...userRefs)
+  // employees collection is keyed by uid — use getAll for O(1) batch fetch
+  const employeeRefs = userUids.map(uid => db.collection('employees').doc(uid))
+  const employeeDocs = await db.getAll(...employeeRefs)
 
   const results = await Promise.all(
-    userDocs.map(async (userDoc) => {
-      if (!userDoc.exists) return false
-      const subscription = userDoc.data()?.pushSubscription
+    employeeDocs.map(async (empDoc) => {
+      if (!empDoc.exists) return false
+      const subscription = empDoc.data()?.pushSubscription
       if (!subscription) return false
 
       return webpush
         .sendNotification(subscription, payload)
         .then(() => true)
         .catch((err: unknown) => {
-          console.error(`Failed to notify user ${userDoc.id}:`, err)
+          console.error(`Failed to notify employee ${empDoc.id}:`, err)
           return false
         })
     })

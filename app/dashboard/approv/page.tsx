@@ -98,17 +98,23 @@ export default function ApprovePage() {
   const offsiteTableData = useMemo(() =>
     offsiteRequests.map((r) => ({
       id: r.id,
-      name: r.requester.fullNameLo || r.requester.fullNameEn,
-      position: r.requester.jobTitle,
-      department: r.requester.department.title || r.requester.department.department,
-      reason: r.subject,
-      successor: r.teammate.length > 0
-        ? r.teammate.map((t) => t.fullNameLo || t.fullNameEn).join(', ')
-        : '-',
+      requestNo: r.requestNo,
+      requester: r.requester,
+      activityType: r.activityType,
+      subject: r.subject,
+      details: r.details,
+      customerName: r.customerName,
+      location: r.location,
       startDate: r.startDate,
       endDate: r.endDate,
+      durationDays: r.durationDays,
+      estimatedCost: r.estimatedCost,
       status: (r.status === 'cancelled' ? 'rejected' : r.status) as 'pending' | 'approved' | 'rejected',
       approvals: r.approvals as { role: string; decision: string }[],
+      teammate: r.teammate,
+      participantIds: r.participantIds,
+      createdAt: r.createdAt,
+      createdBy: r.createdBy,
     })),
     [offsiteRequests],
   )

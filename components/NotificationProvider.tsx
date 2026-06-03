@@ -1,10 +1,19 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, useRef, useMemo } from "react";
-import { db } from "@/lib/firebase"; 
-import { collection, query, where, onSnapshot } from "firebase/firestore";
-import { useAuth } from "@/lib/auth-context"; 
+import { db } from "@/lib/firebase";
+import { collection, doc, query, updateDoc, where, onSnapshot } from "firebase/firestore";
+import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
+
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
+  const raw = atob(base64)
+  const output = new Uint8Array(raw.length)
+  for (let i = 0; i < raw.length; i++) output[i] = raw.charCodeAt(i)
+  return output
+}
 
 interface NotificationItem {
   id: string;
@@ -35,7 +44,41 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   };
 
   const userUid = user?.uid || user?.id;
-  
+
+  // Subscribe to web push and save pushSubscription to employees/{uid}
+  useEffect(() => {
+    if (!userUid) return
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return
+
+    const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+    if (!vapidKey) return
+
+    async function registerPush() {
+      try {
+        const permission = await Notification.requestPermission()
+        if (permission !== 'granted') return
+
+        const reg = await navigator.serviceWorker.ready
+        let subscription = await reg.pushManager.getSubscription()
+
+        if (!subscription) {
+          subscription = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(vapidKey!),
+          })
+        }
+
+        await updateDoc(doc(db, 'employees', userUid!), {
+          pushSubscription: JSON.parse(JSON.stringify(subscription)),
+        })
+      } catch (err) {
+        console.error('[Push] subscription failed:', err)
+      }
+    }
+
+    registerPush()
+  }, [userUid])
+
   const userDepartmentId = useMemo(() => {
     if (!user?.department) return undefined;
     return typeof user.department === 'string' ? user.department : (user.department as any).uuid || (user.department as any).id;

@@ -246,6 +246,13 @@ function generateRequestNo(): string {
   return `WO-${year}-${suffix}`
 }
 
+type VehicleDoc = {
+  nameLocation: string
+  typeVehicle: string
+  vehicleName: string
+  workLocationUid: string
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialData }: Props) {
@@ -306,29 +313,38 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
 
   // ─── Firestore queries ──────────────────────────────────────────────────────
 
+  // workLocation can be string (legacy uuid) or WorkLocationInfo object
+  const workLocationUuid =
+    typeof user?.workLocation === 'object'
+      ? user.workLocation?.uuid
+      : user?.workLocation ?? undefined
+
   const { data: employeesList = [] } = useQuery<EmployeeDoc[]>({
-    queryKey: ['employees-all'],
+    queryKey: ['employees-all', workLocationUuid],
     queryFn: async () => {
       const snap = await getDocs(collection(db, 'employees'))
       return snap.docs
         .map((d) => d.data() as EmployeeDoc)
-        .filter((e) => e.status !== 'delete' && e.uid !== user?.uid)
+        .filter((e) => {
+          if (e.status === 'delete') return false
+          if (!workLocationUuid) return true
+          const empLocationUuid =
+            typeof e.workLocation === 'object'
+              ? e.workLocation?.uuid
+              : e.workLocation ?? e.workLocationUid
+          return empLocationUuid === workLocationUuid
+        })
     },
     enabled: !!user,
   })
 
-  type VehicleDoc = {
-    nameLocation: string
-    typeVehicle: string
-    vehicleName: string
-    workLocationUid: string
-  }
-
   const { data: vehiclesList = [] } = useQuery<VehicleDoc[]>({
-    queryKey: ['vehicles-all'],
+    queryKey: ['vehicles-all', workLocationUuid],
     queryFn: async () => {
       const snap = await getDocs(collection(db, 'vehicles'))
-      return snap.docs.map((d) => d.data() as VehicleDoc)
+      return snap.docs
+        .map((d) => d.data() as VehicleDoc)
+        .filter((v) => v.workLocationUid === workLocationUuid)
     },
     enabled: !!user,
   })
@@ -428,7 +444,6 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
       const activity = activityMeta!
       const now = new Date().toISOString()
       const monthKey = format(startDate!, 'MM-yyyy')
-      const participantIds = [user.uid, ...teammates.map((t) => t.uid)]
       const estimatedCost = Number(costDisplay.replace(/,/g, ''))
 
       const requesterDept: Department =
@@ -444,6 +459,23 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
       const fullNameEn = `${user.firstNameEn ?? user.firstName ?? ''} ${user.lastNameEn ?? user.lastName ?? ''}`.trim()
       const fullNameLo = `${user.firstNameLo ?? ''} ${user.lastNameLo ?? ''}`.trim()
       const userImage = user.profileImage || user.photo3x4Url
+
+      const participantIds = [
+        {
+          uid: user.uid,
+          fullNameEn,
+          fullNameLo,
+          department: requesterDept,
+          image: userImage ?? null,
+        },
+        ...teammates.map((t) => ({
+          uid: t.uid,
+          fullNameEn: t.fullNameEn,
+          fullNameLo: t.fullNameLo,
+          department: t.department,
+          image: t.photoUrl ?? null,
+        })),
+      ]
 
       const payload = {
         requester: {
@@ -928,7 +960,7 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
 
                   {customerName && (
                     <>
-                      <dt className="text-muted-foreground">ລູກຄ້າ / ຄູ່ຄ້າ</dt>
+                      <dt className="text-muted-foreground">ລົດ</dt>
                       <dd className="font-medium">{customerName}</dd>
                     </>
                   )}
@@ -979,7 +1011,7 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
               <ChevronLeft className="w-4 h-4 mr-1" />
               ກັບຄືນ
             </Button>
-            <Button onClick={handleSubmit} disabled={isSubmitting}>
+            <Button onClick={handleSubmit} disabled={isSubmitting || teammates.length === 0}>
               {isSubmitting ? (
                 <Spinner className="mr-2" />
               ) : (

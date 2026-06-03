@@ -1,17 +1,19 @@
 export const runtime = 'nodejs' // web-push requires Node.js runtime (not Edge)
+export const dynamic = 'force-static'
 
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/firebase'
 import { collection, query, where, getDocs } from 'firebase/firestore'
 import webpush from 'web-push'
 
-webpush.setVapidDetails(
-  'mailto:admin@yourdomain.com',
-  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '',
-  process.env.VAPID_PRIVATE_KEY || ''
-)
-
 export async function GET(request: Request) {
+  const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+  const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY
+  if (!vapidPublicKey || !vapidPrivateKey) {
+    return NextResponse.json({ error: 'VAPID keys not configured' }, { status: 500 })
+  }
+  webpush.setVapidDetails('mailto:admin@yourdomain.com', vapidPublicKey, vapidPrivateKey)
+
   // Bug #4 fixed: secret via Authorization header instead of query param
   const authHeader = request.headers.get('authorization')
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
