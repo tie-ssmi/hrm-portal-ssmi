@@ -6,6 +6,11 @@ import { useHRM } from '@/lib/hrm-context'
 import { useQuery } from '@tanstack/react-query'
 import { fetchAllLeavesByUserUuid } from '@/services/leaves'
 import { fetchAttendanceByUser } from '@/services/attendance'
+import { collection, getDocs, query, where } from 'firebase/firestore'
+import { db } from '@/lib/firebase'
+import type { ActivityCode, OffsiteRequestDoc } from '@/types/workOutside'
+import { activityLabel, formatKip } from '@/lib/format'
+import { ActivityTypeBadge } from '@/components/offsite/ActivityTypeBadge'
 import HistorySkeleton from '@/components/skeletons/historySkeleton'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -23,19 +28,30 @@ import {
   Calendar,
   Palmtree,
   MapPin,
-  AlertTriangle,
   DollarSign,
   CheckCircle,
   XCircle,
   LogIn,
   LogOut,
 } from 'lucide-react'
-import { format } from 'date-fns'
-//formatDayDateLao
-import { formatDayDateLao ,formatMonthDateLao, formatDatedayLao, formatDateLao, formatDateMonthLao} from '@/components/laoDate'
+import { formatDayDateLao, formatMonthDateLao, formatDatedayLao, formatDateLao, formatDateMonthLao, formatMonthYearLao } from '@/components/laoDate'
+
+// Safely convert any Firestore value (string, Timestamp, undefined) to a Date.
+// Returns null instead of Invalid Date so callers can show a fallback.
+function toSafeDate(value: unknown): Date | null {
+  if (value == null) return null
+  // Firestore Timestamp object: has .toDate() method
+  if (typeof value === 'object' && 'toDate' in (value as object) && typeof (value as { toDate: unknown }).toDate === 'function') {
+    return (value as { toDate: () => Date }).toDate()
+  }
+  const d = new Date(value as string | number)
+  return isNaN(d.getTime()) ? null : d
+}
+
 export default function HistoryPage() {
   const { user, isLoading } = useAuth()
-  const { offsiteRequests, lateRecords, totalFines } = useHRM()
+  useHRM()
+  const userUid = user?.uid || user?.id || ''
 
   const { data: leaveRequests = [] } = useQuery({
     queryKey: ['leaves', 'user', user?.uuid ?? null],
@@ -49,13 +65,26 @@ export default function HistoryPage() {
     enabled: !!user?.uuid,
   })
 
+  const { data: myOffsiteRequests = [] } = useQuery<OffsiteRequestDoc[]>({
+    queryKey: ['workOutside', 'participant', userUid],
+    queryFn: async () => {
+      const snap = await getDocs(
+        query(collection(db, 'workOutside'), where('participantIds', 'array-contains', userUid))
+      )
+      return snap.docs
+        .map(d => ({ id: d.id, ...d.data() } as OffsiteRequestDoc))
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    },
+    enabled: !!userUid,
+  })
+
   const monthOptions = useMemo(() => {
     const options: { value: string; label: string }[] = []
     const now = new Date()
     for (let i = 0; i < 12; i++) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
       const value = `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}`
-      options.push({ value, label: format(d, 'MMMM yyyy') })
+      options.push({ value, label: formatMonthYearLao(d) })
     }
     return options
   }, [])
@@ -67,7 +96,7 @@ export default function HistoryPage() {
     for (let i = -2; i < 12; i++) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
       const value = `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}`
-      options.push({ value, label: format(d, 'MMMM yyyy') })
+      options.push({ value, label: formatMonthYearLao(d) })
     }
     return options
   }, [])
@@ -81,6 +110,62 @@ export default function HistoryPage() {
     const now = new Date()
     return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`
   })
+
+  const [selectedOffsiteMonth, setSelectedOffsiteMonth] = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`
+  })
+
+  const [selectedActivityType, setSelectedActivityType] = useState<ActivityCode | 'all'>('all')
+
+  const ACTIVITY_CODES: ActivityCode[] = ['MEET_CLIENT', 'MEETING', 'BOOTH', 'PROMO', 'TRAINING']
+
+  const filteredOffsiteRequests = useMemo(() =>
+    myOffsiteRequests.filter(r => {
+      const matchMonth = r.startDate.startsWith(selectedOffsiteMonth) || r.endDate.startsWith(selectedOffsiteMonth)
+      const matchType = selectedActivityType === 'all' || r.activityType.code === selectedActivityType
+      return matchMonth && matchType
+    }),
+    [myOffsiteRequests, selectedOffsiteMonth, selectedActivityType],
+  )
+
+  const monthlyFineSummaries = useMemo(() => {
+    const now = new Date()
+    const todayStr = now.toISOString().slice(0, 10)
+    const isAfter10 = now.getHours() > 10 || (now.getHours() === 10 && now.getMinutes() >= 1)
+
+    const byMonth = new Map<string, typeof allAttendance>()
+    for (const r of allAttendance) {
+      const month = r.date.slice(0, 7)
+      if (!byMonth.has(month)) byMonth.set(month, [])
+      byMonth.get(month)!.push(r)
+    }
+
+    return Array.from(byMonth.entries())
+      .map(([month, records]) => {
+        const late = records.filter(r => r.status === 'late').length
+        const notCheckInPts = records.reduce((sum, r) => {
+          if (r.date === todayStr) {
+            if (!isAfter10) return sum
+            return sum + (r.status === 'not_check_in' || r.status === 'not_checked_in' ? 1 : 0)
+          }
+          if (r.status === 'not_checked_in') return sum + 2
+          if (r.status === 'not_check_in' && r.checkOutTime == null) return sum + 2
+          if (r.status === 'not_check_in' && r.checkOutTime != null) return sum + 1
+          if (r.status !== 'not_check_in' && r.status !== 'leave' && r.checkOutTime == null) return sum + 1
+          return sum
+        }, 0)
+        const fines = notCheckInPts * 10000 + (late > 4 ? (late - 4) * 10000 : 0)
+        const [y, m] = month.split('-').map(Number)
+        return { month, label: formatMonthYearLao(new Date(y, m - 1, 1)), late, notCheckInPts, fines }
+      })
+      .sort((a, b) => b.month.localeCompare(a.month))
+  }, [allAttendance])
+
+  const computedTotalFines = useMemo(
+    () => monthlyFineSummaries.reduce((sum, m) => sum + m.fines, 0),
+    [monthlyFineSummaries],
+  )
 
   const filteredAttendance = useMemo(() => {
     return allAttendance.filter(r => r.date.startsWith(selectedMonth))
@@ -110,8 +195,17 @@ export default function HistoryPage() {
 
   const filteredLeaveRequests = useMemo(() => {
     return leaveRequests
-      .filter(r => r.startDate.startsWith(selectedLeaveMonth) || r.endDate.startsWith(selectedLeaveMonth))
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .filter(r => {
+        const start = typeof r.startDate === 'string' ? r.startDate : ''
+        const end   = typeof r.endDate   === 'string' ? r.endDate   : ''
+        return start.startsWith(selectedLeaveMonth) || end.startsWith(selectedLeaveMonth)
+      })
+      .sort((a, b) => {
+        // createdAt may be a Firestore Timestamp — convert to ms for safe comparison
+        const aMs = toSafeDate(a.createdAt)?.getTime() ?? 0
+        const bMs = toSafeDate(b.createdAt)?.getTime() ?? 0
+        return bMs - aMs
+      })
   }, [leaveRequests, selectedLeaveMonth])
 
   const getStatusVariant = (status: string) => {
@@ -241,8 +335,8 @@ export default function HistoryPage() {
                 <DollarSign className="w-5 h-5 text-destructive" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Total Fines</p>
-                <p className="text-xl font-bold text-foreground">${totalFines}</p>
+                <p className="text-xs text-muted-foreground">ຄ່າປັບທັງໝົດ</p>
+                <p className="text-xl font-bold text-foreground">{formatKip(computedTotalFines)}</p>
               </div>
             </div>
           </CardContent>
@@ -377,7 +471,11 @@ export default function HistoryPage() {
                   </p>
                 ) : (
                   <div className="space-y-3">
-                    {filteredLeaveRequests.map((request) => (
+                    {filteredLeaveRequests.map((request) => {
+                      const startD = toSafeDate(request.startDate)
+                      const endD   = toSafeDate(request.endDate)
+                      const createdD = toSafeDate(request.createdAt)
+                      return (
                       <div key={request.id} className="p-4 rounded-lg bg-muted/50">
                         <div className="flex items-start justify-between">
                           <div>
@@ -385,12 +483,12 @@ export default function HistoryPage() {
                               {request.policyName || request.type}
                             </p>
                             <p className="text-xs md:block hidden text-muted-foreground mt-1">
-                              {formatMonthDateLao(new Date(request.startDate),)} -{' '}
-                              {formatDatedayLao(new Date(request.endDate),)}
+                              {startD ? formatMonthDateLao(startD) : '—'} -{' '}
+                              {endD   ? formatDatedayLao(endD)      : '—'}
                             </p>
                             <p className="text-xs md:hidden text-muted-foreground mt-1">
-                              {formatDateMonthLao(new Date(request.startDate),)} -{' '}
-                              {formatDateLao(new Date(request.endDate),)}
+                              {startD ? formatDateMonthLao(startD) : '—'} -{' '}
+                              {endD   ? formatDateLao(endD)         : '—'}
                             </p>
                           </div>
                           <Badge variant={getStatusVariant(request.status)} className="flex items-center gap-1">
@@ -400,15 +498,16 @@ export default function HistoryPage() {
                         </div>
                         <p className="text-sm text-muted-foreground mt-2">{request.reason}</p>
                         <div className="flex md:block hidden items-center gap-4 mt-3 text-xs text-muted-foreground">
-                          <span>ມື້ສົ່ງຄຳຮອງ : {formatDayDateLao(new Date(request.createdAt))}</span>
+                          <span>ມື້ສົ່ງຄຳຮອງ : {createdD ? formatDayDateLao(createdD) : '—'}</span>
                           {request.reviewedBy && <span>Reviewed by: {request.reviewedBy}</span>}
                         </div>
                         <div className="flex md:hidden items-center gap-4 mt-3 text-xs text-muted-foreground">
-                          <span>ມື້ສົ່ງຄຳຮອງ : {formatDateLao(new Date(request.createdAt))}</span>
+                          <span>ມື້ສົ່ງຄຳຮອງ : {createdD ? formatDateLao(createdD) : '—'}</span>
                           {request.reviewedBy && <span>Reviewed by: {request.reviewedBy}</span>}
                         </div>
                       </div>
-                    ))}
+                    )
+                    })}
                   </div>
                 )}
               </ScrollArea>
@@ -419,38 +518,78 @@ export default function HistoryPage() {
         <TabsContent value="offsite" className="mt-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Off-site Work History</CardTitle>
-              <CardDescription>Your remote work requests</CardDescription>
+              <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <CardTitle className="text-base">ປະຫວັດອອກວຽກນອກ</CardTitle>
+                  <CardDescription>ລາຍລະອຽດການອອກວຽກນອກ</CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Select value={selectedActivityType} onValueChange={(v) => setSelectedActivityType(v as ActivityCode | 'all')}>
+                    <SelectTrigger className="w-[140px]">
+                      <SelectValue placeholder="ທຸກກິດຈະກຳ" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">ທຸກກິດຈະກຳ</SelectItem>
+                      {ACTIVITY_CODES.map(code => (
+                        <SelectItem key={code} value={code}>{activityLabel(code)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={selectedOffsiteMonth} onValueChange={setSelectedOffsiteMonth}>
+                    <SelectTrigger className="w-[150px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {leaveMonthOptions.map(opt => (
+                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
               <ScrollArea className="h-[400px] pr-4">
-                {offsiteRequests.length === 0 ? (
+                {filteredOffsiteRequests.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-8">
-                    No off-site requests yet
+                    ບໍ່ມີລາຍການອອກວຽກນອກ
                   </p>
                 ) : (
                   <div className="space-y-3">
-                    {offsiteRequests.map((request) => (
-                      <div key={request.id} className="p-4 rounded-lg bg-muted/50">
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <p className="text-sm font-medium">{request.location}</p>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              {format(new Date(request.date), 'EEEE, MMM d, yyyy')}
-                            </p>
+                    {filteredOffsiteRequests.map((request) => {
+                      const isRequester = request.createdByUid === userUid
+                      return (
+                        <div key={request.id} className="p-3 rounded-lg bg-muted/50 space-y-2">
+                          {/* Row 1: type + role badge + status */}
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                              <ActivityTypeBadge code={request.activityType.code} />
+                              <span className="text-[10px] rounded-full px-2 py-0.5 bg-background border text-muted-foreground shrink-0">
+                                {isRequester ? 'ຜູ້ຍື່ນຄຳຂໍ' : 'ສະມາຊິກທີມ'}
+                              </span>
+                            </div>
+                            <Badge variant={getStatusVariant(request.status)} className="flex items-center gap-1 shrink-0 text-xs">
+                              {getStatusIcon(request.status)}
+                              {request.status}
+                            </Badge>
                           </div>
-                          <Badge variant={getStatusVariant(request.status)} className="flex items-center gap-1">
-                            {getStatusIcon(request.status)}
-                            {request.status}
-                          </Badge>
+                          {/* Row 2: subject */}
+                          <p className="text-sm font-medium leading-snug">{request.subject}</p>
+                          {/* Row 3: location + date */}
+                          <div className="flex flex-col gap-0.5 text-xs text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <MapPin className="w-3 h-3 shrink-0" />
+                              {request.location}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Calendar className="w-3 h-3 shrink-0" />
+                              {formatDateLao(new Date(request.startDate))} – {formatDateLao(new Date(request.endDate))}
+                              {request.durationDays ? ` (${request.durationDays} ມື້)` : ''}
+                            </span>
+                          </div>
                         </div>
-                        <p className="text-sm text-muted-foreground mt-2">{request.reason}</p>
-                        <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
-                          <span>Submitted: {format(new Date(request.createdAt), 'MMM d, yyyy')}</span>
-                          {request.reviewedBy && <span>Reviewed by: {request.reviewedBy}</span>}
-                        </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
               </ScrollArea>
@@ -466,45 +605,43 @@ export default function HistoryPage() {
             </CardHeader>
             <CardContent>
               <ScrollArea className="h-[400px] pr-4">
-                {lateRecords.length === 0 ? (
+                {monthlyFineSummaries.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-8">
-                    No late records - Great job!
+                    ບໍ່ມີຂໍ້ມູນ
                   </p>
                 ) : (
                   <>
                     <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20 mb-4">
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="text-sm font-medium text-destructive">Total Fines</p>
+                          <p className="text-sm font-medium text-destructive">ຄ່າປັບທັງໝົດ</p>
                           <p className="text-xs text-muted-foreground mt-1">
-                            {lateRecords.length} late arrivals
+                            {monthlyFineSummaries.filter(m => m.fines > 0).length} ເດືອນທີ່ມີຄ່າປັບ
                           </p>
                         </div>
-                        <p className="text-2xl font-bold text-destructive">${totalFines}</p>
+                        <p className="text-xl font-bold text-destructive">{formatKip(computedTotalFines)}</p>
                       </div>
                     </div>
                     <div className="space-y-3">
-                      {lateRecords.map((record, index) => (
-                        <div
-                          key={index}
-                          className="flex items-center justify-between p-4 rounded-lg bg-muted/50"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-chart-3/10">
-                              <AlertTriangle className="w-5 h-5 text-chart-3" />
-                            </div>
+                      {monthlyFineSummaries.map(({ month, label, late, notCheckInPts, fines }) => (
+                        <div key={month} className="p-4 rounded-lg bg-muted/50">
+                          <div className="flex items-start justify-between gap-2">
                             <div>
-                              <p className="text-sm font-medium">
-                                {format(new Date(record.date), 'EEEE, MMM d, yyyy')}
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                {record.minutes} minutes late
-                              </p>
+                              <p className="text-sm font-medium">{label}</p>
+                              <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                                <p>
+                                  ມາຊ້າ: {late} ຄັ້ງ
+                                  {late > 4
+                                    ? <span className="text-destructive ml-1">(ເກີນ {late - 4} ຄັ້ງ)</span>
+                                    : <span className="ml-1">(ຟຣີ {late}/4)</span>}
+                                </p>
+                                <p>ຂາດ/ລືມ: {notCheckInPts} ຈຸດ</p>
+                              </div>
                             </div>
+                            <p className={`text-base font-bold shrink-0 ${fines > 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
+                              {fines > 0 ? `-${formatKip(fines)}` : '—'}
+                            </p>
                           </div>
-                          <Badge variant="destructive" className="text-sm">
-                            -${record.fine}
-                          </Badge>
                         </div>
                       ))}
                     </div>

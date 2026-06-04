@@ -149,17 +149,18 @@ async function sendAttendanceReminder() {
 
   const db = admin.firestore()
 
-  // Documents are pre-created at midnight with status 'not_check_in'.
-  // Status updates to 'present'/'late' when the employee checks in.
-  // Use 'dateKey' (YYYY-MM-DD) — 'date' field is DD-MM-YYYY which won't match isoDate.
+  // dailyAttendanceInit (admin project) pre-creates docs at midnight with:
+  //   status: 'not_checked_in'  and  dateKey: YYYY-MM-DD
+  // When an employee checks in the client sets status to 'present'/'late'.
+  // Querying by dateKey + status gives exactly who has not yet checked in.
   const snapshot = await db
     .collection('attendance')
     .where('dateKey', '==', isoDate)
-    .where('status', '==', 'not_check_in')
+    .where('status', '==', 'not_checked_in')
     .get()
 
   if (snapshot.empty) {
-    console.log('All employees checked in today.')
+    console.log('[Cron Job]: all employees checked in today.')
     return
   }
 
@@ -171,7 +172,7 @@ async function sendAttendanceReminder() {
     url: '/dashboard/attendance',
   })
 
-  // attendance.uid = Firebase Auth UID (e.g. "DDJzovvTUXVdXcCLVfKndy5Ewo62")
+  // attendance.uid is the Firebase Auth UID — employees collection is keyed by that UID
   const userUids = [
     ...new Set(
       snapshot.docs
@@ -180,7 +181,7 @@ async function sendAttendanceReminder() {
     ),
   ]
 
-  // employees collection is keyed by uid — use getAll for O(1) batch fetch
+  // getAll() batch-fetches all employee docs in one round-trip
   const employeeRefs = userUids.map(uid => db.collection('employees').doc(uid))
   const employeeDocs = await db.getAll(...employeeRefs)
 
@@ -201,7 +202,7 @@ async function sendAttendanceReminder() {
   )
 
   const notified = results.filter(Boolean).length
-  console.log(`Notified ${notified} / ${snapshot.size} users`)
+  console.log(`[Cron Job]: Notified ${notified} / ${snapshot.size} users`)
 }
 
 // =========================================================================

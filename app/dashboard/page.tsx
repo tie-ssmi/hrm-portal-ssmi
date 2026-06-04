@@ -139,7 +139,7 @@ export default function DashboardPage() {
     const y = now.getFullYear()
     const m = now.getMonth()
     const todayStr = `${y}-${(m + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`
-    const isAfter10 = now.getHours() * 60 + now.getMinutes() > 10 * 60
+    const isAfter10 = now.getHours() * 60 + now.getMinutes() >= 10 * 60
     const thisMonth = attendanceHistory.filter(r => {
       const d = new Date(r.date)
       return d.getFullYear() === y && d.getMonth() === m
@@ -148,9 +148,10 @@ export default function DashboardPage() {
     const notCheckIn = thisMonth.reduce((sum, r) => {
       if (r.date === todayStr) {
         if (!isAfter10) return sum
-        return sum + (r.status === 'not_check_in' ? 1 : 0)
+        return sum + (r.status === 'not_check_in' || r.status === 'not_checked_in' ? 1 : 0)
       }
       // absent OR came >10:01 and forgot checkout → 2 pts
+      if (r.status === 'not_checked_in') return sum + 2
       if (r.status === 'not_check_in' && r.checkOutTime == null) return sum + 2
       // came >10:01 but checked out → 1 pt
       if (r.status === 'not_check_in' && r.checkOutTime != null) return sum + 1

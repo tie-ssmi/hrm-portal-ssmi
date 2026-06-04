@@ -7,7 +7,6 @@ import {
   fetchAttendanceByUserThisMonth,
   fetchTodayCheckInAttendance,
   formatAttendanceDocumentDate,
-  getServerDateTimeInVientiane,
   updateAttendanceCheckInTime,
   updateAttendanceCheckOutTime,
   uploadAttendanceImage,
@@ -143,8 +142,10 @@ export function useCheckIn() {
 
       let status = serverTime.status as CheckInServerStatus
       if (isOffsite) {
+        // Offsite: present < 09:00 | late 09:00–09:59 | not_check_in >= 10:00
         const [h, m] = serverTime.checkTime.split(':').map(Number)
-        status = h < 9 || (h === 9 && m === 0) ? 'present' : 'late'
+        const nowMin = h * 60 + m
+        status = nowMin < 9 * 60 ? 'present' : nowMin < 10 * 60 ? 'late' : 'not_check_in'
       }
 
       const checkInImageURL = imageFile

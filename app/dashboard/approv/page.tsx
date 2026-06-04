@@ -8,6 +8,7 @@ import { db } from '@/lib/firebase'
 import { fetchLeavesForApproval, updateLeaveApproval } from '@/services/leaves'
 import { toast } from 'sonner'
 import type { LeaveTableItem } from '@/components/leaveTable'
+import type { OffsiteTableItem } from '@/components/offSiteTable'
 import FormsSkeleton from '@/components/skeletons/formsSkeleton'
 import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -143,7 +144,7 @@ export default function ApprovePage() {
   // ── Offsite approval state ───────────────────────────────────────────────
   const [openOffsiteDialog, setOpenOffsiteDialog] = useState(false)
   const [offsiteAction, setOffsiteAction] = useState<'approve' | 'reject' | null>(null)
-  const [pendingOffsiteItem, setPendingOffsiteItem] = useState<LeaveTableItem | null>(null)
+  const [pendingOffsiteItem, setPendingOffsiteItem] = useState<OffsiteTableItem | null>(null)
   const [confirmOffsite, setConfirmOffsite] = useState(false)
   const [isProcessingOffsite, setIsProcessingOffsite] = useState(false)
 
@@ -165,13 +166,13 @@ export default function ApprovePage() {
   }
 
   // ── Offsite handlers ─────────────────────────────────────────────────────
-  const handleOffsiteApprove = (item: LeaveTableItem) => {
+  const handleOffsiteApprove = (item: OffsiteTableItem) => {
     setPendingOffsiteItem(item)
     setOffsiteAction('approve')
     setOpenOffsiteDialog(true)
   }
 
-  const handleOffsiteReject = (item: LeaveTableItem) => {
+  const handleOffsiteReject = (item: OffsiteTableItem) => {
     setPendingOffsiteItem(item)
     setOffsiteAction('reject')
     setOpenOffsiteDialog(true)

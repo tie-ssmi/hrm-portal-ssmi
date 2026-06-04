@@ -101,7 +101,7 @@ export interface AttendanceRecord {
   checkInTime?: string
   checkOut?: string
   checkOutTime?: string | null
-  status: 'present' | 'late' | 'absent' | 'leave' | 'offsite' | 'not_check_in'
+  status: 'present' | 'late' | 'absent' | 'leave' | 'offsite' | 'not_check_in' | 'not_checked_in'
   location?: {
     lat: number
     lng: number

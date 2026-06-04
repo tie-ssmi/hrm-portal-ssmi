@@ -168,14 +168,18 @@ export function HRMProvider({ children }: { children: ReactNode }) {
       const now = new Date()
       const attendanceDate = formatAttendanceDocumentDate(now)
       const checkInTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`
-      const isLate = now.getHours() >= 9 && now.getMinutes() > 0
+      const nowMin = now.getHours() * 60 + now.getMinutes()
+      const checkInStatus: 'present' | 'late' | 'not_check_in' =
+        nowMin <= 8 * 60 + 15 ? 'present'
+        : nowMin < 10 * 60 ? 'late'
+        : 'not_check_in'
 
       await updateAttendanceCheckInTime({
         userUuid: user.uuid,
         uid: user.uid || user.uuid,
         date: attendanceDate,
         checkInTime,
-        status: isLate ? 'late' : 'present',
+        status: checkInStatus,
         location,
         createdBy: 'system',
         fullNameEn: `${user.firstNameEn || user.firstName} ${user.lastNameEn || user.lastName}`.trim(),
@@ -192,7 +196,7 @@ export function HRMProvider({ children }: { children: ReactNode }) {
 
       return {
         success: true,
-        message: isLate ? `Checked in late at ${checkInTime}` : `Checked in at ${checkInTime}`,
+        message: checkInStatus !== 'present' ? `Checked in late at ${checkInTime}` : `Checked in at ${checkInTime}`,
       }
     },
     [todayAttendance, user, queryClient],
