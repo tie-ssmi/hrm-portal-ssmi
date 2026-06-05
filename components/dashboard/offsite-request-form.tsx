@@ -460,22 +460,7 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
       const fullNameLo = `${user.firstNameLo ?? ''} ${user.lastNameLo ?? ''}`.trim()
       const userImage = user.profileImage || user.photo3x4Url
 
-      const participantIds = [
-        {
-          uid: user.uid,
-          fullNameEn,
-          fullNameLo,
-          department: requesterDept,
-          image: userImage ?? null,
-        },
-        ...teammates.map((t) => ({
-          uid: t.uid,
-          fullNameEn: t.fullNameEn,
-          fullNameLo: t.fullNameLo,
-          department: t.department,
-          image: t.photoUrl ?? null,
-        })),
-      ]
+      const participantIds = [...new Set([user.uid, ...teammates.map((t) => t.uid)])]
 
       const payload = {
         requester: {
@@ -501,6 +486,7 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
         teammateTitle: teammates.length,
         teammate: teammates,
         participantIds,
+        participantUids: participantIds,
         participantCount: participantIds.length,
         updatedAt: now,
         updatedBy: fullNameEn,

@@ -51,13 +51,14 @@ export interface WorkOutsideRecord {
   estimatedCost: number
   teammateTitle: number
   teammate: TeammateEntry[]
-  participantIds: {
+  participantIds: (string | {
     uid: string
     fullNameEn: string
     fullNameLo: string
     department?: { uuid: string; title: string; department: string }
     image?: string | null
-  }[]
+  })[]
+  participantUids?: string[]
   participantCount: number
   status: RequestStatus
   requiredApprovers: string[]

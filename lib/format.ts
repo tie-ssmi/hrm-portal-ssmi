@@ -25,6 +25,7 @@ export function formatDateRange(start: string, end: string): string {
 export function formatKip(amount: number): string {
   return `${amount.toLocaleString('en-US')} ກີບ`
 }
+
 export function formatKipText(amount: number): string {
   return amount >= 1000000 ? `${(amount / 1000000).toLocaleString('en-US', { maximumFractionDigits: 2 })} ລ້ານ` : `${amount.toLocaleString('en-US')} ກີບ`
 }

@@ -68,11 +68,27 @@ export default function HistoryPage() {
   const { data: myOffsiteRequests = [] } = useQuery<OffsiteRequestDoc[]>({
     queryKey: ['workOutside', 'participant', userUid],
     queryFn: async () => {
-      const snap = await getDocs(
-        query(collection(db, 'workOutside'), where('participantIds', 'array-contains', userUid))
-      )
-      return snap.docs
+      // participantIds has two formats in Firestore:
+      //   old: string[]  → array-contains with uid string works
+      //   new: { uid }[] → array-contains with a string cannot partial-match objects
+      // So we run two queries and merge: one for string format, one by createdByUid
+      const [byParticipant, byCreator] = await Promise.all([
+        getDocs(query(collection(db, 'workOutside'), where('participantIds', 'array-contains', userUid))),
+        getDocs(query(collection(db, 'workOutside'), where('createdByUid', '==', userUid))),
+      ])
+      const seen = new Set<string>()
+      return [...byParticipant.docs, ...byCreator.docs]
+        .filter(d => {
+          if (seen.has(d.id)) return false
+          seen.add(d.id)
+          return true
+        })
         .map(d => ({ id: d.id, ...d.data() } as OffsiteRequestDoc))
+        // also keep docs where user appears as a teammate in new object-format participantIds
+        .filter(r => {
+          const ids = r.participantIds ?? []
+          return ids.some((p: unknown) => typeof p === 'string' ? p === userUid : (p as { uid: string }).uid === userUid)
+        })
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     },
     enabled: !!userUid,
@@ -270,6 +286,7 @@ export default function HistoryPage() {
   }
 
   const currentYear = new Date().getFullYear().toString()
+  console.log('[offsite debug]', { userUid, count: myOffsiteRequests.length, requests: myOffsiteRequests.map(r => ({ id: r.id, status: r.status, startDate: r.startDate, durationDays: r.durationDays, participantIds: r.participantIds })) })
 
   return (
     <div className="space-y-6">
@@ -331,8 +348,8 @@ export default function HistoryPage() {
               <div>
                 <p className="text-xs text-muted-foreground">ຈຳນວນມື້ອອກວຽກນອກ</p>
                 <p className="text-xl font-bold text-foreground">
-                  {myOffsiteRequests.filter(r => r.status === 'approved' && r.startDate.startsWith(currentYear)).reduce((sum, r) => sum + (r.durationDays ?? 0), 0)}
-                  
+                  {myOffsiteRequests.filter(r => r.status === 'approved' && r.startDate?.startsWith(currentYear)).reduce((sum, r) => sum + (r.durationDays ?? 0), 0)}
+
                 </p>
               </div>
             </div>
