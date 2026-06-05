@@ -9,7 +9,7 @@ import { fetchAttendanceByUser } from '@/services/attendance'
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import type { ActivityCode, OffsiteRequestDoc } from '@/types/workOutside'
-import { activityLabel, formatKip } from '@/lib/format'
+import { activityLabel, formatKip, formatKipText } from '@/lib/format'
 import { ActivityTypeBadge } from '@/components/offsite/ActivityTypeBadge'
 import HistorySkeleton from '@/components/skeletons/historySkeleton'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -131,8 +131,14 @@ export default function HistoryPage() {
 
   const monthlyFineSummaries = useMemo(() => {
     const now = new Date()
-    const todayStr = now.toISOString().slice(0, 10)
+    // Bug #2: use local date to match r.date format (YYYY-MM-DD), not UTC from toISOString()
+    const todayStr = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`
     const isAfter10 = now.getHours() > 10 || (now.getHours() === 10 && now.getMinutes() >= 1)
+
+    // Bug #1: unified helper — both status names mean the same thing
+    const isAbsent = (s: string) => s === 'not_check_in' || s === 'not_checked_in'
+    // Bug #4: Firestore may store "null" as a string instead of null
+    const isNullish = (v: unknown) => v == null || v === 'null' || v === ''
 
     const byMonth = new Map<string, typeof allAttendance>()
     for (const r of allAttendance) {
@@ -143,16 +149,20 @@ export default function HistoryPage() {
 
     return Array.from(byMonth.entries())
       .map(([month, records]) => {
-        const late = records.filter(r => r.status === 'late').length
+        // Bug #3: don't count today's late if result not yet confirmed
+        const late = records.filter(r => {
+          if (r.date === todayStr && !isAfter10) return false
+          return r.status === 'late'
+        }).length
+
         const notCheckInPts = records.reduce((sum, r) => {
           if (r.date === todayStr) {
             if (!isAfter10) return sum
-            return sum + (r.status === 'not_check_in' || r.status === 'not_checked_in' ? 1 : 0)
+            return sum + (isAbsent(r.status) ? 1 : 0)
           }
-          if (r.status === 'not_checked_in') return sum + 2
-          if (r.status === 'not_check_in' && r.checkOutTime == null) return sum + 2
-          if (r.status === 'not_check_in' && r.checkOutTime != null) return sum + 1
-          if (r.status !== 'not_check_in' && r.status !== 'leave' && r.checkOutTime == null) return sum + 1
+          if (isAbsent(r.status) && isNullish(r.checkOutTime)) return sum + 2
+          if (isAbsent(r.status) && !isNullish(r.checkOutTime)) return sum + 1
+          if (r.status !== 'leave' && isNullish(r.checkOutTime)) return sum + 1
           return sum
         }, 0)
         const fines = notCheckInPts * 10000 + (late > 4 ? (late - 4) * 10000 : 0)
@@ -216,6 +226,8 @@ export default function HistoryPage() {
       case 'rejected':
       case 'absent':
       case 'not_check_in':
+       
+      case 'not_checked_in':
         return 'destructive' as const
       case 'late':
         return 'secondary' as const
@@ -257,6 +269,8 @@ export default function HistoryPage() {
     return <HistorySkeleton />
   }
 
+  const currentYear = new Date().getFullYear().toString()
+
   return (
     <div className="space-y-6">
       <div>
@@ -273,7 +287,7 @@ export default function HistoryPage() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">ຈຳນວນມື້ມາການ</p>
-                <p className="text-xl font-bold text-foreground">{allWeekdays.filter(d => d.record?.checkInTime != null).length}</p>
+                <p className="text-xl font-bold text-foreground">{allAttendance.filter(r => r.date.startsWith(currentYear) && r.status !== 'not_check_in' && r.status !== 'not_checked_in' && r.status !== 'leave').length}</p>
               </div>
             </div>
           </CardContent>
@@ -301,7 +315,7 @@ export default function HistoryPage() {
               <div>
                 <p className="text-xs text-muted-foreground">ຈຳນວນມື້ທີລາພັກ</p>
                 <p className="text-xl font-bold text-foreground">
-                  {leaveRequests.filter(r => r.status === 'approved').reduce((sum, r) => sum + (r.duration ?? 0), 0)} 
+                  {leaveRequests.filter(r => r.status === 'approved' && (typeof r.startDate === 'string' ? r.startDate : '').startsWith(currentYear)).reduce((sum, r) => sum + (r.duration ?? 0), 0)}
                   
                 </p>
               </div>
@@ -317,7 +331,7 @@ export default function HistoryPage() {
               <div>
                 <p className="text-xs text-muted-foreground">ຈຳນວນມື້ອອກວຽກນອກ</p>
                 <p className="text-xl font-bold text-foreground">
-                  {leaveRequests.filter(r => r.status === 'approved').reduce((sum, r) => sum + (r.duration ?? 0), 0)} 
+                  {myOffsiteRequests.filter(r => r.status === 'approved' && r.startDate.startsWith(currentYear)).reduce((sum, r) => sum + (r.durationDays ?? 0), 0)}
                   
                 </p>
               </div>
@@ -336,7 +350,8 @@ export default function HistoryPage() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">ຄ່າປັບທັງໝົດ</p>
-                <p className="text-xl font-bold text-foreground">{formatKip(computedTotalFines)}</p>
+                <p className="text-xl md:block hidden font-bold text-foreground">{formatKip(monthlyFineSummaries.filter(m => m.month.startsWith(currentYear)).reduce((sum, m) => sum + m.fines, 0))}</p>
+                <p className="text-xl block md:hidden font-bold text-foreground">{formatKipText(monthlyFineSummaries.filter(m => m.month.startsWith(currentYear)).reduce((sum, m) => sum + m.fines, 0))}</p>
               </div>
             </div>
           </CardContent>
@@ -635,7 +650,7 @@ export default function HistoryPage() {
                                     ? <span className="text-destructive ml-1">(ເກີນ {late - 4} ຄັ້ງ)</span>
                                     : <span className="ml-1">(ຟຣີ {late}/4)</span>}
                                 </p>
-                                <p>ຂາດ/ລືມ: {notCheckInPts} ຈຸດ</p>
+                                <p>ຂາດ/ລືມ: {notCheckInPts} ຄັ້ງ</p>
                               </div>
                             </div>
                             <p className={`text-base font-bold shrink-0 ${fines > 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
