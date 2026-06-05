@@ -9,9 +9,12 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import HomeSkeleton from '@/components/skeletons/homeSkeleton'
+import { collection, getDocs, query, where } from 'firebase/firestore'
+import { db } from '@/lib/firebase'
 import { fetchPoliciesForGender } from '@/services/policies'
 import type { LeaveData } from '@/types/employee'
 import type { LeaveRequest } from '@/lib/types'
+import type { OffsiteRequestDoc } from '@/types/workOutside'
 import { useUserLeaves, useTodayLeavesByWorkLocation } from '@/lib/use-leave-queries'
 import {
   Calendar,
@@ -104,6 +107,9 @@ export default function DashboardPage() {
   const { user, isLoading } = useAuth()
   const { leaveBalance, todayAttendance, attendanceHistory } = useHRM()
   const router = useRouter()
+  const userUid = user?.uid ?? ''
+  const now = new Date()
+  const currentMonthKey = `${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getFullYear()}`
 
   const { data: policies = [] } = useQuery({
     queryKey: ['policies', 'gender', user?.gender ?? null],
@@ -134,6 +140,35 @@ export default function DashboardPage() {
     return map
   }, [userLeaves])
 
+  const { data: offsiteThisMonth = [] } = useQuery<OffsiteRequestDoc[]>({
+    queryKey: ['workOutside', 'dashboard', userUid, currentMonthKey],
+    queryFn: async () => {
+      if (!userUid) return []
+      const col = collection(db, 'workOutside')
+      const [snap1, snap2, snap3] = await Promise.all([
+        getDocs(query(col, where('participantUids', 'array-contains', userUid), where('monthKey', '==', currentMonthKey))),
+        getDocs(query(col, where('participantIds', 'array-contains', userUid), where('monthKey', '==', currentMonthKey))),
+        getDocs(query(col, where('createdByUid', '==', userUid), where('monthKey', '==', currentMonthKey))),
+      ])
+      const seen = new Set<string>()
+      const docs: OffsiteRequestDoc[] = []
+      for (const snap of [snap1, snap2, snap3]) {
+        for (const d of snap.docs) {
+          if (!seen.has(d.id)) {
+            seen.add(d.id)
+            docs.push({ id: d.id, ...d.data() } as OffsiteRequestDoc)
+          }
+        }
+      }
+      return docs
+    },
+    enabled: !!userUid,
+  })
+
+  const offsiteDaysThisMonth = offsiteThisMonth
+    .filter(r => r.status === 'approved')
+    .reduce((sum, r) => sum + (r.durationDays ?? 0), 0)
+
   const { lateThisMonth, notCheckInThisMonth, computedTotalFines } = useMemo(() => {
     const now = new Date()
     const y = now.getFullYear()
@@ -159,7 +194,6 @@ export default function DashboardPage() {
       return sum
     }, 0)
     const fines = notCheckIn * 10000 + (late > 4 ? (late - 4) * 10000 : 0)
-    console.log('[fines]', { late, notCheckIn, fines })
     return {
       lateThisMonth: late,
       notCheckInThisMonth: notCheckIn,
@@ -287,7 +321,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Sick Leave */}
+        {/* work off site */}
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
@@ -295,8 +329,8 @@ export default function DashboardPage() {
                 <HeartPulse className="w-5 h-5 text-chart-1" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Sick Leave</p>
-                <p className="text-xl font-bold text-foreground">{sickRemaining}/{effectiveLeaveBalance.sick}</p>
+                <p className="text-xs text-muted-foreground">ອອກວຽກນອກ</p>
+                <p className="text-xl font-bold text-foreground">{offsiteDaysThisMonth} ມື້</p>
               </div>
             </div>
           </CardContent>

@@ -381,19 +381,19 @@ export default function HistoryPage() {
         <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="attendance" className="text-xs sm:text-sm">
             <Clock className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">Attendance</span>
+            <span className="hidden sm:inline">check in/out</span>
           </TabsTrigger>
           <TabsTrigger value="leave" className="text-xs sm:text-sm">
             <Palmtree className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">Leave</span>
+            <span className="hidden sm:inline">ລາພັກ</span>
           </TabsTrigger>
           <TabsTrigger value="offsite" className="text-xs sm:text-sm">
             <MapPin className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">Off-site</span>
+            <span className="hidden sm:inline">ອອກວຽກນອກ</span>
           </TabsTrigger>
           <TabsTrigger value="fines" className="text-xs sm:text-sm">
             <DollarSign className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">Fines</span>
+            <span className="hidden sm:inline">ຄ່າປັບ</span>
           </TabsTrigger>
         </TabsList>
             {/* Checkin */}

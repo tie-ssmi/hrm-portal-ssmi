@@ -11,7 +11,8 @@ import {
   updateDoc,
 } from 'firebase/firestore'
 import { useQuery } from '@tanstack/react-query'
-import { format, differenceInCalendarDays, parseISO } from 'date-fns'
+import { format, isWeekend, parseISO } from 'date-fns'
+import { fetchOfficialHolidays } from '@/services/officialHolidays'
 import {
   Handshake,
   Users,
@@ -353,11 +354,33 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
 
   const activityMeta = useMemo(() => ACTIVITIES.find((a) => a.code === activityCode), [activityCode])
 
+  const { data: officialHolidays = [] } = useQuery({
+    queryKey: ['officialHolidays'],
+    queryFn: fetchOfficialHolidays,
+    staleTime: 24 * 60 * 60 * 1000,
+  })
+
+  const holidaySet = useMemo(
+    () => new Set(officialHolidays.map((h) => h.date)),
+    [officialHolidays],
+  )
+
   const durationDays = useMemo(() => {
     if (!startDate || !endDate) return 0
-    const d = differenceInCalendarDays(endDate, startDate) + 1
-    return d > 0 ? d : 0
-  }, [startDate, endDate])
+    const start = new Date(startDate)
+    const end = new Date(endDate)
+    start.setHours(0, 0, 0, 0)
+    end.setHours(0, 0, 0, 0)
+    if (start > end) return 0
+    let count = 0
+    const cursor = new Date(start)
+    while (cursor <= end) {
+      const dateKey = format(cursor, 'yyyy-MM-dd')
+      if (!isWeekend(cursor) && !holidaySet.has(dateKey)) count++
+      cursor.setDate(cursor.getDate() + 1)
+    }
+    return count
+  }, [startDate, endDate, holidaySet])
 
   const selectedProvince = useMemo(
     () => LAO_PROVINCES.find((p) => p.id === provinceId),
