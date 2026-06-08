@@ -37,6 +37,7 @@ export interface WorkOutsideRecord {
     jobTitle: string
     department: Department
     workLocation: WorkLocation
+    photoUrl?: string
   }
   activityType: { code: ActivityCode; name: string }
   subject: string
@@ -51,15 +52,18 @@ export interface WorkOutsideRecord {
   estimatedCost: number
   teammateTitle: number
   teammate: TeammateEntry[]
-  participantIds: string[]
+  participantIds: (string | {
+    uid: string
+    fullNameEn: string
+    fullNameLo: string
+    department?: { uuid: string; title: string; department: string }
+    image?: string | null
+  })[]
+  participantUids?: string[]
   participantCount: number
   status: RequestStatus
-  requiredApprovers: ['departmentHead', 'hr', 'manager']
-  approvals: [
-    { role: 'departmentHead'; decision: 'pending' },
-    { role: 'hr'; decision: 'pending' },
-    { role: 'manager'; decision: 'pending' },
-  ]
+  requiredApprovers: string[]
+  approvals: { role: string; decision: string; reviewedAt?: string; reviewedBy?: string }[]
   rejectReason: null | string
   createdAt: string
   createdBy: string
@@ -87,6 +91,8 @@ export interface EmployeeDoc {
   email: string
   jobTitle: string
   department: Department
+  workLocation?: WorkLocation | string
+  workLocationUid?: string
   status?: string
   profileImage?: string
   photo3x4Url?: string

@@ -134,8 +134,8 @@ export default function LeaveDetailClient({ leaveId }: { leaveId?: string }) {
   const [rejectReason, setRejectReason] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const pendingMai = leave?.approvals?.find((a) => a.decision === 'pending' && a.role === 'departmentHead')
-  const pendingIndex = leave?.approvals?.findIndex((a) => a.decision === 'pending') ?? -1
+  const pendingMai = leave?.approvals?.find((a) => a?.decision === 'pending' && a?.role === 'departmentHead')
+  const pendingIndex = leave?.approvals?.findIndex((a) => a?.decision === 'pending') ?? -1
   const canAct = leave?.status === 'pending' && pendingMai && pendingMai.role === 'departmentHead' // Only department head can approve/reject for now, and only when it's pending
 
   const reviewedBy = [user?.firstNameLo || user?.firstName, user?.lastNameLo || user?.lastName]
@@ -193,6 +193,8 @@ export default function LeaveDetailClient({ leaveId }: { leaveId?: string }) {
       </div>
     )
   }
+
+  const validApprovals = (leave.approvals ?? []).filter((a): a is LeaveApprovalStep => !!a)
 
   const overallStatus = leave.status
   const startLabel = periodLabel[leave.startPeriod ?? ''] ?? ''
@@ -281,15 +283,15 @@ export default function LeaveDetailClient({ leaveId }: { leaveId?: string }) {
         )}
 
         {/* Approval Timeline */}
-        {leave.approvals && leave.approvals.length > 0 && (
+        {validApprovals.length > 0 && (
           <Card>
             <CardHeader className="pb-3 pt-4 px-4">
               <CardTitle className="text-sm font-semibold">ຂັ້ນຕອນການອະນຸມັດ</CardTitle>
             </CardHeader>
             <Separator />
             <CardContent className="pt-4 px-4 pb-2">
-              {leave.approvals.map((step, i) => (
-                <ApprovalStepRow key={step.role} step={step} index={i} total={leave.approvals!.length} />
+              {validApprovals.map((step, i) => (
+                <ApprovalStepRow key={step.role} step={step} index={i} total={validApprovals.length} />
               ))}
             </CardContent>
           </Card>

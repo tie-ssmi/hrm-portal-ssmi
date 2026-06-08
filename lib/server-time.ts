@@ -14,7 +14,7 @@ type ServerTimeResult = {
 function computeStatus(hour: number, minute: number): CheckInStatus {
   const nowMin = hour * 60 + minute
   if (nowMin <= 8 * 60 + 15) return 'present'
-  if (nowMin <= 10 * 60) return 'late'
+  if (nowMin < 10 * 60) return 'late'    // < not <=: exactly 10:00 is not_check_in
   return 'not_check_in'
 }
 

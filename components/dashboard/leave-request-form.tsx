@@ -22,12 +22,14 @@ import { format, isWeekend } from 'date-fns'
 import { cn } from '@/lib/utils'
 import { getLeaveApproverRuleText } from '@/services/leave-approval'
 import { fetchLeavesByUserUuidFromToday } from '@/services/leaves'
+import { fetchOfficialHolidays } from '@/services/officialHolidays'
 import { fetchPoliciesForGender } from '@/services/policies'
 import { getEmployees } from '@/services/employees'
 import { useQuery } from '@tanstack/react-query'
 import { Combobox } from '@/components/ui/combobox'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { storage } from '@/lib/firebase'
+import { useRouter } from 'next/navigation'
 
 type Period = 'morning' | 'afternoon'
 type LeaveTypeOption = {
@@ -42,7 +44,7 @@ type LeaveTypeOption = {
 
 type DocUploadChoice = 'now' | 'later' | 'skip' | null
 
-function calcDuration(startDate?: Date, startPeriod: Period = 'morning', endDate?: Date, endPeriod: Period = 'afternoon'): number | null {
+function calcDuration(startDate?: Date, startPeriod: Period = 'morning', endDate?: Date, endPeriod: Period = 'afternoon', holidays: Set<string> = new Set()): number | null {
   if (!startDate || !endDate) return null
   const start = new Date(startDate)
   const end = new Date(endDate)
@@ -52,7 +54,8 @@ function calcDuration(startDate?: Date, startPeriod: Period = 'morning', endDate
   let halfDays = 0
   const cursor = new Date(start)
   while (cursor <= end) {
-    if (!isWeekend(cursor)) {
+    const dateKey = format(cursor, 'yyyy-MM-dd')
+    if (!isWeekend(cursor) && !holidays.has(dateKey)) {
       const isStartDay = cursor.getTime() === start.getTime()
       const isEndDay = cursor.getTime() === end.getTime()
       if (isStartDay && isEndDay) {
@@ -123,6 +126,7 @@ function SectionHeader({ number, icon: Icon, title }: { number: number; icon: Re
 }
 
 export default function LeaveRequestForm() {
+  const router = useRouter()
   const { user } = useAuth()
   const { submitLeaveRequest, leaveBalance } = useHRM()
   const loggedInUserUuid = user?.uid || user?.id || ''
@@ -139,14 +143,27 @@ export default function LeaveRequestForm() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [docUploadChoice, setDocUploadChoice] = useState<DocUploadChoice>(null)
   const [docFile, setDocFile] = useState<File | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const annualRemaining = leaveBalance.annual - leaveBalance.annualUsed
   const sickRemaining = leaveBalance.sick - leaveBalance.sickUsed
   const personalRemaining = leaveBalance.personal - leaveBalance.personalUsed
 
+  const { data: officialHolidays = [] } = useQuery({
+    queryKey: ['officialHolidays'],
+    queryFn: fetchOfficialHolidays,
+    enabled: !!loggedInUserUuid,
+    staleTime: 24 * 60 * 60 * 1000,
+  })
+
+  const holidaySet = useMemo(
+    () => new Set(officialHolidays.map((h) => h.date)),
+    [officialHolidays]
+  )
+
   const duration = useMemo(
-    () => calcDuration(leaveStartDate, startPeriod, leaveEndDate, endPeriod),
-    [leaveStartDate, startPeriod, leaveEndDate, endPeriod]
+    () => calcDuration(leaveStartDate, startPeriod, leaveEndDate, endPeriod, holidaySet),
+    [leaveStartDate, startPeriod, leaveEndDate, endPeriod, holidaySet]
   )
 
   const approverRuleText = useMemo(() => getLeaveApproverRuleText(duration), [duration])
@@ -277,6 +294,7 @@ export default function LeaveRequestForm() {
 
       await submitLeaveRequest({
         leaveUserUuid: loggedInUserUuid || undefined,
+        leaveImage: user?.profileImage || user?.photo3x4Url || null,
         leaveUserName: createdBy,
         species: 'owner',
         createdByUid: loggedInUserUuid || undefined,
@@ -359,7 +377,8 @@ export default function LeaveRequestForm() {
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0">
-                      <Calendar mode="single" selected={leaveStartDate} onSelect={handleStartDateSelect} disabled={isWeekend} initialFocus />
+                      <Calendar mode="single" selected={leaveStartDate} onSelect={handleStartDateSelect}
+                        disabled={(d) => isWeekend(d) || holidaySet.has(format(d, 'yyyy-MM-dd'))} />
                     </PopoverContent>
                   </Popover>
                   <div className="flex gap-1 mt-1.5">
@@ -384,7 +403,7 @@ export default function LeaveRequestForm() {
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0">
                       <Calendar mode="single" selected={leaveEndDate} onSelect={setLeaveEndDate}
-                        disabled={(d) => isWeekend(d) || (!!leaveStartDate && d < leaveStartDate)} initialFocus />
+                        disabled={(d) => isWeekend(d) || holidaySet.has(format(d, 'yyyy-MM-dd')) || (!!leaveStartDate && d < leaveStartDate)} />
                     </PopoverContent>
                   </Popover>
                   <div className="flex gap-1 mt-1.5">
@@ -531,9 +550,13 @@ export default function LeaveRequestForm() {
                 {/* File input — shown when 'now' selected */}
                 {docUploadChoice === 'now' && (
                   <div className="space-y-2">
-                    <label className="block">
+                    <label
+                      htmlFor="doc-file-input"
+                      className="block"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
                       <div className={cn(
-                        'flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-6 cursor-pointer transition-colors',
+                        'flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-6 cursor-pointer transition-colors active:bg-primary/10',
                         docFile ? 'border-primary bg-primary/5' : 'border-input hover:bg-muted'
                       )}>
                         <Upload className="w-6 h-6 text-muted-foreground" />
@@ -549,10 +572,13 @@ export default function LeaveRequestForm() {
                           </div>
                         )}
                         <input
+                          ref={fileInputRef}
+                          id="doc-file-input"
                           type="file"
                           accept=".pdf,.jpg,.jpeg,.png"
                           className="hidden"
                           onChange={(e) => setDocFile(e.target.files?.[0] ?? null)}
+                          onClick={(e) => e.stopPropagation()}
                         />
                       </div>
                     </label>
@@ -582,6 +608,13 @@ export default function LeaveRequestForm() {
       <Card className="mt-4">
         <CardHeader className="pb-3">
           <CardTitle className="text-base">ຄໍາຮ້ອງຂໍລ່າສຸດ</CardTitle>
+          <Button
+            variant="link"
+            size="sm"
+            onClick={() => router.push('/dashboard/request/leave-doc')}
+          >
+            ເພີ່ມເອກະສານ
+          </Button>
         </CardHeader>
         <CardContent>
           {myCurrentLeaveRequests.length === 0 ? (

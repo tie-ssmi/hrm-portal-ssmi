@@ -35,8 +35,7 @@ type UpdateCheckInTimeParams = {
   jobTitle?: string
   employeeImage?: string
   note?: string | null
-  updateBy?: string
-  updateAt?: string
+  updatedBy?: string
   checkInImageURL?: string
   isOffsite?: boolean
   department?: {
@@ -78,7 +77,8 @@ type AttendanceDoc = {
   userUuid?: string
   uid?: string
   date?: string
-  checkInTime?: string
+  dateKey?: string
+  checkInTime?: string | null
   checkOutTime?: string | null
   status?: AttendanceRecord['status'] | 'not_checked_in'
   location?: AttendanceRecord['location']
@@ -86,6 +86,11 @@ type AttendanceDoc = {
   isOffsite?: boolean
   checkInImageURL?: string
   checkOutImageURL?: string
+  workLocation?: { name: string; uid?: string; code?: string }
+  fullNameLo?: string
+  fullNameEn?: string
+  employeeImage?: string
+  department?: { name: string; uid: string }
 }
 
 export function formatAttendanceDocumentDate(date: Date): string {
@@ -95,13 +100,24 @@ export function formatAttendanceDocumentDate(date: Date): string {
   return `${day}-${month}-${year}`
 }
 
-function parseAttendanceDocumentDate(value: string): Date | null {
-  if (!value) {
-    return null
+function parseAttendanceDocumentDate(value: string, dateKey?: string): Date | null {
+  // dateKey is YYYY-MM-DD — most reliable, use first
+  if (dateKey && /^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+    const d = new Date(`${dateKey}T00:00:00`)
+    return Number.isNaN(d.getTime()) ? null : d
   }
 
+  if (!value) return null
+
+  // DD-MM-YYYY (hyphen)
   if (/^\d{2}-\d{2}-\d{4}$/.test(value)) {
     const [day, month, year] = value.split('-').map(Number)
+    return new Date(year, month - 1, day)
+  }
+
+  // DD/MM/YYYY (slash)
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(value)) {
+    const [day, month, year] = value.split('/').map(Number)
     return new Date(year, month - 1, day)
   }
 
@@ -111,6 +127,15 @@ function parseAttendanceDocumentDate(value: string): Date | null {
 
 function isSameMonth(date: Date, target: Date): boolean {
   return date.getFullYear() === target.getFullYear() && date.getMonth() === target.getMonth()
+}
+
+function normalizeAttendanceStatus(status: AttendanceDoc['status']): AttendanceRecord['status'] {
+  if (status === 'late') return 'late'
+  if (status === 'absent') return 'absent'
+  if (status === 'leave') return 'leave'
+  if (status === 'offsite') return 'offsite'
+  if (status === 'not_check_in' || status === 'not_checked_in') return 'not_check_in'
+  return 'present'
 }
 
 function formatLocalIsoDate(date: Date): string {
@@ -127,14 +152,12 @@ function parseIsoDateAndTime(dateTimeString: string): ServerDateTime {
     throw new Error('Invalid date received from server time source.')
   }
 
-  const isoDate = `${parsedDate.getUTCFullYear()}-${(parsedDate.getUTCMonth() + 1)
-    .toString()
-    .padStart(2, '0')}-${parsedDate.getUTCDate().toString().padStart(2, '0')}`
-
-  const time = `${parsedDate.getUTCHours().toString().padStart(2, '0')}:${parsedDate
-    .getUTCMinutes()
-    .toString()
-    .padStart(2, '0')}`
+  // worldtimeapi already returns the datetime in the requested timezone (Asia/Vientiane).
+  // Parsing with new Date() converts to UTC internally, so getUTC*() would return UTC values
+  // — off by 7 hours. Extract date and time directly from the local datetime string instead.
+  const tIndex = dateTimeString.indexOf('T')
+  const isoDate = tIndex > 0 ? dateTimeString.substring(0, tIndex) : dateTimeString.substring(0, 10)
+  const time = tIndex > 0 ? dateTimeString.substring(tIndex + 1, tIndex + 6) : '00:00'
 
   return {
     date: parsedDate,
@@ -161,41 +184,47 @@ export async function getServerDateTimeInVientiane(): Promise<ServerDateTime> {
   return parseIsoDateAndTime(payload.datetime)
 }
 
+// Fetch all attendance docs for a user, merging by userUuid AND uid
+// System-generated not_checked_in records may only have uid (no userUuid)
+async function fetchAttendanceDocs(userUuid: string) {
+  const [byUserUuid, byUid] = await Promise.all([
+    getDocs(query(collection(db, 'attendance'), where('userUuid', '==', userUuid))),
+    getDocs(query(collection(db, 'attendance'), where('uid', '==', userUuid))),
+  ])
+  const seen = new Set<string>()
+  const merged = [...byUserUuid.docs, ...byUid.docs].filter(d => {
+    if (seen.has(d.id)) return false
+    seen.add(d.id)
+    return true
+  })
+  return merged
+}
+
 export async function fetchAttendanceByUserThisMonth(userUuid: string): Promise<AttendanceRecord[]> {
   if (!userUuid) {
     return []
   }
 
-  const attendanceQuery = query(
-    collection(db, 'attendance'),
-    where('userUuid', '==', userUuid),
-  )
-
-  const snapshot = await getDocs(attendanceQuery)
+  const docs = await fetchAttendanceDocs(userUuid)
   const now = new Date()
 
   const rows: AttendanceRecord[] = []
 
-  for (const docSnapshot of snapshot.docs) {
-      const data = docSnapshot.data() as AttendanceDoc
-      const parsedDate = parseAttendanceDocumentDate(data.date || '')
+  for (const docSnapshot of docs) {
+    const data = docSnapshot.data() as AttendanceDoc
+    const parsedDate = parseAttendanceDocumentDate(data.date || '', data.dateKey)
 
-      if (!parsedDate || !isSameMonth(parsedDate, now)) {
-        continue
-      }
-
-      if (data.status === 'not_checked_in') {
-        continue
-      }
+    if (!parsedDate || !isSameMonth(parsedDate, now)) {
+      continue
+    }
 
       rows.push({
         id: docSnapshot.id,
         date: formatLocalIsoDate(parsedDate),
-        ...(data.checkInTime ? { checkIn: data.checkInTime } : {}),
-        ...(data.checkOutTime ? { checkOut: data.checkOutTime } : {}),
-        status: (data.status === 'late' || data.status === 'absent' || data.status === 'leave' || data.status === 'offsite')
-          ? data.status
-          : 'present',
+        ...(data.checkInTime ? { checkIn: data.checkInTime, checkInTime: data.checkInTime } : {}),
+        checkOut: data.checkOutTime ?? undefined,
+        checkOutTime: data.checkOutTime ?? null,
+        status: normalizeAttendanceStatus(data.status),
         location: data.location,
         workHours: data.workHours,
         ...(data.isOffsite ? { isOffsite: true } : {}),
@@ -224,6 +253,7 @@ export async function updateAttendanceCheckInTime({
   workLocation,
   checkInImageURL,
   isOffsite,
+  updatedBy,
 }: UpdateCheckInTimeParams): Promise<string> {
   const attendanceId = `${userUuid}_${date}`
   const attendanceRef = doc(db, 'attendance', attendanceId)
@@ -236,7 +266,8 @@ export async function updateAttendanceCheckInTime({
       userUuid,
       date,
       checkInTime,
-      checkOutTime: null,
+      // Do NOT write checkOutTime here — merge:true would overwrite existing checkout data
+      // if an admin corrects a check-in on a record that already has a checkout.
 
       ...(typeof fullNameEn === 'string' ? { fullNameEn } : {}),
       ...(typeof fullNameLo === 'string' ? { fullNameLo } : {}),
@@ -257,7 +288,7 @@ export async function updateAttendanceCheckInTime({
           }
         : {}),
       updatedAt: new Date().toISOString(),
-      updatedBy: userUuid,
+      updatedBy: updatedBy ?? userUuid,
     },
     { merge: true },
   )
@@ -316,20 +347,61 @@ export async function updateAttendanceCheckOutTime({
   return attendanceId
 }
 
-export async function fetchTodayCheckInAttendance(): Promise<AttendanceRecord[]> {
-  const today = new Date()
-  const todayDateStr = formatAttendanceDocumentDate(today)
+export async function fetchAttendanceByUser(userUuid: string): Promise<AttendanceRecord[]> {
+  if (!userUuid) return []
 
-  const attendanceQuery = query(
-    collection(db, 'attendance'),
-    where('date', '==', todayDateStr),
-  )
-
-  const snapshot = await getDocs(attendanceQuery)
+  const docs = await fetchAttendanceDocs(userUuid)
   const rows: AttendanceRecord[] = []
 
-  for (const docSnapshot of snapshot.docs) {
-    const data = docSnapshot.data() as AttendanceDoc & Record<string, any>
+  for (const docSnapshot of docs) {
+    const data = docSnapshot.data() as AttendanceDoc
+    const parsedDate = parseAttendanceDocumentDate(data.date || '', data.dateKey)
+    if (!parsedDate) continue
+
+    rows.push({
+      id: docSnapshot.id,
+      date: formatLocalIsoDate(parsedDate),
+      ...(data.checkInTime ? { checkIn: data.checkInTime, checkInTime: data.checkInTime } : {}),
+      checkOut: data.checkOutTime ?? undefined,
+      checkOutTime: data.checkOutTime ?? null,
+      status: normalizeAttendanceStatus(data.status),
+      location: data.location,
+      workHours: data.workHours,
+      ...(data.isOffsite ? { isOffsite: true } : {}),
+      ...(data.checkInImageURL ? { checkInImageURL: data.checkInImageURL } : {}),
+      ...(data.checkOutImageURL ? { checkOutImageURL: data.checkOutImageURL } : {}),
+    })
+  }
+
+  return rows.sort((a, b) => b.date.localeCompare(a.date))
+}
+
+export async function fetchTodayCheckInAttendance(isoDate?: string): Promise<AttendanceRecord[]> {
+  const target = isoDate ? new Date(`${isoDate}T00:00:00`) : new Date()
+  const todayDateStr = formatAttendanceDocumentDate(target)
+  const todayIsoStr = isoDate ?? target.toISOString().split('T')[0]
+
+  // Query by DD-MM-YYYY date field; also OR by dateKey (YYYY-MM-DD) to catch all formats
+  const col = collection(db, 'attendance')
+  const [snapByDate, snapByDateKey] = await Promise.all([
+    getDocs(query(col, where('date', '==', todayDateStr))),
+    getDocs(query(col, where('dateKey', '==', todayIsoStr))),
+  ])
+
+  const seen = new Set<string>()
+  const allDocs: { id: string; data: AttendanceDoc & Record<string, any> }[] = []
+  for (const snap of [snapByDate, snapByDateKey]) {
+    for (const d of snap.docs) {
+      if (!seen.has(d.id)) {
+        seen.add(d.id)
+        allDocs.push({ id: d.id, data: d.data() as AttendanceDoc & Record<string, any> })
+      }
+    }
+  }
+
+  const rows: AttendanceRecord[] = []
+
+  for (const { id: docId, data } of allDocs) {
 
     // Filter only records with checkInTime present
     if (!data.checkInTime) {
@@ -337,16 +409,14 @@ export async function fetchTodayCheckInAttendance(): Promise<AttendanceRecord[]>
     }
 
     rows.push({
-      id: docSnapshot.id,
+      id: docId,
       _id: data._id,
       date: todayDateStr,
       checkInTime: data.checkInTime,
       checkIn: data.checkInTime,
       checkOutTime: data.checkOutTime,
       checkOut: data.checkOutTime || undefined,
-      status: (data.status === 'late' || data.status === 'absent' || data.status === 'leave' || data.status === 'offsite')
-        ? data.status
-        : 'present',
+      status: normalizeAttendanceStatus(data.status),
       location: data.location,
       workHours: data.workHours,
       uid: data.uid,
@@ -374,4 +444,134 @@ export async function fetchTodayCheckInAttendance(): Promise<AttendanceRecord[]>
     const rightTime = right.checkInTime || ''
     return rightTime.localeCompare(leftTime)
   })
+}
+
+export type LateRankEntry = {
+  userUuid: string
+  fullNameLo?: string
+  fullNameEn?: string
+  employeeImage?: string
+  department?: { name: string; uid: string }
+  workLocation?: { name: string; uid?: string; code?: string }
+  lateCount: number
+  penaltyMinutes: number
+}
+
+// 8:15 is the on-time threshold — penalty = minutes after 8:15
+const LATE_THRESHOLD_MINUTES = 8 * 60 + 15
+
+function checkInPenaltyMinutes(checkInTime: string | null | undefined): number {
+  if (!checkInTime) return 0
+  const [hStr, mStr] = checkInTime.split(':')
+  const total = parseInt(hStr, 10) * 60 + parseInt(mStr, 10)
+  return Math.max(0, total - LATE_THRESHOLD_MINUTES)
+}
+
+function isCurrentMonth(data: AttendanceDoc & { _id?: string }): boolean {
+  const now = new Date()
+  const monthPrefix = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`
+
+  // YYYY-MM-DD (dateKey field — most reliable)
+  if (data.dateKey && /^\d{4}-\d{2}/.test(data.dateKey)) {
+    return data.dateKey.startsWith(monthPrefix)
+  }
+
+  if (data.date) {
+    // YYYY-MM-DD (ISO format)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(data.date)) {
+      return data.date.startsWith(monthPrefix)
+    }
+    // DD-MM-YYYY (hyphen)
+    if (/^\d{2}-\d{2}-\d{4}$/.test(data.date)) {
+      const [, mm, yyyy] = data.date.split('-')
+      return `${yyyy}-${mm}` === monthPrefix
+    }
+    // DD/MM/YYYY (slash)
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(data.date)) {
+      const [, mm, yyyy] = data.date.split('/')
+      return `${yyyy}-${mm}` === monthPrefix
+    }
+  }
+
+  // Fallback: extract date from document _id (format: "userUuid_DD-MM-YYYY")
+  if (data._id) {
+    const idDatePart = data._id.split('_').pop() ?? ''
+    if (/^\d{2}-\d{2}-\d{4}$/.test(idDatePart)) {
+      const [, mm, yyyy] = idDatePart.split('-')
+      return `${yyyy}-${mm}` === monthPrefix
+    }
+  }
+
+  return false
+}
+
+function toIsoDateString(data: AttendanceDoc & { _id?: string }): string {
+  if (data.dateKey && /^\d{4}-\d{2}-\d{2}$/.test(data.dateKey)) return data.dateKey
+  if (data.date) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(data.date)) return data.date
+    if (/^\d{2}-\d{2}-\d{4}$/.test(data.date)) {
+      const [dd, mm, yyyy] = data.date.split('-')
+      return `${yyyy}-${mm}-${dd}`
+    }
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(data.date)) {
+      const [dd, mm, yyyy] = data.date.split('/')
+      return `${yyyy}-${mm}-${dd}`
+    }
+  }
+  if (data._id) {
+    const idDatePart = data._id.split('_').pop() ?? ''
+    if (/^\d{2}-\d{2}-\d{4}$/.test(idDatePart)) {
+      const [dd, mm, yyyy] = idDatePart.split('-')
+      return `${yyyy}-${mm}-${dd}`
+    }
+  }
+  return ''
+}
+
+export async function fetchLateRankingThisMonth(): Promise<LateRankEntry[]> {
+  const snap = await getDocs(
+    query(collection(db, 'attendance'), where('status', '==', 'late')),
+  )
+
+  const map = new Map<string, LateRankEntry>()
+  const latestDate = new Map<string, string>()
+
+  for (const d of snap.docs) {
+    const data = d.data() as AttendanceDoc
+
+    if (!isCurrentMonth(data)) continue
+
+    const userUuid = data.userUuid ?? data.uid
+    if (!userUuid) continue
+
+    const penalty = checkInPenaltyMinutes(data.checkInTime ?? null)
+    const recordDate = toIsoDateString(data)
+    const existing = map.get(userUuid)
+
+    if (existing) {
+      existing.lateCount++
+      existing.penaltyMinutes += penalty
+      // Update workLocation from the most recent record
+      if (recordDate > (latestDate.get(userUuid) ?? '')) {
+        latestDate.set(userUuid, recordDate)
+        existing.workLocation = data.workLocation
+      }
+    } else {
+      latestDate.set(userUuid, recordDate)
+      map.set(userUuid, {
+        userUuid,
+        fullNameLo: data.fullNameLo,
+        fullNameEn: data.fullNameEn,
+        employeeImage: data.employeeImage,
+        department: data.department,
+        workLocation: data.workLocation,
+        lateCount: 1,
+        penaltyMinutes: penalty,
+      })
+    }
+  }
+
+  return [...map.values()].sort((a, b) =>
+    b.lateCount !== a.lateCount ? b.lateCount - a.lateCount : b.penaltyMinutes - a.penaltyMinutes,
+  )
 }

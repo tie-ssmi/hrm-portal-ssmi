@@ -1,10 +1,18 @@
 import * as admin from 'firebase-admin'
 import { onCall } from 'firebase-functions/v2/https'
+import { onSchedule } from 'firebase-functions/v2/scheduler'
+import webpush from 'web-push'
 
-admin.initializeApp()
+if (admin.apps.length === 0) {
+  admin.initializeApp()
+}
+
+// VAPID keys are Firebase secrets — only available at runtime, not module load.
+// setVapidDetails() is called inside each function that needs it.
 
 const TIMEZONE = 'Asia/Vientiane'
 
+// Bug #1 fixed: use 'not_check_in' consistently (matches computeCheckInStatus return value)
 type CheckInStatus = 'present' | 'late' | 'not_check_in'
 
 type ServerTimeResult = {
@@ -39,9 +47,9 @@ function getVientianeParts(): Omit<ServerTimeResult, 'isLate' | 'timestamp'> {
   const minute = get('minute')
 
   return {
-    date: `${day}-${month}-${year}`,       // DD-MM-YYYY
-    isoDate: `${year}-${month}-${day}`,    // YYYY-MM-DD
-    checkTime: `${hour}:${minute}`,        // HH:mm
+    date: `${day}-${month}-${year}`,
+    isoDate: `${year}-${month}-${day}`,
+    checkTime: `${hour}:${minute}`,
     status: 'present',
   }
 }
@@ -53,30 +61,18 @@ function toMinuteOfDay(hour: number, minute: number): number {
 function computeCheckInStatus(nowMinutes: number, hasMorningLeaveEndToday: boolean): CheckInStatus {
   if (hasMorningLeaveEndToday) {
     const presentCutoff = 12 * 60 + 30 // 12:30
-    const lateCutoff = 14 * 60 // 14:00
+    const lateCutoff = 14 * 60          // 14:00
 
-    if (nowMinutes <= presentCutoff) {
-      return 'present'
-    }
-
-    if (nowMinutes <= lateCutoff) {
-      return 'late'
-    }
-
+    if (nowMinutes <= presentCutoff) return 'present'
+    if (nowMinutes <= lateCutoff) return 'late'
     return 'not_check_in'
   }
 
   const presentCutoff = 8 * 60 + 15 // 08:15
-  const lateCutoff = 10 * 60 // 10:00
+  const lateCutoff = 10 * 60         // 10:00
 
-  if (nowMinutes <= presentCutoff) {
-    return 'present'
-  }
-
-  if (nowMinutes <= lateCutoff) {
-    return 'late'
-  }
-
+  if (nowMinutes <= presentCutoff) return 'present'
+  if (nowMinutes <= lateCutoff) return 'late'
   return 'not_check_in'
 }
 
@@ -96,9 +92,7 @@ const callableCorsOrigins: Array<string | RegExp> = [
 ]
 
 async function hasMorningLeaveEndingToday(userUuid: string | undefined, isoDate: string): Promise<boolean> {
-  if (!userUuid) {
-    return false
-  }
+  if (!userUuid) return false
 
   const snapshot = await admin
     .firestore()
@@ -115,11 +109,15 @@ async function hasMorningLeaveEndingToday(userUuid: string | undefined, isoDate:
     return (
       status === 'approved' &&
       endDate === isoDate &&
+      // 'monning' kept for backward-compatibility with existing DB records
       (endPeriod === 'morning' || endPeriod === 'monning')
     )
   })
 }
 
+// =========================================================================
+// 🌐 1. GET SERVER TIME
+// =========================================================================
 export const getServerTime = onCall(
   { region: 'asia-southeast1', cors: callableCorsOrigins, invoker: 'public' },
   async (request): Promise<ServerTimeResult> => {
@@ -132,13 +130,93 @@ export const getServerTime = onCall(
     const status = computeCheckInStatus(toMinuteOfDay(hour, minute), morningLeaveEndToday)
     const isLate = status === 'late'
 
-    return {
-      date,
-      isoDate,
-      checkTime,
-      status,
-      isLate,
-      timestamp: Date.now(),
-    }
+    return { date, isoDate, checkTime, status, isLate, timestamp: Date.now() }
   }
+)
+
+// =========================================================================
+// 🔄 2. CORE LOGIC: CHECK + SEND PUSH NOTIFICATION
+// =========================================================================
+async function sendAttendanceReminder() {
+  webpush.setVapidDetails(
+    'mailto:admin@ssmi-hrm.com',
+    process.env.VAPID_PUBLIC_KEY!,
+    process.env.VAPID_PRIVATE_KEY!
+  )
+
+  const { isoDate } = getVientianeParts()
+  console.log(`[Cron Job]: checking not-checked-in for ${isoDate}`)
+
+  const db = admin.firestore()
+
+  // dailyAttendanceInit (admin project) pre-creates docs at midnight with:
+  //   status: 'not_checked_in'  and  dateKey: YYYY-MM-DD
+  // When an employee checks in the client sets status to 'present'/'late'.
+  // Querying by dateKey + status gives exactly who has not yet checked in.
+  const snapshot = await db
+    .collection('attendance')
+    .where('dateKey', '==', isoDate)
+    .where('status', '==', 'not_checked_in')
+    .get()
+
+  if (snapshot.empty) {
+    console.log('[Cron Job]: all employees checked in today.')
+    return
+  }
+
+  const payload = JSON.stringify({
+    title: '🚨 ເຕືອນ Check-in ເຂົ້າວຽກ!',
+    body: 'ຮອດເວລາແລ້ວ! ກະລຸນາກົດບັນທຶກເວລາເຂົ້າວຽກຂອງທ່ານຕອນນີ້.',
+    icon: '/apple-icon.png',
+    badge: '/SSMI.svg',
+    url: '/dashboard/attendance',
+  })
+
+  // attendance.uid is the Firebase Auth UID — employees collection is keyed by that UID
+  const userUids = [
+    ...new Set(
+      snapshot.docs
+        .map(d => d.data().uid as string)
+        .filter(Boolean)
+    ),
+  ]
+
+  // getAll() batch-fetches all employee docs in one round-trip
+  const employeeRefs = userUids.map(uid => db.collection('employees').doc(uid))
+  const employeeDocs = await db.getAll(...employeeRefs)
+
+  const results = await Promise.all(
+    employeeDocs.map(async (empDoc) => {
+      if (!empDoc.exists) return false
+      const subscription = empDoc.data()?.pushSubscription
+      if (!subscription) return false
+
+      return webpush
+        .sendNotification(subscription, payload)
+        .then(() => true)
+        .catch((err: unknown) => {
+          console.error(`Failed to notify employee ${empDoc.id}:`, err)
+          return false
+        })
+    })
+  )
+
+  const notified = results.filter(Boolean).length
+  console.log(`[Cron Job]: Notified ${notified} / ${snapshot.size} users`)
+}
+
+// =========================================================================
+// ⏰ 3. CRON JOB 08:00 (Mon–Fri)
+// =========================================================================
+export const checkAttendanceAt800 = onSchedule(
+  { schedule: '0 8 * * 1-5', timeZone: TIMEZONE, region: 'asia-southeast1' },
+  async () => { await sendAttendanceReminder() }
+)
+
+// =========================================================================
+// ⏰ 4. CRON JOB 08:14 (Mon–Fri)
+// =========================================================================
+export const checkAttendanceAt814 = onSchedule(
+  { schedule: '14 8 * * 1-5', timeZone: TIMEZONE, region: 'asia-southeast1' },
+  async () => { await sendAttendanceReminder() }
 )

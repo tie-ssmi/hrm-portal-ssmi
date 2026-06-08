@@ -5,14 +5,18 @@ import { useAuth } from '@/lib/auth-context'
 import { useHRM } from '@/lib/hrm-context'
 import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import HomeSkeleton from '@/components/skeletons/homeSkeleton'
+import { collection, getDocs, query, where } from 'firebase/firestore'
+import { db } from '@/lib/firebase'
 import { fetchPoliciesForGender } from '@/services/policies'
-import type { LeaveData } from '@/types/employee'
 import type { LeaveRequest } from '@/lib/types'
-import { useUserLeaves, useTodayLeavesByWorkLocation } from '@/lib/use-leave-queries'
+import type { OffsiteRequestDoc } from '@/types/workOutside'
+import { useUserLeaves } from '@/lib/use-leave-queries'
+import { useLateRankingThisMonth } from '@/lib/use-late-ranking-queries'
 import {
   Calendar,
   Clock,
@@ -21,7 +25,6 @@ import {
   HeartPulse,
   MapPinX,
   ChevronDown,
-  ChevronUp,
 } from 'lucide-react'
 import {
   Tabs,
@@ -29,7 +32,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs"
-import { CheckInToday, ToDay } from '@/components/leaveLists'
+import { CheckInToday, TodayLeaveSection, TodayOffsiteSection } from '@/components/leaveLists'
 import { Button } from '@/components/ui/button'
 import { useRouter } from 'next/navigation'
 import type { PolicyRecord } from '@/lib/types'
@@ -91,9 +94,8 @@ function PolicyList({
 
           <CollapsibleTrigger asChild>
             <Button variant="ghost" size="sm" className="w-full gap-1 text-xs text-muted-foreground">
-              {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-              
               {open ? 'ຫຍໍ້ລົງ' : `ເບິ່ງທັງໝົດ (${hidden.length} ລາຍການ)`}
+              <ChevronDown className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} />
             </Button>
           </CollapsibleTrigger>
         </>
@@ -104,8 +106,11 @@ function PolicyList({
 
 export default function DashboardPage() {
   const { user, isLoading } = useAuth()
-  const { leaveBalance, lateRecords, totalFines, todayAttendance } = useHRM()
+  const { leaveBalance, todayAttendance, attendanceHistory } = useHRM()
   const router = useRouter()
+  const userUid = user?.uid ?? ''
+  const now = new Date()
+  const currentMonthKey = `${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getFullYear()}`
 
   const { data: policies = [] } = useQuery({
     queryKey: ['policies', 'gender', user?.gender ?? null],
@@ -113,16 +118,11 @@ export default function DashboardPage() {
     enabled: !!user,
   })
 
-  const workLocationUuid =
-    typeof user?.workLocation === 'string'
-      ? user.workLocation
-      : user?.workLocation?.uuid
-
   // all leaves for policy usage calculation
   const { data: userLeaves = [] } = useUserLeaves(user?.uuid)
 
-  // active leaves today for the leave tab
-  const { data: todayLeaveRequests = [] } = useTodayLeavesByWorkLocation(workLocationUuid)
+  // late ranking this month (company-wide, sorted by late count)
+  const { data: lateRanking = [] } = useLateRankingThisMonth()
 
   // used days per policy (approved leaves only)
   const usedByPolicy = useMemo(() => {
@@ -135,6 +135,67 @@ export default function DashboardPage() {
     })
     return map
   }, [userLeaves])
+
+  const { data: offsiteThisMonth = [] } = useQuery<OffsiteRequestDoc[]>({
+    queryKey: ['workOutside', 'dashboard', userUid, currentMonthKey],
+    queryFn: async () => {
+      if (!userUid) return []
+      const col = collection(db, 'workOutside')
+      const [snap1, snap2, snap3] = await Promise.all([
+        getDocs(query(col, where('participantUids', 'array-contains', userUid), where('monthKey', '==', currentMonthKey))),
+        getDocs(query(col, where('participantIds', 'array-contains', userUid), where('monthKey', '==', currentMonthKey))),
+        getDocs(query(col, where('createdByUid', '==', userUid), where('monthKey', '==', currentMonthKey))),
+      ])
+      const seen = new Set<string>()
+      const docs: OffsiteRequestDoc[] = []
+      for (const snap of [snap1, snap2, snap3]) {
+        for (const d of snap.docs) {
+          if (!seen.has(d.id)) {
+            seen.add(d.id)
+            docs.push({ id: d.id, ...d.data() } as OffsiteRequestDoc)
+          }
+        }
+      }
+      return docs
+    },
+    enabled: !!userUid,
+  })
+
+  const offsiteDaysThisMonth = offsiteThisMonth
+    .filter(r => r.status === 'approved')
+    .reduce((sum, r) => sum + (r.durationDays ?? 0), 0)
+
+  const { lateThisMonth, notCheckInThisMonth, computedTotalFines } = useMemo(() => {
+    const now = new Date()
+    const y = now.getFullYear()
+    const m = now.getMonth()
+    const todayStr = `${y}-${(m + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`
+    const isAfter10 = now.getHours() * 60 + now.getMinutes() >= 10 * 60
+    const thisMonth = attendanceHistory.filter(r => {
+      const d = new Date(r.date)
+      return d.getFullYear() === y && d.getMonth() === m
+    })
+    const late = thisMonth.filter(r => r.status === 'late').length
+    const notCheckIn = thisMonth.reduce((sum, r) => {
+      if (r.date === todayStr) {
+        if (!isAfter10) return sum
+        return sum + (r.status === 'not_check_in' || r.status === 'not_checked_in' ? 1 : 0)
+      }
+      // absent OR came >10:01 and forgot checkout → 2 pts
+      if (r.status === 'not_checked_in') return sum + 2
+      if (r.status === 'not_check_in' && r.checkOutTime == null) return sum + 2
+      // came >10:01 but checked out → 1 pt
+      if (r.status === 'not_check_in' && r.checkOutTime != null) return sum + 1
+      if (r.status !== 'not_check_in' && r.status !== 'leave' && r.checkOutTime == null) return sum + 1
+      return sum
+    }, 0)
+    const fines = notCheckIn * 10000 + (late > 4 ? (late - 4) * 10000 : 0)
+    return {
+      lateThisMonth: late,
+      notCheckInThisMonth: notCheckIn,
+      computedTotalFines: fines,
+    }
+  }, [attendanceHistory])
 
   if (isLoading) {
     return <HomeSkeleton />
@@ -151,20 +212,7 @@ export default function DashboardPage() {
     personal: leaveBalance.personal,
   }
 
-  const sickRemaining = effectiveLeaveBalance.sick - leaveBalance.sickUsed
-
-  const leaveDataToday: LeaveData[] = todayLeaveRequests.map(r => ({
-    name: r.leaveUserName ?? '',
-    department: r.departmentNameLo ?? r.departmentNameEn ?? '',
-    successor: r.successorNameLo ?? r.successorNameEn ?? '',
-    startDate: r.startDate,
-    endDate: r.endDate,
-    reason: r.reason,
-    position: r.jobTitle ?? '',
-    note: r.doc ?? '',
-    type: { id: r.policyId ?? '', name: r.policyName ?? r.type },
-  }))
-
+  const sickRemaining = Math.max(0, effectiveLeaveBalance.sick - leaveBalance.sickUsed)
 
   return (
     <div className="space-y-6">
@@ -220,7 +268,7 @@ export default function DashboardPage() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">ມາຊ້າ</p>
-                <p className="text-xl font-bold text-foreground">{lateRecords.length}</p>
+                <p className="text-xl font-bold text-foreground">{lateThisMonth}</p>
               </div>
             </div>
           </CardContent>
@@ -235,7 +283,7 @@ export default function DashboardPage() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">ຄ່າປັນ</p>
-                <p className="text-xl font-bold text-foreground">${totalFines}</p>
+                <p className="text-xl font-bold text-foreground">{computedTotalFines.toLocaleString()} ₭</p>
               </div>
             </div>
           </CardContent>
@@ -250,13 +298,13 @@ export default function DashboardPage() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">ລືມກົດເຂົ້າວຽກ</p>
-                <p className="text-xl font-bold text-foreground">3</p>
+                <p className="text-xl font-bold text-foreground">{notCheckInThisMonth}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Sick Leave */}
+        {/* work off site */}
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
@@ -264,8 +312,8 @@ export default function DashboardPage() {
                 <HeartPulse className="w-5 h-5 text-chart-1" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Sick Leave</p>
-                <p className="text-xl font-bold text-foreground">{sickRemaining}/{effectiveLeaveBalance.sick}</p>
+                <p className="text-xs text-muted-foreground">ອອກວຽກນອກ</p>
+                <p className="text-xl font-bold text-foreground">{offsiteDaysThisMonth} ມື້</p>
               </div>
             </div>
           </CardContent>
@@ -323,43 +371,54 @@ export default function DashboardPage() {
           </Card>
         </TabsContent>
         <TabsContent value="leave">
-          <Card >
-
-            <div  >
-
-              <CardContent className="text-muted-foreground text-sm h-auto max-h-[500px] overflow-auto">
-                <p className="mb-2 font-semibold text-lg">ລາຍການລາພັກມື້ນີ້ </p>
-                <ToDay data={leaveDataToday} />
-              </CardContent>
-
-            </div>
+          <Card>
+            <CardContent className="text-muted-foreground text-sm h-auto max-h-[500px] overflow-auto">
+              <TodayLeaveSection />
+            </CardContent>
           </Card>
         </TabsContent>
         <TabsContent value="off_site">
           <Card>
-            <CardHeader>
-              <CardTitle>Reports</CardTitle>
-              <CardDescription>
-                Generate and download your detailed reports. Export data in
-                multiple formats for analysis.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="text-sm text-muted-foreground">
-              You have 5 reports ready and available to export.
+            <CardContent className="text-muted-foreground text-sm h-auto max-h-[500px] overflow-auto pt-6">
+              <TodayOffsiteSection />
             </CardContent>
           </Card>
         </TabsContent>
         <TabsContent value="topLeave">
           <Card>
-            <CardHeader>
-              <CardTitle>Settings</CardTitle>
-              <CardDescription>
-                Manage your account preferences and options. Customize your
-                experience to fit your needs.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="text-sm text-muted-foreground">
-              Configure notifications, security, and themes.
+            <CardContent className="text-muted-foreground text-sm h-auto max-h-[500px] overflow-auto pt-6">
+              <p className="mb-4 font-semibold text-lg text-foreground">ອັນດັບມາຊ້າເດືອນນີ້</p>
+              {lateRanking.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-8 gap-2">
+                  <AlertTriangle className="h-10 w-10 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">ບໍ່ມີຂໍ້ມູນ</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {lateRanking.map((entry, index) => (
+                    <div key={entry.userUuid} className="flex items-center gap-3 rounded-lg border bg-card px-4 py-3">
+                      <span className={`w-6 text-center text-sm font-bold shrink-0 ${index === 0 ? 'text-yellow-500' : index === 1 ? 'text-slate-400' : index === 2 ? 'text-amber-600' : 'text-muted-foreground'}`}>
+                        {index + 1}
+                      </span>
+                      <Avatar className="h-9 w-9 shrink-0">
+                        <AvatarImage src={entry.employeeImage} alt={entry.fullNameLo} className="object-cover" />
+                        <AvatarFallback className="bg-primary/10 text-primary text-xs font-bold">
+                          {entry.fullNameLo?.charAt(0) ?? '?'}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-foreground truncate">{entry.fullNameLo ?? entry.fullNameEn}</p>
+                        <p className="text-xs text-muted-foreground truncate">{entry.workLocation?.name}</p>
+                        <p className="text-xs text-muted-foreground truncate">{entry.department?.name}</p>
+                      </div>
+                      <div className="flex flex-col items-end shrink-0">
+                        <span className="text-xl font-bold text-destructive">{entry.lateCount}</span>
+                        <span className="text-[10px] text-muted-foreground">+{entry.penaltyMinutes} ນທ</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

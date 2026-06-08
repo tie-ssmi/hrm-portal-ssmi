@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, Suspense, useMemo, useState } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { useTodayCheckInAttendance } from '@/lib/use-attendance-queries'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -26,6 +26,7 @@ import { Search, Users, Clock, LogOut, MapPinOff } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
 import type { AttendanceRecord } from '@/lib/types'
 import { translateJobTitle } from '@/components/translater'
+import { useSearchParams } from 'next/navigation'
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -34,24 +35,26 @@ function getUserWorkLocationName(workLocation: unknown): string {
   if (typeof workLocation === 'string') return workLocation
   if (typeof workLocation === 'object') {
     const wl = workLocation as Record<string, unknown>
-    // 'name' is the attendance-record shape; 'nameLo' is the WorkLocationInfo shape
     const name = wl.name ?? wl.nameLo
     return typeof name === 'string' ? name : ''
   }
   return ''
 }
 
+// FIX Bug 1: add 'not_checked_in' case + default to prevent undefined label
 function getStatusLabel(record: AttendanceRecord): string {
   if (record.isOffsite) {
     return record.status === 'late' ? 'ອອກວຽກນອກ (ຊ້າ)' : 'ອອກວຽກນອກ'
   }
   switch (record.status) {
-    case 'present':      return 'ມາວຽກ'
-    case 'late':         return 'ມາວຽກ (ຊ້າ)'
-    case 'absent':       return 'ຂາດ'
-    case 'offsite':      return 'ອອກວຽກນອກ'
-    case 'leave':        return 'ລາພັກ'
-    case 'not_check_in': return 'ບໍ່ໄດ້ກົດເຂົ້າ'
+    case 'present':        return 'ມາວຽກ'
+    case 'late':           return 'ມາວຽກ (ຊ້າ)'
+    case 'absent':         return 'ຂາດ'
+    case 'offsite':        return 'ອອກວຽກນອກ'
+    case 'leave':          return 'ລາພັກ'
+    case 'not_check_in':   return 'ບໍ່ໄດ້ກົດເຂົ້າ'
+    case 'not_checked_in': return 'ບໍ່ໄດ້ກົດເຂົ້າ'
+    default:               return record.status
   }
 }
 
@@ -64,7 +67,6 @@ function getStatusVariant(record: AttendanceRecord): 'default' | 'secondary' | '
   }
 }
 
-// C Level is pinned to the top; everything else sorted alphabetically
 function sortDeptGroups(entries: [string, AttendanceRecord[]][]): [string, AttendanceRecord[]][] {
   return [...entries].sort(([a], [b]) => {
     if (a === 'C Level') return -1
@@ -75,13 +77,31 @@ function sortDeptGroups(entries: [string, AttendanceRecord[]][]): [string, Atten
 
 // ── page ───────────────────────────────────────────────────────────────────
 
+// useSearchParams() requires a Suspense boundary during static export prerendering —
+// see https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
 export default function CheckInPage() {
+  return (
+    <Suspense>
+      <CheckInPageContent />
+    </Suspense>
+  )
+}
+
+function CheckInPageContent() {
   const { user } = useAuth()
-  const { data: allRecords = [], isLoading } = useTodayCheckInAttendance()
+
+  // FIX Bug 4: read ?date= param (YYYY-MM-DD) passed by dashboard "ທັງໝົດ" button
+  const searchParams = useSearchParams()
+  const dateParam = searchParams.get('date') ?? undefined
+
+  const { data: allRecords = [], isLoading } = useTodayCheckInAttendance(dateParam)
 
   const userWorkLocation = getUserWorkLocationName(user?.workLocation)
 
-  const [workLocationFilter, setWorkLocationFilter] = useState<string>('__user__')
+  // FIX Bug 3: default to __all__ when user has no workLocation to avoid silent no-op filter
+  const [workLocationFilter, setWorkLocationFilter] = useState<string>(
+    userWorkLocation ? '__user__' : '__all__'
+  )
   const [search, setSearch] = useState('')
 
   const workLocations = useMemo(() => {
@@ -91,14 +111,14 @@ export default function CheckInPage() {
   }, [allRecords])
 
   const filtered = useMemo(() => {
-    // FIX Bug 1: resolve sentinels to a concrete location string ('' = no filter)
     const activeLocation =
       workLocationFilter === '__user__' ? userWorkLocation
       : workLocationFilter === '__all__' ? ''
       : workLocationFilter
 
     return allRecords
-      .filter(r => r.status !== 'not_check_in' && r.status !== 'leave')
+      // FIX: also exclude 'not_checked_in' (old system status variant)
+      .filter(r => r.status !== 'not_check_in' && r.status !== 'not_checked_in' && r.status !== 'leave')
       .filter(r => !activeLocation || r.workLocation?.name === activeLocation)
       .filter(r => {
         if (!search.trim()) return true
@@ -108,7 +128,6 @@ export default function CheckInPage() {
       })
   }, [allRecords, workLocationFilter, userWorkLocation, search])
 
-  // Group by department, C Level always first
   const grouped = useMemo(() => {
     const map = new Map<string, AttendanceRecord[]>()
     filtered.forEach(r => {
@@ -119,7 +138,6 @@ export default function CheckInPage() {
     return sortDeptGroups(Array.from(map.entries()))
   }, [filtered])
 
-  // FIX Issue 3: compute flat numbered rows before JSX — no IIFE needed
   const numberedRows = useMemo(() => {
     let i = 0
     return grouped.map(([dept, records]) => ({
@@ -130,18 +148,19 @@ export default function CheckInPage() {
 
   const stats = useMemo(() => ({
     total:      filtered.length,
-    // FIX Issue 5: isOffsite records have status 'present'|'late', not 'offsite'
     present:    filtered.filter(r => r.status === 'present').length,
     late:       filtered.filter(r => r.status === 'late').length,
     checkedOut: filtered.filter(r => !!r.checkOut).length,
   }), [filtered])
 
+  const pageTitle = dateParam ? `ການລົງເວລາ ${dateParam}` : 'ການລົງເວລາວັນນີ້'
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-foreground">ການລົງເວລາວັນນີ້</h1>
-        <p className="text-muted-foreground text-sm">ຂໍ້ມູນ check-in / check-out ວັນນີ້</p>
+        <h1 className="text-2xl font-bold text-foreground">{pageTitle}</h1>
+        <p className="text-muted-foreground text-sm">ຂໍ້ມູນ check-in / check-out</p>
       </div>
 
       {/* Stats */}
@@ -200,9 +219,10 @@ export default function CheckInPage() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="__user__">
-              {userWorkLocation || 'ສາຂາຂອງຂ້ອຍ'}
-            </SelectItem>
+            {/* FIX Bug 3: only show user's branch option when workLocation is known */}
+            {userWorkLocation && (
+              <SelectItem value="__user__">{userWorkLocation}</SelectItem>
+            )}
             <SelectItem value="__all__">ທຸກສາຂາ</SelectItem>
             {workLocations
               .filter(wl => wl !== userWorkLocation)
@@ -243,7 +263,7 @@ export default function CheckInPage() {
                       {records.map((record) => (
                         <div key={record.id} className="flex items-center gap-3 rounded-lg border bg-background p-3">
                           <Avatar className="h-9 w-9 shrink-0">
-                            <AvatarImage src={record.employeeImage}  className={`object-cover ${record.checkOut ? 'grayscale' : ' '}`}/>
+                            <AvatarImage src={record.employeeImage} className={`object-cover ${record.checkOut ? 'grayscale' : ''}`} />
                             <AvatarFallback className="text-xs bg-primary/10 text-primary">
                               {(record.fullNameLo || record.fullNameEn || '?')[0]}
                             </AvatarFallback>
@@ -275,7 +295,6 @@ export default function CheckInPage() {
               </div>
 
               {/* Desktop table — grouped */}
-              {/* FIX Bug 2: Fragment with key, FIX Issue 3: pre-computed numberedRows */}
               <div className="hidden md:block overflow-x-auto">
                 <Table>
                   <TableHeader className="bg-muted/40">
@@ -307,7 +326,7 @@ export default function CheckInPage() {
                             <TableCell className="px-4 py-3">
                               <div className="flex items-center gap-2 min-w-0">
                                 <Avatar className="h-8 w-8 shrink-0">
-                                  <AvatarImage src={record.employeeImage}  className={`object-cover ${record.checkOut ? 'grayscale' : ' '}`}/>
+                                  <AvatarImage src={record.employeeImage} className={`object-cover ${record.checkOut ? 'grayscale' : ''}`} />
                                   <AvatarFallback className="text-xs bg-primary/10 text-primary">
                                     {(record.fullNameLo || record.fullNameEn || '?')[0]}
                                   </AvatarFallback>
@@ -316,8 +335,9 @@ export default function CheckInPage() {
                                   <p className="text-sm font-medium truncate">
                                     {record.fullNameLo || record.fullNameEn || '-'}
                                   </p>
+                                  {/* FIX Bug 2: ?? '' consistent with mobile */}
                                   <p className="text-xs text-muted-foreground truncate">
-                                    {translateJobTitle(record.jobTitle) || '-'}
+                                    {translateJobTitle(record.jobTitle ?? '') || '-'}
                                   </p>
                                 </div>
                               </div>

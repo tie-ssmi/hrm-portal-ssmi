@@ -8,6 +8,7 @@ import { db } from '@/lib/firebase'
 import { fetchLeavesForApproval, updateLeaveApproval } from '@/services/leaves'
 import { toast } from 'sonner'
 import type { LeaveTableItem } from '@/components/leaveTable'
+import type { OffsiteTableItem } from '@/components/offSiteTable'
 import FormsSkeleton from '@/components/skeletons/formsSkeleton'
 import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -29,13 +30,14 @@ export default function ApprovePage() {
   const workLocationUuid = typeof user?.workLocation === 'object' ? (user.workLocation as { uuid?: string })?.uuid : undefined
   const canApproveDept  = user?.rolePermissions?.approveDepartment ?? false
   const canApproveBranch = user?.rolePermissions?.approveBranch ?? false
-  const canApproveAny = canApproveDept || canApproveBranch
+  const isUnauthorized = !isLoading && !canApproveDept && !canApproveBranch
 
+  // go to dashboard if canApproveDept and canApproveBranch are both false, to prevent unauthorized access to this page
+  // NOTE: must run as an effect — an early `return null` here would skip the hooks
+  // declared below and trigger "Rendered fewer hooks than expected" on the next render
   useEffect(() => {
-    if (!isLoading && !canApproveAny) {
-      router.push('/dashboard')
-    }
-  }, [isLoading, canApproveAny, router])
+    if (isUnauthorized) router.push('/dashboard')
+  }, [isUnauthorized, router])
 
   const queryKey = ['leaves', 'approval', departmentUuid ?? null, workLocationUuid ?? null, loggedInUserUuid]
 
@@ -101,17 +103,23 @@ export default function ApprovePage() {
   const offsiteTableData = useMemo(() =>
     offsiteRequests.map((r) => ({
       id: r.id,
-      name: r.requester.fullNameLo || r.requester.fullNameEn,
-      position: r.requester.jobTitle,
-      department: r.requester.department.title || r.requester.department.department,
-      reason: r.subject,
-      successor: r.teammate.length > 0
-        ? r.teammate.map((t) => t.fullNameLo || t.fullNameEn).join(', ')
-        : '-',
+      requestNo: r.requestNo,
+      requester: r.requester,
+      activityType: r.activityType,
+      subject: r.subject,
+      details: r.details,
+      customerName: r.customerName,
+      location: r.location,
       startDate: r.startDate,
       endDate: r.endDate,
+      durationDays: r.durationDays,
+      estimatedCost: r.estimatedCost,
       status: (r.status === 'cancelled' ? 'rejected' : r.status) as 'pending' | 'approved' | 'rejected',
       approvals: r.approvals as { role: string; decision: string }[],
+      teammate: r.teammate,
+      participantIds: r.participantIds,
+      createdAt: r.createdAt,
+      createdBy: r.createdBy,
     })),
     [offsiteRequests],
   )
@@ -140,7 +148,7 @@ export default function ApprovePage() {
   // ── Offsite approval state ───────────────────────────────────────────────
   const [openOffsiteDialog, setOpenOffsiteDialog] = useState(false)
   const [offsiteAction, setOffsiteAction] = useState<'approve' | 'reject' | null>(null)
-  const [pendingOffsiteItem, setPendingOffsiteItem] = useState<LeaveTableItem | null>(null)
+  const [pendingOffsiteItem, setPendingOffsiteItem] = useState<OffsiteTableItem | null>(null)
   const [confirmOffsite, setConfirmOffsite] = useState(false)
   const [isProcessingOffsite, setIsProcessingOffsite] = useState(false)
 
@@ -162,13 +170,13 @@ export default function ApprovePage() {
   }
 
   // ── Offsite handlers ─────────────────────────────────────────────────────
-  const handleOffsiteApprove = (item: LeaveTableItem) => {
+  const handleOffsiteApprove = (item: OffsiteTableItem) => {
     setPendingOffsiteItem(item)
     setOffsiteAction('approve')
     setOpenOffsiteDialog(true)
   }
 
-  const handleOffsiteReject = (item: LeaveTableItem) => {
+  const handleOffsiteReject = (item: OffsiteTableItem) => {
     setPendingOffsiteItem(item)
     setOffsiteAction('reject')
     setOpenOffsiteDialog(true)
@@ -250,8 +258,9 @@ export default function ApprovePage() {
   }
 
 
-  if (isLoading) return <FormsSkeleton />
-  if (!canApproveAny) return null
+  if (isLoading || isUnauthorized) {
+    return <FormsSkeleton />
+  }
 
   return (
     <div className="space-y-6">

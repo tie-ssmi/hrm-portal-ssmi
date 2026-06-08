@@ -2,10 +2,13 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  attachLeaveDocument,
   createLeaveRequest,
   fetchAllLeavesByUserUuid,
+  fetchAllTodayLeaves,
   fetchLeavesForApproval,
   fetchLeavesByUserUuidFromToday,
+  fetchPendingDocLeavesByUserUuid,
   fetchTodayLeavesByWorkLocation,
 } from '@/services/leaves'
 import {
@@ -22,10 +25,13 @@ export const leaveKeys = {
     [...leaveKeys.all, 'user', userUuid] as const,
   upcoming: (userUuid: string) =>
     [...leaveKeys.all, 'upcoming', userUuid] as const,
+  pendingDoc: (userUuid: string) =>
+    [...leaveKeys.all, 'pendingDoc', userUuid] as const,
   approval: (deptUid: string, workLocUid: string) =>
     [...leaveKeys.all, 'approval', deptUid, workLocUid] as const,
   today: (workLocationUuid: string) =>
     [...leaveKeys.all, 'today', workLocationUuid] as const,
+  todayAll: () => [...leaveKeys.all, 'today', '__all__'] as const,
 }
 
 // ── Read hooks ─────────────────────────────────────────────────────────────────
@@ -43,6 +49,15 @@ export function useUpcomingLeaves(userUuid: string | null | undefined) {
   return useQuery({
     queryKey: leaveKeys.upcoming(userUuid ?? ''),
     queryFn: () => fetchLeavesByUserUuidFromToday(userUuid!),
+    enabled: !!userUuid,
+    staleTime: 1000 * 60 * 5,
+  })
+}
+
+export function usePendingDocLeaves(userUuid: string | null | undefined) {
+  return useQuery({
+    queryKey: leaveKeys.pendingDoc(userUuid ?? ''),
+    queryFn: () => fetchPendingDocLeavesByUserUuid(userUuid!),
     enabled: !!userUuid,
     staleTime: 1000 * 60 * 5,
   })
@@ -67,6 +82,14 @@ export function useLeavesForApproval(params: {
   })
 }
 
+export function useAllTodayLeaves() {
+  return useQuery({
+    queryKey: leaveKeys.todayAll(),
+    queryFn: fetchAllTodayLeaves,
+    staleTime: 1000 * 60 * 5,
+  })
+}
+
 export function useTodayLeavesByWorkLocation(
   workLocationUuid: string | null | undefined,
 ) {
@@ -79,6 +102,22 @@ export function useTodayLeavesByWorkLocation(
 }
 
 // ── Mutation hooks ─────────────────────────────────────────────────────────────
+
+export function useAttachLeaveDocument() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ leaveId, docLink }: { leaveId: string; docLink: string; userUuid: string }) =>
+      attachLeaveDocument({ leaveId, docLink }),
+    onSuccess: (_data, { leaveId, userUuid }) => {
+      if (userUuid) {
+        queryClient.invalidateQueries({ queryKey: leaveKeys.pendingDoc(userUuid) })
+        queryClient.invalidateQueries({ queryKey: leaveKeys.byUser(userUuid) })
+      }
+      queryClient.invalidateQueries({ queryKey: ['leave', leaveId] })
+    },
+  })
+}
 
 type SubmitLeavePayload = {
   request: Omit<LeaveRequest, 'id' | 'status' | 'createdAt' | 'requiredApprovers' | 'approvals' | 'createdBy'>
