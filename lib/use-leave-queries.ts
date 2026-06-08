@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   createLeaveRequest,
   fetchAllLeavesByUserUuid,
+  fetchAllTodayLeaves,
   fetchLeavesForApproval,
   fetchLeavesByUserUuidFromToday,
   fetchTodayLeavesByWorkLocation,
@@ -26,6 +27,7 @@ export const leaveKeys = {
     [...leaveKeys.all, 'approval', deptUid, workLocUid] as const,
   today: (workLocationUuid: string) =>
     [...leaveKeys.all, 'today', workLocationUuid] as const,
+  todayAll: () => [...leaveKeys.all, 'today', '__all__'] as const,
 }
 
 // ── Read hooks ─────────────────────────────────────────────────────────────────
@@ -64,6 +66,14 @@ export function useLeavesForApproval(params: {
       }),
     enabled: !!departmentUid && !!workLocationUid && !!excludeUserUuid,
     staleTime: 1000 * 30,
+  })
+}
+
+export function useAllTodayLeaves() {
+  return useQuery({
+    queryKey: leaveKeys.todayAll(),
+    queryFn: fetchAllTodayLeaves,
+    staleTime: 1000 * 60 * 5,
   })
 }
 

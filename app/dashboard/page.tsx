@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth-context'
 import { useHRM } from '@/lib/hrm-context'
 import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -12,10 +13,10 @@ import HomeSkeleton from '@/components/skeletons/homeSkeleton'
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { fetchPoliciesForGender } from '@/services/policies'
-import type { LeaveData } from '@/types/employee'
 import type { LeaveRequest } from '@/lib/types'
 import type { OffsiteRequestDoc } from '@/types/workOutside'
-import { useUserLeaves, useTodayLeavesByWorkLocation } from '@/lib/use-leave-queries'
+import { useUserLeaves } from '@/lib/use-leave-queries'
+import { useLateRankingThisMonth } from '@/lib/use-late-ranking-queries'
 import {
   Calendar,
   Clock,
@@ -31,7 +32,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs"
-import { CheckInToday, ToDay } from '@/components/leaveLists'
+import { CheckInToday, TodayLeaveSection, TodayOffsiteSection } from '@/components/leaveLists'
 import { Button } from '@/components/ui/button'
 import { useRouter } from 'next/navigation'
 import type { PolicyRecord } from '@/lib/types'
@@ -117,16 +118,11 @@ export default function DashboardPage() {
     enabled: !!user,
   })
 
-  const workLocationUuid =
-    typeof user?.workLocation === 'string'
-      ? user.workLocation
-      : user?.workLocation?.uuid
-
   // all leaves for policy usage calculation
   const { data: userLeaves = [] } = useUserLeaves(user?.uuid)
 
-  // active leaves today for the leave tab
-  const { data: todayLeaveRequests = [] } = useTodayLeavesByWorkLocation(workLocationUuid)
+  // late ranking this month (company-wide, sorted by late count)
+  const { data: lateRanking = [] } = useLateRankingThisMonth()
 
   // used days per policy (approved leaves only)
   const usedByPolicy = useMemo(() => {
@@ -217,19 +213,6 @@ export default function DashboardPage() {
   }
 
   const sickRemaining = Math.max(0, effectiveLeaveBalance.sick - leaveBalance.sickUsed)
-
-  const leaveDataToday: LeaveData[] = todayLeaveRequests.map(r => ({
-    name: r.leaveUserName ?? '',
-    department: r.departmentNameLo ?? r.departmentNameEn ?? '',
-    successor: r.successorNameLo ?? r.successorNameEn ?? '',
-    startDate: r.startDate,
-    endDate: r.endDate,
-    reason: r.reason,
-    position: r.jobTitle ?? '',
-    note: r.doc ?? '',
-    type: { id: r.policyId ?? '', name: r.policyName ?? r.type },
-  }))
-
 
   return (
     <div className="space-y-6">
@@ -388,29 +371,54 @@ export default function DashboardPage() {
           </Card>
         </TabsContent>
         <TabsContent value="leave">
-          <Card >
-
-            <div  >
-
-              <CardContent className="text-muted-foreground text-sm h-auto max-h-[500px] overflow-auto">
-                <p className="mb-2 font-semibold text-lg">ລາຍການລາພັກມື້ນີ້ </p>
-                <ToDay data={leaveDataToday} />
-              </CardContent>
-
-            </div>
+          <Card>
+            <CardContent className="text-muted-foreground text-sm h-auto max-h-[500px] overflow-auto">
+              <TodayLeaveSection />
+            </CardContent>
           </Card>
         </TabsContent>
         <TabsContent value="off_site">
           <Card>
             <CardContent className="text-muted-foreground text-sm h-auto max-h-[500px] overflow-auto pt-6">
-              <p className="text-center py-8">ກຳລັງພັດທະນາ...</p>
+              <TodayOffsiteSection />
             </CardContent>
           </Card>
         </TabsContent>
         <TabsContent value="topLeave">
           <Card>
             <CardContent className="text-muted-foreground text-sm h-auto max-h-[500px] overflow-auto pt-6">
-              <p className="text-center py-8">ກຳລັງພັດທະນາ...</p>
+              <p className="mb-4 font-semibold text-lg text-foreground">ອັນດັບມາຊ້າເດືອນນີ້</p>
+              {lateRanking.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-8 gap-2">
+                  <AlertTriangle className="h-10 w-10 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">ບໍ່ມີຂໍ້ມູນ</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {lateRanking.map((entry, index) => (
+                    <div key={entry.userUuid} className="flex items-center gap-3 rounded-lg border bg-card px-4 py-3">
+                      <span className={`w-6 text-center text-sm font-bold shrink-0 ${index === 0 ? 'text-yellow-500' : index === 1 ? 'text-slate-400' : index === 2 ? 'text-amber-600' : 'text-muted-foreground'}`}>
+                        {index + 1}
+                      </span>
+                      <Avatar className="h-9 w-9 shrink-0">
+                        <AvatarImage src={entry.employeeImage} alt={entry.fullNameLo} className="object-cover" />
+                        <AvatarFallback className="bg-primary/10 text-primary text-xs font-bold">
+                          {entry.fullNameLo?.charAt(0) ?? '?'}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-foreground truncate">{entry.fullNameLo ?? entry.fullNameEn}</p>
+                        <p className="text-xs text-muted-foreground truncate">{entry.workLocation?.name}</p>
+                        <p className="text-xs text-muted-foreground truncate">{entry.department?.name}</p>
+                      </div>
+                      <div className="flex flex-col items-end shrink-0">
+                        <span className="text-xl font-bold text-destructive">{entry.lateCount}</span>
+                        <span className="text-[10px] text-muted-foreground">+{entry.penaltyMinutes} ນທ</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

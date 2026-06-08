@@ -107,6 +107,18 @@ export async function fetchTodayLeavesByWorkLocation(workLocationUid: string): P
     .filter(r => r.startDate <= today && r.endDate >= today)
 }
 
+export async function fetchAllTodayLeaves(): Promise<LeaveRequest[]> {
+  const today = new Date().toISOString().split('T')[0]
+
+  const snapshot = await getDocs(
+    query(collection(db, 'leaves'), where('status', '==', 'approved'))
+  )
+
+  return snapshot.docs
+    .map(d => ({ id: d.id, ...(d.data() as Omit<LeaveRequest, 'id'>) }))
+    .filter(r => r.startDate <= today && r.endDate >= today)
+}
+
 export async function fetchLeavesByUserUuidFromToday(userUuid: string): Promise<LeaveRequest[]> {
   if (!userUuid) {
     return []

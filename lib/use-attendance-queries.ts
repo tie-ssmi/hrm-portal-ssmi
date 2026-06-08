@@ -113,12 +113,12 @@ export function useTodayAttendance(userUuid: string | null | undefined) {
   return { data: todayAttendance, ...query }
 }
 
-export function useTodayCheckInAttendance() {
+export function useTodayCheckInAttendance(isoDate?: string) {
   return useQuery({
-    queryKey: attendanceKeys.todayCheckIn,
-    queryFn: fetchTodayCheckInAttendance,
+    queryKey: isoDate ? [...attendanceKeys.todayCheckIn, isoDate] : attendanceKeys.todayCheckIn,
+    queryFn: () => fetchTodayCheckInAttendance(isoDate),
     staleTime: 1000 * 60,
-    refetchInterval: 1000 * 60 * 5,
+    refetchInterval: isoDate ? false : 1000 * 60 * 5,
   })
 }
 
