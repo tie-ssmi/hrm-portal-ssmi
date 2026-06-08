@@ -178,7 +178,7 @@ export default function OffsiteTodayPage() {
             className="pl-8 h-9"
           />
         </div>
-        <Select value={workLocationFilter} onValueChange={setWorkLocationFilter}>
+                <Select value={workLocationFilter} onValueChange={setWorkLocationFilter}>
           <SelectTrigger className="h-9 w-48">
             <SelectValue />
           </SelectTrigger>
@@ -187,11 +187,6 @@ export default function OffsiteTodayPage() {
               <SelectItem value="__user__">{userWorkLocation}</SelectItem>
             )}
             <SelectItem value="__all__">ທຸກສາຂາ</SelectItem>
-            {workLocations
-              .filter(wl => wl !== userWorkLocation)
-              .map(wl => (
-                <SelectItem key={wl} value={wl}>{wl}</SelectItem>
-              ))}
           </SelectContent>
         </Select>
       </div>

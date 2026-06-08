@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, Suspense, useMemo, useState } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { useTodayCheckInAttendance } from '@/lib/use-attendance-queries'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -77,7 +77,17 @@ function sortDeptGroups(entries: [string, AttendanceRecord[]][]): [string, Atten
 
 // ── page ───────────────────────────────────────────────────────────────────
 
+// useSearchParams() requires a Suspense boundary during static export prerendering —
+// see https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
 export default function CheckInPage() {
+  return (
+    <Suspense>
+      <CheckInPageContent />
+    </Suspense>
+  )
+}
+
+function CheckInPageContent() {
   const { user } = useAuth()
 
   // FIX Bug 4: read ?date= param (YYYY-MM-DD) passed by dashboard "ທັງໝົດ" button
