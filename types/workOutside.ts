@@ -37,6 +37,7 @@ export interface WorkOutsideRecord {
     jobTitle: string
     department: Department
     workLocation: WorkLocation
+    photoUrl?: string
   }
   activityType: { code: ActivityCode; name: string }
   subject: string

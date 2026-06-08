@@ -62,7 +62,7 @@ function LeaveDetailSheet({
           <div className="flex items-center gap-3">
             <Avatar className="h-12 w-12 ring-2 ring-primary/20">
               <AvatarImage
-                src="https://github.com/shadcn.png"
+                src={leave.leaveImage || ""}
                 alt={leave.name}
               />
               <AvatarFallback className="bg-primary/10 text-primary font-bold">
@@ -150,7 +150,7 @@ export function ToDay({ data }: { data: LeaveData[] }) {
                 <CardContent className="flex items-center gap-3 p-4">
                   <Avatar className="h-11 w-11 shrink-0 ring-2 ring-background shadow-sm">
                     <AvatarImage
-                      src="https://github.com/shadcn.png"
+                      src={leave.leaveImage || ""}
                       alt={leave.name}
                       className="lg:grayscale group-hover:grayscale-0 transition-all"
                     />
@@ -290,6 +290,7 @@ export function TodayLeaveSection() {
     position: r.jobTitle ?? '',
     note: r.doc ?? '',
     type: { id: r.policyId ?? '', name: r.policyName ?? r.type },
+    leaveImage: r.leaveImage || null,
   }))
 
   return (
@@ -348,7 +349,7 @@ export function TodayOffsiteSection() {
                   uid: record.createdByUid,
                   fullNameLo: record.requester?.fullNameLo,
                   fullNameEn: record.requester?.fullNameEn,
-                  photoUrl: undefined as string | undefined,
+                  photoUrl: record.requester?.photoUrl || undefined,
                   department: { department: record.requester?.department?.department ?? '', title: '', uuid: '' },
                   jobTitle: record.requester?.jobTitle ?? '',
                   roleInTrip: 'Support' as const,

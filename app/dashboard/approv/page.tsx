@@ -30,11 +30,15 @@ export default function ApprovePage() {
   const workLocationUuid = typeof user?.workLocation === 'object' ? (user.workLocation as { uuid?: string })?.uuid : undefined
   const canApproveDept  = user?.rolePermissions?.approveDepartment ?? false
   const canApproveBranch = user?.rolePermissions?.approveBranch ?? false
+  const isUnauthorized = !isLoading && !canApproveDept && !canApproveBranch
+
   // go to dashboard if canApproveDept and canApproveBranch are both false, to prevent unauthorized access to this page
-  if (!isLoading && !canApproveDept && !canApproveBranch) {
-    router.push('/dashboard')
-    return null
-  }
+  // NOTE: must run as an effect — an early `return null` here would skip the hooks
+  // declared below and trigger "Rendered fewer hooks than expected" on the next render
+  useEffect(() => {
+    if (isUnauthorized) router.push('/dashboard')
+  }, [isUnauthorized, router])
+
   const queryKey = ['leaves', 'approval', departmentUuid ?? null, workLocationUuid ?? null, loggedInUserUuid]
 
   const { data: leaveRequests = [] } = useQuery({
@@ -254,7 +258,7 @@ export default function ApprovePage() {
   }
 
 
-  if (isLoading) {
+  if (isLoading || isUnauthorized) {
     return <FormsSkeleton />
   }
 

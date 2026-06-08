@@ -178,7 +178,7 @@ export default function OffsiteTodayPage() {
             className="pl-8 h-9"
           />
         </div>
-                <Select value={workLocationFilter} onValueChange={setWorkLocationFilter}>
+        <Select value={workLocationFilter} onValueChange={setWorkLocationFilter}>
           <SelectTrigger className="h-9 w-48">
             <SelectValue />
           </SelectTrigger>
@@ -187,6 +187,11 @@ export default function OffsiteTodayPage() {
               <SelectItem value="__user__">{userWorkLocation}</SelectItem>
             )}
             <SelectItem value="__all__">ທຸກສາຂາ</SelectItem>
+            {workLocations
+              .filter(loc => loc !== userWorkLocation)
+              .map(loc => (
+                <SelectItem key={loc} value={loc}>{loc}</SelectItem>
+              ))}
           </SelectContent>
         </Select>
       </div>
@@ -219,30 +224,32 @@ export default function OffsiteTodayPage() {
                     {deptRows.map(({ row, rowNum }) => (
                       <div
                         key={`${row.record.id}-${row.uid}`}
-                        className="flex items-center gap-3 rounded-lg border bg-card px-4 py-3"
+                        className="flex flex-col gap-2 rounded-lg border bg-card p-3 sm:flex-row sm:items-center sm:gap-3 sm:px-4 sm:py-3"
                       >
-                        <span className={`w-6 text-center text-sm font-bold shrink-0 ${rowNum === 1 ? 'text-yellow-500' : rowNum === 2 ? 'text-slate-400' : rowNum === 3 ? 'text-amber-600' : 'text-muted-foreground'}`}>
-                          {rowNum}
-                        </span>
-                        <Avatar className="h-9 w-9 shrink-0">
-                          <AvatarImage src={row.photoUrl} alt={row.fullNameLo} className="object-cover" />
-                          <AvatarFallback className="bg-primary/10 text-primary text-xs font-bold">
-                            {row.fullNameLo?.charAt(0) ?? '?'}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-foreground truncate">{row.fullNameLo ?? row.fullNameEn}</p>
-                          <p className="text-xs text-muted-foreground truncate" title={row.record.subject}>{row.record.subject}</p>
-                          <div className="flex items-center gap-1 text-xs text-muted-foreground truncate">
-                            <MapPin className="h-3 w-3 shrink-0" />
-                            <span className="truncate">{row.record.location || '-'}</span>
+                        <div className="flex flex-1 items-center gap-3 min-w-0">
+                          <span className="w-6 text-center text-sm font-bold shrink-0 text-muted-foreground">
+                            {rowNum}
+                          </span>
+                          <Avatar className="h-9 w-9 shrink-0">
+                            <AvatarImage src={row.photoUrl} alt={row.fullNameLo || row.fullNameEn} className="object-cover" />
+                            <AvatarFallback className="bg-primary/10 text-primary text-xs font-bold">
+                              {(row.fullNameLo || row.fullNameEn || '?').charAt(0)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-foreground truncate">{row.fullNameLo || row.fullNameEn}</p>
+                            <p className="text-xs text-muted-foreground truncate" title={row.record.subject}>{row.record.subject}</p>
+                            <div className="flex items-center gap-1 text-xs text-muted-foreground truncate">
+                              <MapPin className="h-3 w-3 shrink-0" />
+                              <span className="truncate">{row.record.location || '-'}</span>
+                            </div>
+                            {showBranchCol && (
+                              <p className="text-xs text-muted-foreground truncate">{row.record.requester?.workLocation?.nameLo ?? '-'}</p>
+                            )}
                           </div>
-                          {showBranchCol && (
-                            <p className="text-xs text-muted-foreground truncate">{row.record.requester?.workLocation?.nameLo ?? '-'}</p>
-                          )}
                         </div>
-                        <div className="flex flex-col items-end shrink-0 gap-0.5">
-                          <Badge variant="secondary" className="text-xs">{row.record.activityType?.name}</Badge>
+                        <div className="flex flex-row flex-wrap items-center gap-2 pl-9 sm:flex-col sm:items-end sm:gap-0.5 sm:pl-0 sm:shrink-0">
+                          <Badge variant="secondary" className="text-xs">{row.record.activityType?.name || '-'}</Badge>
                           <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
                             <Calendar className="h-3 w-3" />
                             {row.record.startDate} – {row.record.endDate}

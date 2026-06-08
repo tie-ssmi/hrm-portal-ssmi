@@ -21,7 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback,AvatarImage } from '@/components/ui/avatar'
 import { Search, Users, Building2 } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
 import type { LeaveRequest } from '@/lib/types'
@@ -192,7 +192,9 @@ export default function LeaveTodayPage() {
                           className="flex items-center gap-3 rounded-lg border bg-background p-3"
                         >
                           <Avatar className="h-9 w-9 shrink-0">
-                            <AvatarFallback className="text-xs bg-primary/10 text-primary">
+                            <AvatarImage src={record.leaveImage || ''} alt={record.leaveUserName} className="object-cover" />
+
+                            <AvatarFallback   className="text-xs bg-primary/10 text-primary">
                               {(record.leaveUserName || '?')[0]}
                             </AvatarFallback>
                           </Avatar>
@@ -259,6 +261,8 @@ export default function LeaveTodayPage() {
                             <TableCell className="px-4 py-3">
                               <div className="flex items-center gap-2 min-w-0">
                                 <Avatar className="h-8 w-8 shrink-0">
+                               <AvatarImage src={record.leaveImage || ''} alt={record.leaveUserName} className="object-cover" />
+
                                   <AvatarFallback className="text-xs bg-primary/10 text-primary">
                                     {(record.leaveUserName || '?')[0]}
                                   </AvatarFallback>

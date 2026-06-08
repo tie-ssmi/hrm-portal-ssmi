@@ -8,11 +8,15 @@ export interface EmployeeDepartment {
   department: string;
   uuid: string;
   title: string;
+  nameLo?: string;
+  nameEn?: string;
 }
 
 export interface Employee {
   id?: string
   uid: string;
+  uuid?: string;
+  profileImage?: string;
   firstNameEn: string;
   lastNameEn: string;
   firstNameLo: string;
@@ -30,6 +34,7 @@ export interface Employee {
   major: string;
   jobTitle: string;
   employeeType: string;
+  department?: string | EmployeeDepartment;
   departmentUid ?: string;
   workLocation: EmployeeWorkLocation;
   salary: number;
@@ -65,4 +70,5 @@ export interface LeaveData {
   position: string; // Added this field
   note: string; // This acts as the "Note"
   type: LeaveType; // Added this field
+  leaveImage?: string | null;
 }

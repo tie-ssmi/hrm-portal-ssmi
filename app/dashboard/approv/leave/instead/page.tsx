@@ -31,6 +31,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { useRouter } from 'next/navigation'
 
 import { Combobox } from '@/components/ui/combobox'
+import { Avatar, AvatarImage,AvatarFallback } from '@/components/ui/avatar';
 type Period = 'morning' | 'afternoon'
 type LeaveTypeOption = {
   value: string
@@ -312,6 +313,8 @@ export default function InsteadLeaveRequestForm() {
       await submitLeaveRequest({
         leaveUserUuid: selectedLeaveFor.uuid || selectedLeaveFor.uid || selectedLeaveFor.id || undefined,
         leaveUserName,
+         leaveImage: selectedLeaveFor?.profileImage || selectedLeaveFor?.photo3x4Url || null,
+
         species: 'instead',
         type: selectedPolicy?.requestType || 'annual',
         policyUuid: selectedPolicy?.policyUuid,
@@ -390,7 +393,11 @@ export default function InsteadLeaveRequestForm() {
               {selectedLeaveFor && (
                 <div className="flex items-center gap-3 rounded-md bg-muted/60 px-3 py-2.5">
                   <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary shrink-0">
-                    <User className="w-4 h-4" />
+                    {/* <User className="w-4 h-4" /> */}
+                    <Avatar className="w-8 h-8">
+                      <AvatarImage src={selectedLeaveFor.profileImage || selectedLeaveFor.photo3x4Url || undefined} alt={employeeName(selectedLeaveFor)} />
+                      <AvatarFallback>SSMI</AvatarFallback>
+                    </Avatar>
                   </div>
                   <div className="min-w-0">
                     <p className="text-sm font-medium truncate">{employeeName(selectedLeaveFor)}</p>

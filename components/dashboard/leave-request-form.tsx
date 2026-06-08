@@ -29,6 +29,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Combobox } from '@/components/ui/combobox'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { storage } from '@/lib/firebase'
+import { useRouter } from 'next/navigation'
 
 type Period = 'morning' | 'afternoon'
 type LeaveTypeOption = {
@@ -125,6 +126,7 @@ function SectionHeader({ number, icon: Icon, title }: { number: number; icon: Re
 }
 
 export default function LeaveRequestForm() {
+  const router = useRouter()
   const { user } = useAuth()
   const { submitLeaveRequest, leaveBalance } = useHRM()
   const loggedInUserUuid = user?.uid || user?.id || ''
@@ -292,6 +294,7 @@ export default function LeaveRequestForm() {
 
       await submitLeaveRequest({
         leaveUserUuid: loggedInUserUuid || undefined,
+        leaveImage: user?.profileImage || user?.photo3x4Url || null,
         leaveUserName: createdBy,
         species: 'owner',
         createdByUid: loggedInUserUuid || undefined,
@@ -605,6 +608,13 @@ export default function LeaveRequestForm() {
       <Card className="mt-4">
         <CardHeader className="pb-3">
           <CardTitle className="text-base">ຄໍາຮ້ອງຂໍລ່າສຸດ</CardTitle>
+          <Button
+            variant="link"
+            size="sm"
+            onClick={() => router.push('/dashboard/request/leave-doc')}
+          >
+            ເພີ່ມເອກະສານ
+          </Button>
         </CardHeader>
         <CardContent>
           {myCurrentLeaveRequests.length === 0 ? (

@@ -146,6 +146,7 @@ export interface LeaveRequest {
   id: string
   leaveUserUuid?: string
   leaveUserName?: string
+  leaveImage?: string | null
   species?: 'owner' | 'instead'
   type: string
   policyUuid?: string

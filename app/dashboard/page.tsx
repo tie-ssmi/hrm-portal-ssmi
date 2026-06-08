@@ -94,8 +94,8 @@ function PolicyList({
 
           <CollapsibleTrigger asChild>
             <Button variant="ghost" size="sm" className="w-full gap-1 text-xs text-muted-foreground">
-              <ChevronDown className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} />
               {open ? 'ຫຍໍ້ລົງ' : `ເບິ່ງທັງໝົດ (${hidden.length} ລາຍການ)`}
+              <ChevronDown className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} />
             </Button>
           </CollapsibleTrigger>
         </>
