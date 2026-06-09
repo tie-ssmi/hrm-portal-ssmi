@@ -1,12 +1,14 @@
-'use client'
+"use client";
 
-import { usePathname, useRouter } from 'next/navigation'
-import { useAuth } from '@/lib/auth-context'
-import { useNotifications } from '@/components/NotificationProvider' // 🌟 1. Import ລະບົບແຈ້ງເຕືອນ
-import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Separator } from '@/components/ui/separator'
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useMemo } from "react";
+import { useAuth } from "@/lib/auth-context";
+import { useNotifications } from "@/components/NotificationProvider";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
   DialogClose,
@@ -16,11 +18,10 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog"
-import { version } from '@/package.json'
-import TheThemes from '@/components/themes'
-import { PWAInstallButton } from '@/components/pwa-install-button'
-
+} from "@/components/ui/dialog";
+import { version } from "@/package.json";
+import TheThemes from "@/components/themes";
+import { PWAInstallButton } from "@/components/pwa-install-button";
 import {
   LayoutDashboard,
   User,
@@ -30,50 +31,107 @@ import {
   LogOut,
   Newspaper,
   ClipboardCheck,
-} from 'lucide-react'
+} from "lucide-react";
 
 function formatDepartment(value: unknown): string {
-  if (!value) return '-'
-  if (typeof value === 'string') return value
-  if (typeof value === 'object') {
-    const obj = value as Record<string, unknown>
-    const department = typeof obj.department === 'string' ? obj.department : ''
-    const title = typeof obj.title === 'string' ? obj.title : ''
-    if (department && title) return `${department} (${title})`
-    return department || title || '-'
+  if (!value) return "-";
+  if (typeof value === "string") return value;
+  if (typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    const department = typeof obj.department === "string" ? obj.department : "";
+    const title = typeof obj.title === "string" ? obj.title : "";
+    if (department && title) return `${department} (${title})`;
+    return department || title || "-";
   }
-  return String(value)
+  return String(value);
 }
 
 export function DashboardNav() {
-  const pathname = usePathname()
-  const router = useRouter()
-  const { user, logout } = useAuth()
-  const { notifications } = useNotifications() // 🌟 2. ດຶງຂໍ້ມູນຄຳຂໍ pending
+  const pathname = usePathname();
+  const { user, logout } = useAuth();
+  const { notifications } = useNotifications();
 
-  const canApproveDept = user?.rolePermissions?.approveDepartment ?? false
-  const canApproveBranch = user?.rolePermissions?.approveBranch ?? false
-  const canSee = canApproveBranch || canApproveDept
+  const canApproveDept = user?.rolePermissions?.approveDepartment ?? false;
+  const canApproveBranch = user?.rolePermissions?.approveBranch ?? false;
+  const canSee = canApproveBranch || canApproveDept;
+
   const initials = user
-    ? (`${user.firstName?.[0] ?? ''}${user.lastName?.[0] ?? ''}`.toUpperCase() || 'U')
-    : 'U'
-  const profileImage = user?.profileImage || user?.photo3x4Url || user?.avatar || (String(user?.gender).toLowerCase() === 'male' ? '/info/man.jpg' : '/info/woman.jpg')
-  const navItems = [
-    { href: '/dashboard', label: 'ໜ້າຫຼັກ', icon: LayoutDashboard, show: true },
-    { href: '/dashboard/profile', label: 'ຂໍ້ມູນສ່ວນຕົວ', icon: User, show: true },
-    { href: '/dashboard/attendance', label: 'Check-In/Out', icon: Clock, show: true },
-    { href: '/dashboard/news', label: 'ຂ່າວສານ', icon: Newspaper, show: true },
-    { href: '/dashboard/request', label: 'ແບບຟອມ', icon: FileText, show: true },
-    { href: '/dashboard/approv', label: 'ການອະນຸມັດ', icon: ClipboardCheck, show: canSee, badge: notifications.length }, // 🌟 ໃສ່ badge
-    { href: '/dashboard/history', label: 'ປະຫວັດ', icon: History, show: true },
-  ]
+    ? `${user.firstName?.[0] ?? ""}${user.lastName?.[0] ?? ""}`.toUpperCase() ||
+      "U"
+    : "U";
+
+  // Fix: guard user null before checking gender — String(undefined) = "undefined" ≠ 'male'
+  const profileImage = user
+    ? user.profileImage ||
+      user.photo3x4Url ||
+      user.avatar ||
+      (user.gender?.toLowerCase() === "male"
+        ? "/info/man.jpg"
+        : "/info/woman.jpg")
+    : "/info/woman.jpg";
+
+  const notifCount = notifications.length;
+
+  // Fix: memoize — avoid recreating array on every render (notifCount changes on each poll)
+  const navItems = useMemo(
+    () => [
+      {
+        href: "/dashboard",
+        label: "ໜ້າຫຼັກ",
+        icon: LayoutDashboard,
+        show: true,
+      },
+      {
+        href: "/dashboard/profile",
+        label: "ຂໍ້ມູນສ່ວນຕົວ",
+        icon: User,
+        show: true,
+      },
+      {
+        href: "/dashboard/attendance",
+        label: "Check-In/Out",
+        icon: Clock,
+        show: true,
+      },
+      {
+        href: "/dashboard/news",
+        label: "ຂ່າວສານ",
+        icon: Newspaper,
+        show: true,
+      },
+      {
+        href: "/dashboard/request",
+        label: "ແບບຟອມ",
+        icon: FileText,
+        show: true,
+      },
+      {
+        href: "/dashboard/approv",
+        label: "ການອະນຸມັດ",
+        icon: ClipboardCheck,
+        show: canSee,
+        badge: notifCount,
+      },
+      {
+        href: "/dashboard/history",
+        label: "ປະຫວັດ",
+        icon: History,
+        show: true,
+      },
+    ],
+    [canSee, notifCount],
+  );
 
   return (
     <div className="flex flex-col h-full bg-sidebar text-sidebar-foreground">
       {/* Logo */}
       <div className="flex items-center gap-3 px-6 h-16 border-b border-sidebar-border">
         <div className="flex items-center justify-center w-9 h-9 rounded-lg text-sidebar-primary-foreground overflow-hidden">
-          <img src="/SSMI.svg" alt="SSMI Logo" className="w-full h-full object-contain" />
+          <img
+            src="/SSMI.svg"
+            alt="SSMI Logo"
+            className="w-full h-full object-contain"
+          />
         </div>
         <span className="font-semibold">HRM Portal</span>
         <div className="ml-auto">
@@ -85,7 +143,11 @@ export function DashboardNav() {
       <div className="px-6 py-4">
         <div className="flex items-center gap-3">
           <Avatar className="w-10 h-10">
-            <AvatarImage src={profileImage} alt={`${user?.firstName ?? ''} ${user?.lastName ?? ''}`} className="object-cover" />
+            <AvatarImage
+              src={profileImage}
+              alt={`${user?.firstName ?? ""} ${user?.lastName ?? ""}`}
+              className="object-cover"
+            />
             <AvatarFallback className="bg-sidebar-accent text-sidebar-accent-foreground">
               {initials}
             </AvatarFallback>
@@ -106,43 +168,47 @@ export function DashboardNav() {
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1">
         {navItems.map((item) => {
-          if (!item.show) return null
+          if (!item.show) return null;
 
-          const isActive = pathname === item.href ||
-            (item.href !== '/dashboard' && pathname.startsWith(item.href))
+          const isActive =
+            pathname === item.href ||
+            (item.href !== "/dashboard" && pathname.startsWith(item.href));
+
+          // Fix: single clean check + cap badge at 99+
+          const badgeCount = item.badge ?? 0;
 
           return (
-            <button
+            // Fix: <Link href> instead of <button onClick router.push>
+            // — enables middle-click, right-click, browser prefetch, correct aria role
+            <Link
               key={item.href}
-              type="button"
-              onClick={() => router.push(item.href)}
-              aria-current={isActive ? 'page' : undefined}
+              href={item.href}
+              aria-current={isActive ? "page" : undefined}
               className={cn(
-                'flex w-full items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors', // 🌟 ປ່ຽນເປັນ justify-between
+                "flex w-full items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors no-underline",
                 isActive
-                  ? 'bg-sidebar-primary text-sidebar-primary-foreground shadow-sm'
-                  : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
+                  ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
+                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
               )}
             >
               <div className="flex items-center gap-3">
-                <item.icon className="w-5 h-5" />
-                {item.label}
+                <item.icon className="w-5 h-5 shrink-0" />
+                <span>{item.label}</span>
               </div>
-              {/* 🌟 ສະແດງຕົວເລກສີແດງຢູ່ Sidebar ຂ້າງໆຊື່ເມນູ */}
-              {!!item.badge && item.badge > 0 && canSee && (
+              {badgeCount > 0 && (
                 <span className="bg-red-500 text-white font-bold text-[11px] min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center shadow-sm">
-                  {item.badge}
+                  {badgeCount > 99 ? "99+" : badgeCount}
                 </span>
               )}
-            </button>
-          )
+            </Link>
+          );
         })}
       </nav>
-      <div className="px-3 py-2 text-sm flex items-center justify-center">
-        <p className="text-xs text-sidebar-foreground/70">
-          V {version}
-        </p>
+
+      <div className="px-3 py-2 flex items-center justify-center">
+        <p className="text-xs text-sidebar-foreground/70">V {version}</p>
       </div>
+
       {/* Install App */}
       <div className="px-3 pb-2">
         <PWAInstallButton className="w-full justify-start gap-3" />
@@ -164,13 +230,12 @@ export function DashboardNav() {
             <DialogHeader>
               <DialogTitle>ອອກຈາກລະບົບ</DialogTitle>
               <DialogDescription>
-                ທ່ານແነ່ໃຈບໍ່? ທີຈະອອກຈາກລະບົບ
+                ທ່ານແນ່ໃຈບໍ່ ທີ່ຈະອອກຈາກລະບົບ?
               </DialogDescription>
             </DialogHeader>
-
             <DialogFooter>
               <DialogClose asChild>
-                <Button variant="outline" >ຍົກເລີກ</Button>
+                <Button variant="outline">ຍົກເລີກ</Button>
               </DialogClose>
               <Button onClick={() => logout()}>ອອກຈາກລະບົບ</Button>
             </DialogFooter>
@@ -178,5 +243,5 @@ export function DashboardNav() {
         </Dialog>
       </div>
     </div>
-  )
+  );
 }

@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 
 import { DashboardLayoutShell } from '@/components/dashboard/dashboard-layout-shell'
-import { NotificationProvider } from "@/components/NotificationProvider"; // ⚠️ ເຊັກ Path ໃຫ້ຖືກຕ້ອງ
+import { NotificationProvider } from "@/components/NotificationProvider"
 
 export const metadata: Metadata = {
   robots: {

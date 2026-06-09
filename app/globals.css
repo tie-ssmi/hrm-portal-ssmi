@@ -187,13 +187,9 @@
     -webkit-user-select: none;
     user-select: none;
   }
-  /* Ensure nav links are clickable on iOS */
+  /* iOS touch target — layout is handled by Tailwind utilities */
   nav a, nav button {
     min-height: 44px;
-    min-width: 44px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
   }
 }
 /* HTML: <div class="loader"></div> */

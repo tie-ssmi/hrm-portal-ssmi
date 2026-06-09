@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, useRef, useMemo } from "react";
+import { createContext, useContext, useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { db } from "@/lib/firebase";
 import { collection, doc, query, updateDoc, where, onSnapshot } from "firebase/firestore";
 import { useAuth } from "@/lib/auth-context";
@@ -30,63 +30,66 @@ const NotificationContext = createContext<{
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
   const [leaveNotifications, setLeaveNotifications] = useState<NotificationItem[]>([]);
   const [workNotifications, setWorkNotifications] = useState<NotificationItem[]>([]);
-  
-  const { user } = useAuth(); 
-  
+
+  const { user } = useAuth();
+
   const isInitialLeaves = useRef(true);
   const isInitialWork = useRef(true);
 
-  const triggerNotification = (title: string, body: string) => {
+  // Fix: useCallback — stable reference so onSnapshot closure always has latest version
+  const triggerNotification = useCallback((title: string, body: string) => {
     toast.success(title, { description: body, duration: 5000 });
     if ("Notification" in window && Notification.permission === "granted") {
-      new Notification(title, { body: body, icon: "/apple-icon.png" });
+      new Notification(title, { body, icon: "/apple-icon.png" });
     }
-  };
+  }, []);
 
-  const userUid = user?.uid || user?.id;
+  const userUid = user?.uid || (user as any)?.id;
 
-  // Subscribe to web push and save pushSubscription to employees/{uid}
   useEffect(() => {
-    if (!userUid) return
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return
+    if (!userUid) return;
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
 
-    const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
-    if (!vapidKey) return
+    const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    if (!vapidKey) return;
 
     async function registerPush() {
       try {
-        const permission = await Notification.requestPermission()
-        if (permission !== 'granted') return
+        const permission = await Notification.requestPermission();
+        if (permission !== "granted") return;
 
-        const reg = await navigator.serviceWorker.ready
-        let subscription = await reg.pushManager.getSubscription()
+        const reg = await navigator.serviceWorker.ready;
+        let subscription = await reg.pushManager.getSubscription();
 
         if (!subscription) {
           subscription = await reg.pushManager.subscribe({
             userVisibleOnly: true,
             applicationServerKey: urlBase64ToUint8Array(vapidKey!),
-          })
+          });
         }
 
-        await updateDoc(doc(db, 'employees', userUid!), {
+        await updateDoc(doc(db, "employees", userUid!), {
           pushSubscription: JSON.parse(JSON.stringify(subscription)),
-        })
+        });
       } catch (err) {
-        console.error('[Push] subscription failed:', err)
+        console.error("[Push] subscription failed:", err);
       }
     }
 
-    registerPush()
-  }, [userUid])
+    registerPush();
+  }, [userUid]);
 
+  // Fix: add .uid — codebase uses .uid as the primary key field (was missing, caused undefined → notifications never matched)
   const userDepartmentId = useMemo(() => {
     if (!user?.department) return undefined;
-    return typeof user.department === 'string' ? user.department : (user.department as any).uuid || (user.department as any).id;
+    const dept = user.department as any;
+    return typeof dept === "string" ? dept : dept.uid || dept.uuid || dept.id;
   }, [user?.department]);
 
   const userWorkLocationId = useMemo(() => {
     if (!user?.workLocation) return undefined;
-    return typeof user.workLocation === 'string' ? user.workLocation : (user.workLocation as any).uuid || (user.workLocation as any).id;
+    const loc = user.workLocation as any;
+    return typeof loc === "string" ? loc : loc.uid || loc.uuid || loc.id;
   }, [user?.workLocation]);
 
   useEffect(() => {
@@ -102,54 +105,54 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       Notification.requestPermission();
     }
 
-    console.log("🚀 [Firebase Snapshot]: ເລີ່ມຕັ້ງຄ່າດັກຟັງ Real-time...");
-
     // =========================================================================
     // 🚨 1. ດັກຟັງໃບລາພັກ (leaves)
     // =========================================================================
-    const qLeaves = query(collection(db, "leaves"), where("status", "==", "pending"));
-    const unsubscribeLeaves = onSnapshot(qLeaves, (snapshot) => {
-      const leaveItems: NotificationItem[] = [];
 
-      snapshot.docs.forEach((doc) => {
-        const data = doc.data();
+    // Fix: filter at Firestore level — avoids downloading all company-wide pending leaves
+    // was: where("status","==","pending") only → downloaded entire collection, filtered in JS
+    // now: also scoped by workLocationUid + departmentUid → only relevant dept/location
+    // Requires composite index: (status, workLocationUid, departmentUid)
+    const qLeaves = query(
+      collection(db, "leaves"),
+      where("status", "==", "pending"),
+      where("workLocationUid", "==", userWorkLocationId),
+      where("departmentUid", "==", userDepartmentId),
+    );
 
-        const matchLocation = data.workLocationUid === userWorkLocationId;
-        const matchDepartment = data.departmentUid === userDepartmentId;
-        const isNotSelf = data.leaveUserUuid !== userUid;
-        
-        // 🔒 FIX: ໃຊ້ app?.role ເພື່ອປ້ອງກັນ null pointer error
-        const hasPendingDeptHeadApproval = Array.isArray(data.approvals) && data.approvals.some(
+    // Fix: single matcher used by both the state-build loop and the toast-trigger loop
+    function isMatchingLeave(data: Record<string, any>): boolean {
+      return (
+        data.leaveUserUuid !== userUid &&
+        Array.isArray(data.approvals) &&
+        data.approvals.some(
           (app: any) => app?.role === "departmentHead" && app?.decision === "pending"
-        );
+        )
+      );
+    }
 
-        if (matchLocation && matchDepartment && isNotSelf && hasPendingDeptHeadApproval) {
-          leaveItems.push({
+    const unsubscribeLeaves = onSnapshot(qLeaves, (snapshot) => {
+      const leaveItems: NotificationItem[] = snapshot.docs
+        .filter((doc) => isMatchingLeave(doc.data()))
+        .map((doc) => {
+          const data = doc.data();
+          return {
             id: doc.id,
-            type: "leave",
+            type: "leave" as const,
             title: "ໃບລາພັກໃໝ່",
             userName: data.leaveUserName || "ບໍ່ມີຊື່",
-            detail: data.reason || "ບໍ່ລະບຸເຫດຜົນ"
-          });
-        }
-      });
+            detail: data.reason || "ບໍ່ລະບຸເຫດຜົນ",
+          };
+        });
 
       if (!isInitialLeaves.current) {
         snapshot.docChanges().forEach((change) => {
-          if (change.type === "added") {
+          if (change.type === "added" && isMatchingLeave(change.doc.data())) {
             const data = change.doc.data();
-            const hasPendingDeptHeadApproval = Array.isArray(data.approvals) && data.approvals.some(
-              (app: any) => app?.role === "departmentHead" && app?.decision === "pending"
+            triggerNotification(
+              "🔔 ມີໃບລາພັກໃໝ່!",
+              `ພະນັກງານ: ${data.leaveUserName || "ບໍ່ມີຊື່"} ສົ່ງຄຳຂໍລາພັກ`
             );
-
-            if (
-              data.workLocationUid === userWorkLocationId &&
-              data.departmentUid === userDepartmentId &&
-              data.leaveUserUuid !== userUid &&
-              hasPendingDeptHeadApproval
-            ) {
-              triggerNotification("🔔 ມີໃບລາພັກໃໝ່!", `ພະນັກງານ: ${data.leaveUserName || "ບໍ່ມີຊື່"} ສົ່ງຄຳຂໍລາພັກ`);
-            }
           }
         });
       } else {
@@ -158,72 +161,61 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
       setLeaveNotifications(leaveItems);
     });
-// =========================================================================
-    // 🚗 2. ດັກຟັງໃບຂໍອອກນອກສະຖານທີ່ (workOutside) - ເວີຊັນແກ້ໄຂຕາມ JSON ຈິງ
+
     // =========================================================================
+    // 🚗 2. ດັກຟັງໃບຂໍອອກນອກສະຖານທີ່ (workOutside)
+    // =========================================================================
+    // Note: workOutside stores location UID in nested requester.workLocation (not top-level workLocationUid
+    // which stores a different format "0303"), so Firestore-level location filter is unreliable here.
+    // JS filtering is kept for this collection only.
     const qWork = query(collection(db, "workOutside"), where("status", "==", "pending"));
-    const unsubscribeWork = onSnapshot(qWork, (snapshot) => {
-      const workItems: NotificationItem[] = [];
 
-      snapshot.docs.forEach((doc) => {
-        const data = doc.data();
+    // Fix: single matcher — was duplicated in both snapshot.docs loop and docChanges loop
+    function isMatchingWork(data: Record<string, any>): boolean {
+      const workLocationId =
+        data.requester?.workLocation?.uid ||
+        data.requester?.workLocation?.uuid ||
+        data.requester?.workLocation?.id ||
+        data.workLocationUid;
+      const deptId =
+        data.requester?.department?.uid ||
+        data.requester?.department?.uuid ||
+        data.requester?.department?.id ||
+        data.departmentUid;
 
-        // 🌟 FIX: ດຶງ ID ໂລເຄຊັນຈາກ requester.workLocation ໂດຍກົງ (ເພາະ workLocationUid ດ້ານນອກເກັບເປັນ "0303")
-        const workLocationId = data.requester?.workLocation?.uuid || 
-                             data.requester?.workLocation?.id || 
-                             data.workLocationUid;
-        
-        // 🌟 FIX: ດຶງ ID ແຜນກຈາກ requester.department
-        const deptId = data.requester?.department?.uuid || 
-                       data.requester?.department?.id || 
-                       data.departmentUid;
-
-        const matchLocation = workLocationId === userWorkLocationId;
-        const matchDepartment = deptId === userDepartmentId;
-        const isNotSelf = data.createdByUid !== userUid;
-        
-        const hasPendingDeptHeadApproval = Array.isArray(data.approvals) && data.approvals.some(
+      return (
+        workLocationId === userWorkLocationId &&
+        deptId === userDepartmentId &&
+        data.createdByUid !== userUid &&
+        Array.isArray(data.approvals) &&
+        data.approvals.some(
           (app: any) => app?.role === "departmentHead" && app?.decision === "pending"
-        );
+        )
+      );
+    }
 
-        if (matchLocation && matchDepartment && isNotSelf && hasPendingDeptHeadApproval) {
-          workItems.push({
+    const unsubscribeWork = onSnapshot(qWork, (snapshot) => {
+      const workItems: NotificationItem[] = snapshot.docs
+        .filter((doc) => isMatchingWork(doc.data()))
+        .map((doc) => {
+          const data = doc.data();
+          return {
             id: doc.id,
-            type: "workOutside",
+            type: "workOutside" as const,
             title: "ຂໍອອກນອກສະຖານທີ່",
             userName: data.createdBy || "ບໍ່ມີຊື່",
-            detail: `${data.activityType?.name || ""} ໄປທີ່: ${data.location || "ບໍ່ລະບຸ"}`
-          });
-        }
-      });
+            detail: `${data.activityType?.name || ""} ໄປທີ່: ${data.location || "ບໍ່ລະບຸ"}`,
+          };
+        });
 
       if (!isInitialWork.current) {
         snapshot.docChanges().forEach((change) => {
-          if (change.type === "added") {
+          if (change.type === "added" && isMatchingWork(change.doc.data())) {
             const data = change.doc.data();
-            
-            const workLocationId = data.requester?.workLocation?.uuid || 
-                                 data.requester?.workLocation?.id || 
-                                 data.workLocationUid;
-            const deptId = data.requester?.department?.uuid || 
-                           data.requester?.department?.id || 
-                           data.departmentUid;
-            
-            const hasPendingDeptHeadApproval = Array.isArray(data.approvals) && data.approvals.some(
-              (app: any) => app?.role === "departmentHead" && app?.decision === "pending"
+            triggerNotification(
+              "🚗 ມີຄຳຂໍອອກນອກສະຖານທີ່ໃໝ່!",
+              `ພະນັກງານ: ${data.createdBy || "ບໍ່ມີຊື່"} ຂໍອອກໄປ: ${data.location || "ບໍ່ລະບຸ"}`
             );
-
-            if (
-              workLocationId === userWorkLocationId &&
-              deptId === userDepartmentId &&
-              data.createdByUid !== userUid &&
-              hasPendingDeptHeadApproval
-            ) {
-              triggerNotification(
-                "🚗 ມີຄຳຂໍອອກນอกສະຖານທີ່ໃໝ່!",
-                `ພະນັກງານ: ${data.createdBy || "ບໍ່ມີຊື່"} ຂໍອອກໄປ: ${data.location || "ບໍ່ລະບຸ"}`
-              );
-            }
           }
         });
       } else {
@@ -237,11 +229,12 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       unsubscribeLeaves();
       unsubscribeWork();
     };
-  }, [userUid, userDepartmentId, userWorkLocationId]); 
+  }, [userUid, userDepartmentId, userWorkLocationId, triggerNotification]);
 
-  const notifications = useMemo(() => {
-    return [...leaveNotifications, ...workNotifications];
-  }, [leaveNotifications, workNotifications]);
+  const notifications = useMemo(
+    () => [...leaveNotifications, ...workNotifications],
+    [leaveNotifications, workNotifications]
+  );
 
   return (
     <NotificationContext.Provider value={{ notifications }}>

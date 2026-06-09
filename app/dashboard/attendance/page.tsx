@@ -45,19 +45,18 @@ import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { addDays, format, startOfWeek } from 'date-fns'
 import { CameraCapture } from '@/components/camera-capture'
+import { formatDateLao, formatDayDateLao } from '@/components/laoDate'
+
 type LocationState = {
   lat: number
   lng: number
   accuracy: number
   error?: string
 }
-import {formatDateLao, formatDayDateLao} from '@/components/laoDate'
-// const LAO_DAYS   = ['ວັນອາທິດ','ວັນຈັນ','ວັນອັງຄານ','ວັນພຸດ','ວັນພະຫັດ','ວັນສຸກ','ວັນເສົາ']
-// const LAO_MONTHS = ['ມັງກອນ (1)','ກຸມພາ (2)','ມີນາ (3)','ເມສາ (4)','ພຶດສະພາ (5)','ມິຖຸນາ (6)','ກໍລະກົດ (7)','ສິງຫາ (8)','ກັນຍາ (9)','ຕຸລາ (10)','ພະຈິກ (11)','ທັນວາ (12)']
-// function formatDateLao(date: Date): string {
-//   return `${LAO_DAYS[date.getDay()]}, ${date.getDate()} ${LAO_MONTHS[date.getMonth()]} ${date.getFullYear()}`
-// }
-// Isolated component — 1s interval only re-renders this, not the whole page
+
+// --- Sub-components ---
+
+// Isolated — 1s interval only re-renders this widget, not the whole page
 const LiveClock = memo(function LiveClock() {
   const [time, setTime] = useState<Date | null>(null)
 
@@ -76,13 +75,290 @@ const LiveClock = memo(function LiveClock() {
             {time ? format(time, 'HH:mm:ss') : '--:--:--'}
           </p>
           <p className="mt-2 text-sm opacity-80">
-            {time ? formatDayDateLao(new Date()) : ''}
+            {time ? formatDayDateLao(time) : ''}
           </p>
         </div>
       </CardContent>
     </Card>
   )
 })
+
+function LocationCard({
+  location,
+  isLoadingLocation,
+  isWithinOffice,
+  geoFenceStatus,
+  officeDistance,
+  onRefresh,
+}: {
+  location: LocationState | null
+  isLoadingLocation: boolean
+  isWithinOffice: boolean
+  geoFenceStatus: string
+  officeDistance: number | null
+  onRefresh: () => void
+}) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <MapPin className="h-4 w-4" />
+          ສະຖານທີ່ຂອງທ່ານ
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center justify-between">
+          <Button variant="outline" size="sm" onClick={onRefresh} disabled={isLoadingLocation}>
+            {isLoadingLocation ? <Spinner className="mr-2" /> : <Navigation className="mr-2 h-4 w-4" />}
+            ດຶງຂໍ້ມູນຕຳແໜ່ງໃໝ່
+          </Button>
+
+          {location && !location.error && (
+            <Badge variant={isWithinOffice ? 'default' : 'destructive'} className="flex items-center gap-1">
+              {isWithinOffice ? (
+                <><Shield className="h-3 w-3" /> ຢູ່ໃນພື້ນທີ່ຫ້ອງການ</>
+              ) : (
+                <><ShieldX className="h-3 w-3" /> ຢູ່ນອກພື້ນທີ່ຫ້ອງການ</>
+              )}
+            </Badge>
+          )}
+        </div>
+
+        {location && !location.error && (
+          <div className="mt-3 space-y-2">
+            {geoFenceStatus === 'loading' && (
+              <p className="text-xs text-muted-foreground">ກຳລັງໂຫຼດຂໍ້ມູນສະຖານທີ່ຫ້ອງການ...</p>
+            )}
+            {geoFenceStatus === 'no_coordinates' && (
+              <p className="text-xs text-amber-600">ຫ້ອງການຍັງບໍ່ໄດ້ຕັ້ງຄ່າພິກັດ GPS — ການກວດສອບໄລຍະຖືກຂ້າມ</p>
+            )}
+            {geoFenceStatus === 'not_found' && (
+              <p className="text-xs text-destructive">ບໍ່ພົບຂໍ້ມູນສະຖານທີ່ຫ້ອງການ</p>
+            )}
+            {geoFenceStatus === 'found' && officeDistance !== null && (
+              <>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">ໄກຈາກຫ້ອງການ</span>
+                  <span className={`font-semibold tabular-nums ${officeDistance > 50 ? 'text-destructive' : 'text-emerald-600'}`}>
+                    {officeDistance} / 50 ແມັດ
+                  </span>
+                </div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${officeDistance > 50 ? 'bg-destructive' : 'bg-emerald-500'}`}
+                    style={{ width: `${Math.max(Math.min((officeDistance / 50) * 100, 100), 4)}%` }}
+                  />
+                </div>
+              </>
+            )}
+            <p className="text-xs text-muted-foreground">
+              ຄວາມແມ່ນຍໍາ GPS: {Math.round(location.accuracy)} ແມັດ
+            </p>
+          </div>
+        )}
+
+        {location?.error && (
+          <p className="mt-2 text-xs text-destructive">{location.error}</p>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function DailySummaryCard({
+  todayAttendance,
+  isLoadingHistory,
+  isOffsite,
+  onIsOffsiteChange,
+}: {
+  todayAttendance: AttendanceRecord | undefined | null
+  isLoadingHistory: boolean
+  isOffsite: boolean
+  onIsOffsiteChange: (v: boolean) => void
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">ສະຫຼຸບປະຈຳວັນ</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <div className="rounded-lg bg-muted/50 p-4 text-center">
+            <p className="mb-1 text-xs text-muted-foreground">ເຂົ້າວຽກ</p>
+            {isLoadingHistory ? (
+              <Skeleton className="h-7 w-16 mx-auto mt-1" />
+            ) : (
+              <p className="text-xl font-bold text-foreground">{todayAttendance?.checkIn || '--:--'}</p>
+            )}
+          </div>
+          <div className="rounded-lg bg-muted/50 p-4 text-center">
+            <p className="mb-1 text-xs text-muted-foreground">ອອກວຽກ</p>
+            {isLoadingHistory ? (
+              <Skeleton className="h-7 w-16 mx-auto mt-1" />
+            ) : (
+              <p className="text-xl font-bold text-foreground">{todayAttendance?.checkOut || '--:--'}</p>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-center">
+          {isLoadingHistory ? (
+            <Skeleton className="h-8 w-36 rounded-full" />
+          ) : (
+            <Badge
+              variant={
+                todayAttendance?.status === 'present' ? 'default'
+                  : todayAttendance?.status === 'late' ? 'secondary'
+                  : todayAttendance?.status === 'not_check_in' ? 'destructive'
+                  : 'outline'
+              }
+              className="px-4 py-1 text-sm"
+            >
+              {todayAttendance?.checkOut ? (
+                <><CheckCircle className="mr-2 h-4 w-4" /> ກັບແລ້ວ</>
+              ) : todayAttendance?.status === 'not_check_in' ? (
+                <><AlertTriangle className="mr-2 h-4 w-4" /> ລືມກົດເຂົ້າວຽກ</>
+              ) : todayAttendance?.checkIn ? (
+                <><Clock className="mr-2 h-4 w-4" /> {todayAttendance.status === 'late' ? 'ເຂົ້າວຽກ (ຊ້າ)' : 'ເຂົ້າວຽກ'}</>
+              ) : (
+                <><AlertTriangle className="mr-2 h-4 w-4" /> ຍັງບໍ່ເຂົ້າວຽກ</>
+              )}
+            </Badge>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 rounded-lg border px-3 py-2.5">
+          <Checkbox
+            id="offsite-mode"
+            checked={isOffsite}
+            onCheckedChange={(v) => onIsOffsiteChange(v === true)}
+          />
+          <Label htmlFor="offsite-mode" className="flex items-center gap-1.5 cursor-pointer text-sm select-none">
+            <MapPinOff className="h-3.5 w-3.5 text-muted-foreground" />
+            ອອກວຽກນອກ
+          </Label>
+          {isOffsite && (
+            <span className="ml-auto text-[10px] text-amber-600 font-medium">ບໍ່ກວດໄລຍະ · ຕ້ອງຖ່າຍຮູບ</span>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function WeeklyHistoryCard({
+  weeklyHistory,
+  isLoadingHistory,
+  onSelectOffsiteDetail,
+}: {
+  weeklyHistory: AttendanceRecord[]
+  isLoadingHistory: boolean
+  onSelectOffsiteDetail: (record: AttendanceRecord) => void
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">ສະຫຼຸບປະຈຳອາທິດ</CardTitle>
+        <CardDescription>ບັນທຶກ ການມາວຽກໃນອາທິດນີ້</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoadingHistory ? (
+          <div className="space-y-2">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="flex items-center justify-between rounded-lg bg-muted/50 p-3">
+                <div className="space-y-1.5">
+                  <Skeleton className="h-4 w-28" />
+                  <Skeleton className="h-3 w-24" />
+                </div>
+                <Skeleton className="h-6 w-14 rounded-full" />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {weeklyHistory.map((record) => (
+              <div
+                key={record.id}
+                className={[
+                  'flex items-center justify-between rounded-lg bg-muted/50 p-3',
+                  record.isOffsite ? 'cursor-pointer hover:bg-muted/80 transition-colors' : '',
+                ].join(' ')}
+                onClick={() => record.isOffsite && onSelectOffsiteDetail(record)}
+              >
+                <div>
+                  <p className="text-sm font-medium">{formatDateLao(new Date(`${record.date}T00:00:00`))}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {record.checkIn || '--:--'} - {record.checkOut || '--:--'}
+                  </p>
+                </div>
+                <Badge
+                  variant={
+                    record.status === 'present' ? 'default'
+                      : record.status === 'late' ? 'secondary'
+                      : record.status === 'leave' ? 'outline'
+                      : 'destructive'
+                  }
+                >
+                  {record.isOffsite && record.status === 'present' ? 'ອອກວຽກນອກ'
+                    : record.isOffsite && record.status === 'late' ? 'ອອກວຽກນອກ (ຊ້າ)'
+                    : record.status === 'present' ? 'ມາວຽກ'
+                    : record.status === 'late' ? 'ມາວຽກ (ຊ້າ)'
+                    : record.status === 'leave' ? 'ພັກ'
+                    : 'ບໍ່ມາວຽກ'}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function OffsiteDetailDialog({
+  detail,
+  onClose,
+}: {
+  detail: AttendanceRecord | null
+  onClose: () => void
+}) {
+  return (
+    <Dialog open={!!detail} onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>ລາຍລະອຽດອອກວຽກນອກ</DialogTitle>
+        </DialogHeader>
+        {detail && (
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">ເຂົ້າວຽກ</p>
+              <p className="text-sm font-semibold">{detail.checkIn || '--:--'}</p>
+              {detail.checkInImageURL ? (
+                <img src={detail.checkInImageURL} alt="ຮູບເຂົ້າວຽກ" className="w-full rounded-lg object-cover max-h-48 bg-muted" />
+              ) : (
+                <div className="flex h-24 items-center justify-center rounded-lg bg-muted text-xs text-muted-foreground">ບໍ່ມີຮູບ</div>
+              )}
+            </div>
+
+            <div className="border-t" />
+
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">ອອກວຽກ</p>
+              <p className="text-sm font-semibold">{detail.checkOut || '--:--'}</p>
+              {detail.checkOutImageURL ? (
+                <img src={detail.checkOutImageURL} alt="ຮູບອອກວຽກ" className="w-full rounded-lg object-cover max-h-48 bg-muted" />
+              ) : (
+                <div className="flex h-24 items-center justify-center rounded-lg bg-muted text-xs text-muted-foreground">ບໍ່ມີຮູບ</div>
+              )}
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// --- Main page ---
 
 export default function AttendancePage() {
   const { user } = useAuth()
@@ -99,7 +375,6 @@ export default function AttendancePage() {
   const [isOffsite, setIsOffsite] = useState(false)
   const [offsiteDetail, setOffsiteDetail] = useState<AttendanceRecord | null>(null)
 
-  // Camera dialog state
   const [cameraOpen, setCameraOpen] = useState(false)
   const [cameraType, setCameraType] = useState<'checkIn' | 'checkOut'>('checkIn')
   const pendingResolveRef = useRef<((file: File | null) => void) | null>(null)
@@ -120,7 +395,6 @@ export default function AttendancePage() {
   const handleCameraClose = useCallback((open: boolean) => {
     setCameraOpen(open)
     if (!open) {
-      // User closed without capturing — resolve with null
       pendingResolveRef.current?.(null)
       pendingResolveRef.current = null
     }
@@ -128,7 +402,6 @@ export default function AttendancePage() {
 
   const getLocation = useCallback(async (): Promise<LocationState | null> => {
     setIsLoadingLocation(true)
-
     return new Promise((resolve) => {
       if (!navigator.geolocation) {
         toast.error('Geolocation is not supported by your browser')
@@ -136,7 +409,6 @@ export default function AttendancePage() {
         resolve(null)
         return
       }
-
       navigator.geolocation.getCurrentPosition(
         (position) => {
           const loc: LocationState = {
@@ -165,9 +437,7 @@ export default function AttendancePage() {
       toast.error('ບໍ່ສາມາດຮັບຂໍ້ມູນສະຖານທີ່. ກະລຸນາເປີດ GPS ແລະອະນຸຍາດການເຂົ້າເຖິງສະຖານທີ່.')
       return null
     }
-    // Skip distance check if office has no coordinates configured
     if (geoFenceStatus === 'no_coordinates') return loc
-
     const dist = distanceToOffice(loc.lat, loc.lng)
     if (dist === null) {
       toast.error('ບໍ່ສາມາດໂຫຼດຂໍ້ມູນສະຖານທີ່ຫ້ອງການໄດ້. ກະລຸນາລອງໃໝ່.')
@@ -178,9 +448,9 @@ export default function AttendancePage() {
       return null
     }
     return loc
-  }, [getLocation, distanceToOffice])
+  }, [getLocation, distanceToOffice, geoFenceStatus])
 
-  // todayIso in deps prevents stale week boundary if app stays open across midnight
+  // Recomputed each render to detect midnight boundary (intentional — cheap string)
   const todayIso = format(new Date(), 'yyyy-MM-dd')
 
   const isBlockedDay = useMemo(() => {
@@ -191,63 +461,45 @@ export default function AttendancePage() {
     return { blocked: false, reason: '' }
   }, [holidays, todayIso])
 
-  // Merged handler — eliminates duplicate logic between checkIn / checkOut
   const handleAttendance = useCallback(async (type: 'checkIn' | 'checkOut') => {
-    if (!user) {
-      toast.error('ບໍ່ເຫັນຂໍ້ມູນຜູ້ໃຊ້. ກະລຸນາເຂົ້າລະບົບອີກຄັ້ງ.')
-      return
-    }
-    if (isBlockedDay.blocked) {
-      toast.error(isBlockedDay.reason)
-      return
-    }
+    if (!user) { toast.error('ບໍ່ເຫັນຂໍ້ມູນຜູ້ໃຊ້. ກະລຸນາເຂົ້າລະບົບອີກຄັ້ງ.'); return }
+    if (isBlockedDay.blocked) { toast.error(isBlockedDay.reason); return }
+
+    const mutation = type === 'checkIn' ? checkInMutation : checkOutMutation
+    const successMsg = isOffsite
+      ? (type === 'checkIn' ? 'ເຂົ້າວຽກນອກສຳເລັດ' : 'ອອກວຽກນອກສຳເລັດ')
+      : (type === 'checkIn' ? 'ເຂົ້າການສຳເລັດແລ້ວ' : 'ອອກຈາກການສຳເລັດແລ້ວ')
+
     try {
       if (isOffsite) {
         const imageFile = await captureImage(type)
-        if (!imageFile) {
-          toast.error('ກະລຸນາຖ່າຍຮູບກ່ອນ.')
-          return
-        }
+        if (!imageFile) { toast.error('ກະລຸນາຖ່າຍຮູບກ່ອນ.'); return }
         const loc = await getLocation()
-        const payload = {
+        await mutation.mutateAsync({
           user,
           location: loc ? { lat: loc.lat, lng: loc.lng } : undefined,
           imageFile,
           isOffsite: true,
-        }
-        if (type === 'checkIn') {
-          await checkInMutation.mutateAsync(payload)
-          toast.success('ເຂົ້າວຽກນອກສຳເລັດ')
-        } else {
-          await checkOutMutation.mutateAsync(payload)
-          toast.success('ອອກວຽກນອກສຳເລັດ')
-        }
+        })
       } else {
         const loc = await getValidatedLocation()
         if (!loc) return
-        const payload = { user, location: { lat: loc.lat, lng: loc.lng } }
-        if (type === 'checkIn') {
-          await checkInMutation.mutateAsync(payload)
-          toast.success('ເຂົ້າການສຳເລັດແລ້ວ')
-        } else {
-          await checkOutMutation.mutateAsync(payload)
-          toast.success('ອອກຈາກການສຳເລັດແລ້ວ')
-        }
+        await mutation.mutateAsync({ user, location: { lat: loc.lat, lng: loc.lng } })
       }
+      toast.success(successMsg)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'ເກີດຂໍ້ຜິດພາດ. ກະລຸນາລອງໃໝ່.')
     }
-  }, [user, isOffsite, isBlockedDay, getLocation, getValidatedLocation, checkInMutation, checkOutMutation, handleCameraCapture])
+  }, [user, isOffsite, isBlockedDay, getLocation, getValidatedLocation, checkInMutation, checkOutMutation])
 
   const officeDistance = useMemo(() => {
     if (!location || location.error) return null
     return distanceToOffice(location.lat, location.lng)
   }, [distanceToOffice, location])
 
-  // Memoized — only recalculates when location or officeDistance changes, not every 1s
   const isWithinOffice = useMemo(() => {
     if (!location || !!location.error) return true
-    if (geoFenceStatus === 'no_coordinates') return true  // no fence configured → allow
+    if (geoFenceStatus === 'no_coordinates') return true
     return officeDistance !== null && officeDistance <= 50
   }, [location, officeDistance, geoFenceStatus])
 
@@ -272,149 +524,28 @@ export default function AttendancePage() {
 
       <LiveClock />
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <MapPin className="h-4 w-4" />
-            ສະຖານທີ່ຂອງທ່ານ
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between">
-            <Button variant="outline" size="sm" onClick={getLocation} disabled={isLoadingLocation}>
-              {isLoadingLocation ? <Spinner className="mr-2" /> : <Navigation className="mr-2 h-4 w-4" />}
-              ດຶງຂໍ້ມູນຕຳແໜ່ງໃໝ່
-            </Button>
+      <LocationCard
+        location={location}
+        isLoadingLocation={isLoadingLocation}
+        isWithinOffice={isWithinOffice}
+        geoFenceStatus={geoFenceStatus}
+        officeDistance={officeDistance}
+        onRefresh={getLocation}
+      />
 
-            {location && !location.error && (
-              <Badge variant={isWithinOffice ? 'default' : 'destructive'} className="flex items-center gap-1">
-                {isWithinOffice ? (
-                  <><Shield className="h-3 w-3" /> ຢູ່ໃນພື້ນທີ່ຫ້ອງການ</>
-                ) : (
-                  <><ShieldX className="h-3 w-3" /> ຢູ່ນອກພື້ນທີ່ຫ້ອງການ</>
-                )}
-              </Badge>
-            )}
-          </div>
+      <DailySummaryCard
+        todayAttendance={todayAttendance}
+        isLoadingHistory={isLoadingHistory}
+        isOffsite={isOffsite}
+        onIsOffsiteChange={setIsOffsite}
+      />
 
-          {location && !location.error && (
-            <div className="mt-3 space-y-2">
-              {geoFenceStatus === 'loading' && (
-                <p className="text-xs text-muted-foreground">ກຳລັງໂຫຼດຂໍ້ມູນສະຖານທີ່ຫ້ອງການ...</p>
-              )}
-
-              {geoFenceStatus === 'no_coordinates' && (
-                <p className="text-xs text-amber-600">ຫ້ອງການຍັງບໍ່ໄດ້ຕັ້ງຄ່າພິກັດ GPS — ການກວດສອບໄລຍະຖືກຂ້າມ</p>
-              )}
-
-              {geoFenceStatus === 'not_found' && (
-                <p className="text-xs text-destructive">ບໍ່ພົບຂໍ້ມູນສະຖານທີ່ຫ້ອງການ</p>
-              )}
-
-              {geoFenceStatus === 'found' && officeDistance !== null && (
-                <>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground">ໄກຈາກຫ້ອງການ</span>
-                    <span className={`font-semibold tabular-nums ${officeDistance > 50 ? 'text-destructive' : 'text-emerald-600'}`}>
-                      {officeDistance} / 50 ແມັດ
-                    </span>
-                  </div>
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                    <div
-                      className={`h-full rounded-full transition-all duration-500 ${officeDistance > 50 ? 'bg-destructive' : 'bg-emerald-500'}`}
-                      style={{ width: `${Math.max(Math.min((officeDistance / 50) * 100, 100), 4)}%` }}
-                    />
-                  </div>
-                </>
-              )}
-
-              <p className="text-xs text-muted-foreground">
-                ຄວາມແມ່ນຍໍາ GPS: {Math.round(location.accuracy)} ແມັດ
-              </p>
-            </div>
-          )}
-
-          {location?.error && (
-            <p className="mt-2 text-xs text-destructive">{location.error}</p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">ສະຫຼຸບປະຈຳວັນ</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="rounded-lg bg-muted/50 p-4 text-center">
-              <p className="mb-1 text-xs text-muted-foreground">ເຂົ້າວຽກ</p>
-              {isLoadingHistory ? (
-                <Skeleton className="h-7 w-16 mx-auto mt-1" />
-              ) : (
-                <p className="text-xl font-bold text-foreground">{todayAttendance?.checkIn || '--:--'}</p>
-              )}
-            </div>
-            <div className="rounded-lg bg-muted/50 p-4 text-center">
-              <p className="mb-1 text-xs text-muted-foreground">ອອກວຽກ</p>
-              {isLoadingHistory ? (
-                <Skeleton className="h-7 w-16 mx-auto mt-1" />
-              ) : (
-                <p className="text-xl font-bold text-foreground">{todayAttendance?.checkOut || '--:--'}</p>
-              )}
-            </div>
-          </div>
-
-          <div className="flex items-center justify-center">
-            {isLoadingHistory ? (
-              <Skeleton className="h-8 w-36 rounded-full" />
-            ) : (
-              <Badge
-                variant={
-                  todayAttendance?.status === 'present' ? 'default'
-                    : todayAttendance?.status === 'late' ? 'secondary'
-                    : todayAttendance?.status === 'not_check_in' ? 'destructive'
-                    : 'outline'
-                }
-                className="px-4 py-1 text-sm"
-              >
-                {todayAttendance?.checkOut ? (
-                  <><CheckCircle className="mr-2 h-4 w-4" /> ກັບແລ້ວ</>
-                ) : todayAttendance?.status === 'not_check_in' ? (
-                  <><AlertTriangle className="mr-2 h-4 w-4" /> ລືມກົດເຂົ້າວຽກ</>
-                ) : todayAttendance?.checkIn ? (
-                  <><Clock className="mr-2 h-4 w-4" /> {todayAttendance.status === 'late' ? 'ເຂົ້າວຽກ (ຊ້າ)' : 'ເຂົ້າວຽກ'}</>
-                ) : (
-                  <><AlertTriangle className="mr-2 h-4 w-4" /> ຍັງບໍ່ເຂົ້າວຽກ</>
-                )}
-              </Badge>
-            )}
-          </div>
-
-          {/* Offsite checkbox — mobile only */}
-          <div className="flex items-center gap-2 rounded-lg border px-3 py-2.5 ">
-            <Checkbox
-              id="offsite-mode"
-              checked={isOffsite}
-              onCheckedChange={(v) => setIsOffsite(v === true)}
-            />
-            <Label htmlFor="offsite-mode" className="flex items-center gap-1.5 cursor-pointer text-sm select-none">
-              <MapPinOff className="h-3.5 w-3.5 text-muted-foreground" />
-              ອອກວຽກນອກ
-            </Label>
-            {isOffsite && (
-              <span className="ml-auto text-[10px] text-amber-600 font-medium">ບໍ່ກວດໄລຍະ · ຕ້ອງຖ່າຍຮູບ</span>
-            )}
-          </div>
-
-          {/* Camera capture dialog — replaces broken <input capture> */}
-          <CameraCapture
-            open={cameraOpen}
-            onOpenChange={handleCameraClose}
-            onCapture={handleCameraCapture}
-            title={cameraType === 'checkIn' ? 'ຖ່າຍຮູບເຂົ້າວຽກ' : 'ຖ່າຍຮູບອອກວຽກ'}
-          />
-        </CardContent>
-      </Card>
+      <CameraCapture
+        open={cameraOpen}
+        onOpenChange={handleCameraClose}
+        onCapture={handleCameraCapture}
+        title={cameraType === 'checkIn' ? 'ຖ່າຍຮູບເຂົ້າວຽກ' : 'ຖ່າຍຮູບອອກວຽກ'}
+      />
 
       {isLoadingHistory ? (
         <div className="grid grid-cols-2 gap-4">
@@ -446,112 +577,16 @@ export default function AttendancePage() {
         </div>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">ສະຫຼຸບປະຈຳອາທິດ</CardTitle>
-          <CardDescription>ບັນທຶກ ການມາວຽກໃນອາທິດນີ້</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {isLoadingHistory ? (
-            <div className="space-y-2">
-              {[0, 1, 2, 3].map((i) => (
-                <div key={i} className="flex items-center justify-between rounded-lg bg-muted/50 p-3">
-                  <div className="space-y-1.5">
-                    <Skeleton className="h-4 w-28" />
-                    <Skeleton className="h-3 w-24" />
-                  </div>
-                  <Skeleton className="h-6 w-14 rounded-full" />
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {weeklyHistory.map((record) => (
-                <div
-                  key={record.id}
-                  className={[
-                    'flex items-center justify-between rounded-lg bg-muted/50 p-3',
-                    record.isOffsite ? 'cursor-pointer hover:bg-muted/80 transition-colors' : '',
-                  ].join(' ')}
-                  onClick={() => record.isOffsite && setOffsiteDetail(record)}
-                >
-                  <div>
-                    <p className="text-sm font-medium">
-                      {formatDateLao(new Date(record.date))}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {record.checkIn || '--:--'} - {record.checkOut || '--:--'}
-                    </p>
-                  </div>
-                  <Badge
-                    variant={
-                      record.status === 'present' ? 'default'
-                        : record.status === 'late' ? 'secondary'
-                        : record.status === 'leave' ? 'outline'
-                        : 'destructive'
-                    }
-                  >
-                    {record.isOffsite && record.status === 'present' ? 'ອອກວຽກນອກ'
-                      : record.isOffsite && record.status === 'late' ? 'ອອກວຽກນອກ (ຊ້າ)'
-                      : record.status === 'present' ? 'ມາວຽກ'
-                      : record.status === 'late' ? 'ມາວຽກ (ຊ້າ)'
-                      : record.status === 'leave' ? 'ພັກ'
-                      : 'ບໍ່ມາວຽກ'}
-                  </Badge>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <WeeklyHistoryCard
+        weeklyHistory={weeklyHistory}
+        isLoadingHistory={isLoadingHistory}
+        onSelectOffsiteDetail={setOffsiteDetail}
+      />
 
-      {/* Offsite detail dialog */}
-      <Dialog open={!!offsiteDetail} onOpenChange={(open) => { if (!open) setOffsiteDetail(null) }}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>ລາຍລະອຽດອອກວຽກນອກ</DialogTitle>
-          </DialogHeader>
-          {offsiteDetail && (
-            <div className="space-y-4">
-              {/* Check-in */}
-              <div className="space-y-1.5">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">ເຂົ້າວຽກ</p>
-                <p className="text-sm font-semibold">{offsiteDetail.checkIn || '--:--'}</p>
-                {offsiteDetail.checkInImageURL ? (
-                  <img
-                    src={offsiteDetail.checkInImageURL}
-                    alt="ຮູບເຂົ້າວຽກ"
-                    className="w-full rounded-lg object-cover max-h-48 bg-muted"
-                  />
-                ) : (
-                  <div className="flex h-24 items-center justify-center rounded-lg bg-muted text-xs text-muted-foreground">
-                    ບໍ່ມີຮູບ
-                  </div>
-                )}
-              </div>
-
-              <div className="border-t" />
-
-              {/* Check-out */}
-              <div className="space-y-1.5">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">ອອກວຽກ</p>
-                <p className="text-sm font-semibold">{offsiteDetail.checkOut || '--:--'}</p>
-                {offsiteDetail.checkOutImageURL ? (
-                  <img
-                    src={offsiteDetail.checkOutImageURL}
-                    alt="ຮູບອອກວຽກ"
-                    className="w-full rounded-lg object-cover max-h-48 bg-muted"
-                  />
-                ) : (
-                  <div className="flex h-24 items-center justify-center rounded-lg bg-muted text-xs text-muted-foreground">
-                    ບໍ່ມີຮູບ
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      <OffsiteDetailDialog
+        detail={offsiteDetail}
+        onClose={() => setOffsiteDetail(null)}
+      />
     </div>
   )
 }

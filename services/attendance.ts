@@ -1,7 +1,14 @@
-import { collection, doc, getDocs, query, setDoc, where } from 'firebase/firestore'
-import { db, storage } from '@/lib/firebase'
+import { collection, getDocs, query, where } from 'firebase/firestore'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { getFunctions, httpsCallable } from 'firebase/functions'
+import app, { db, storage } from '@/lib/firebase'
 import type { AttendanceRecord } from '@/lib/types'
+
+let _fns: ReturnType<typeof getFunctions> | null = null
+function fns() {
+  if (!_fns) _fns = getFunctions(app, 'asia-southeast1')
+  return _fns
+}
 
 export async function uploadAttendanceImage(file: File, userUuid: string, type: 'checkIn' | 'checkOut'): Promise<string> {
   const ext = file.name.split('.').pop() ?? 'jpg'
@@ -184,29 +191,39 @@ export async function getServerDateTimeInVientiane(): Promise<ServerDateTime> {
   return parseIsoDateAndTime(payload.datetime)
 }
 
-// Fetch all attendance docs for a user, merging by userUuid AND uid
-// System-generated not_checked_in records may only have uid (no userUuid)
-async function fetchAttendanceDocs(userUuid: string) {
-  const [byUserUuid, byUid] = await Promise.all([
-    getDocs(query(collection(db, 'attendance'), where('userUuid', '==', userUuid))),
-    getDocs(query(collection(db, 'attendance'), where('uid', '==', userUuid))),
-  ])
-  const seen = new Set<string>()
-  const merged = [...byUserUuid.docs, ...byUid.docs].filter(d => {
-    if (seen.has(d.id)) return false
-    seen.add(d.id)
-    return true
-  })
-  return merged
+// Fetch attendance docs for a user, merging by userUuid AND uid.
+// System-generated not_checked_in records may only have uid (no userUuid).
+// Pass sinceIsoDate (YYYY-MM-DD) to scope results and avoid full-history scans.
+async function fetchAttendanceDocs(userUuid: string, sinceIsoDate?: string) {
+  async function runQueries(withDateFilter: boolean) {
+    const dateFilter = (withDateFilter && sinceIsoDate) ? [where('dateKey', '>=', sinceIsoDate)] : []
+    const [byUserUuid, byUid] = await Promise.all([
+      getDocs(query(collection(db, 'attendance'), where('userUuid', '==', userUuid), ...dateFilter)),
+      getDocs(query(collection(db, 'attendance'), where('uid', '==', userUuid), ...dateFilter)),
+    ])
+    const seen = new Set<string>()
+    return [...byUserUuid.docs, ...byUid.docs].filter(d => {
+      if (seen.has(d.id)) return false
+      seen.add(d.id)
+      return true
+    })
+  }
+
+  try {
+    return await runQueries(true)
+  } catch {
+    // composite index (userUuid/uid + dateKey) ຍັງບໍ່ຖືກສ້າງໃນ Firestore Console
+    // fallback: query ແບບ unfiltered ແລ້ວໃຫ້ isSameMonth filter ທີ່ client ຈັດການ
+    return runQueries(false)
+  }
 }
 
 export async function fetchAttendanceByUserThisMonth(userUuid: string): Promise<AttendanceRecord[]> {
-  if (!userUuid) {
-    return []
-  }
+  if (!userUuid) return []
 
-  const docs = await fetchAttendanceDocs(userUuid)
   const now = new Date()
+  const monthStart = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-01`
+  const docs = await fetchAttendanceDocs(userUuid, monthStart)
 
   const rows: AttendanceRecord[] = []
 
@@ -218,90 +235,35 @@ export async function fetchAttendanceByUserThisMonth(userUuid: string): Promise<
       continue
     }
 
-      rows.push({
-        id: docSnapshot.id,
-        date: formatLocalIsoDate(parsedDate),
-        ...(data.checkInTime ? { checkIn: data.checkInTime, checkInTime: data.checkInTime } : {}),
-        checkOut: data.checkOutTime ?? undefined,
-        checkOutTime: data.checkOutTime ?? null,
-        status: normalizeAttendanceStatus(data.status),
-        location: data.location,
-        workHours: data.workHours,
-        ...(data.isOffsite ? { isOffsite: true } : {}),
-        ...(data.checkInImageURL ? { checkInImageURL: data.checkInImageURL } : {}),
-        ...(data.checkOutImageURL ? { checkOutImageURL: data.checkOutImageURL } : {}),
-      })
+    rows.push({
+      id: docSnapshot.id,
+      date: formatLocalIsoDate(parsedDate),
+      ...(data.checkInTime ? { checkIn: data.checkInTime, checkInTime: data.checkInTime } : {}),
+      checkOut: data.checkOutTime ?? undefined,
+      checkOutTime: data.checkOutTime ?? null,
+      status: normalizeAttendanceStatus(data.status),
+      location: data.location,
+      workHours: data.workHours,
+      ...(data.isOffsite ? { isOffsite: true } : {}),
+      ...(data.checkInImageURL ? { checkInImageURL: data.checkInImageURL } : {}),
+      ...(data.checkOutImageURL ? { checkOutImageURL: data.checkOutImageURL } : {}),
+    })
   }
 
   return rows.sort((left, right) => right.date.localeCompare(left.date))
 }
 
-export async function updateAttendanceCheckInTime({
-  userUuid,
-  uid,
-  date,
-  checkInTime,
-  status,
-  location,
-  createdBy,
-  fullNameEn,
-  fullNameLo,
-  jobTitle,
-  employeeImage,
-  note,
-  department,
-  workLocation,
-  checkInImageURL,
-  isOffsite,
-  updatedBy,
-}: UpdateCheckInTimeParams): Promise<string> {
-  const attendanceId = `${userUuid}_${date}`
-  const attendanceRef = doc(db, 'attendance', attendanceId)
-
-  await setDoc(
-    attendanceRef,
-    {
-      _id: attendanceId,
-      uid: uid || userUuid,
-      userUuid,
-      date,
-      checkInTime,
-      // Do NOT write checkOutTime here — merge:true would overwrite existing checkout data
-      // if an admin corrects a check-in on a record that already has a checkout.
-
-      ...(typeof fullNameEn === 'string' ? { fullNameEn } : {}),
-      ...(typeof fullNameLo === 'string' ? { fullNameLo } : {}),
-      ...(typeof jobTitle === 'string' ? { jobTitle } : {}),
-      ...(typeof employeeImage === 'string' ? { employeeImage } : {}),
-      ...(typeof note !== 'undefined' ? { note } : {}),
-      ...(department ? { department } : {}),
-      ...(workLocation ? { workLocation } : {}),
-      ...(checkInImageURL ? { checkInImageURL } : {}),
-      ...(isOffsite ? { isOffsite: true } : {}),
-      status,
-      ...(location
-        ? {
-            location: {
-              lat: location.lat,
-              lng: location.lng,
-            },
-          }
-        : {}),
-      updatedAt: new Date().toISOString(),
-      updatedBy: updatedBy ?? userUuid,
-    },
-    { merge: true },
+export async function updateAttendanceCheckInTime(params: UpdateCheckInTimeParams): Promise<string> {
+  const recordCheckIn = httpsCallable<UpdateCheckInTimeParams, { attendanceId: string }>(
+    fns(), 'recordCheckIn'
   )
-
-  return attendanceId
+  const result = await recordCheckIn(params)
+  return result.data.attendanceId
 }
 
 export async function updateAttendanceCheckOutTime({
   userUuid,
   uid,
-  date,
-  checkOutTime,
-  workHours,
   location,
   fullNameEn,
   fullNameLo,
@@ -311,40 +273,11 @@ export async function updateAttendanceCheckOutTime({
   workLocation,
   checkOutImageURL,
 }: UpdateCheckOutTimeParams): Promise<string> {
-  const attendanceId = `${userUuid}_${date}`
-  const attendanceRef = doc(db, 'attendance', attendanceId)
-
-  await setDoc(
-    attendanceRef,
-    {
-      _id: attendanceId,
-      uid: uid || userUuid,
-      userUuid,
-      date,
-      checkOutTime,
-      ...(typeof fullNameEn === 'string' ? { fullNameEn } : {}),
-      ...(typeof fullNameLo === 'string' ? { fullNameLo } : {}),
-      ...(typeof jobTitle === 'string' ? { jobTitle } : {}),
-      ...(typeof employeeImage === 'string' ? { employeeImage } : {}),
-      ...(department ? { department } : {}),
-      ...(workLocation ? { workLocation } : {}),
-      ...(typeof workHours === 'number' ? { workHours } : {}),
-      ...(checkOutImageURL ? { checkOutImageURL } : {}),
-      ...(location
-        ? {
-            location: {
-              lat: location.lat,
-              lng: location.lng,
-            },
-          }
-        : {}),
-      updatedAt: new Date().toISOString(),
-      updatedBy: userUuid,
-    },
-    { merge: true },
+  const fn = httpsCallable<Omit<UpdateCheckOutTimeParams, 'date' | 'checkOutTime' | 'workHours'>, { attendanceId: string }>(
+    fns(), 'recordCheckOut'
   )
-
-  return attendanceId
+  const result = await fn({ userUuid, uid, location, fullNameEn, fullNameLo, jobTitle, employeeImage, department, workLocation, checkOutImageURL })
+  return result.data.attendanceId
 }
 
 export async function fetchAttendanceByUser(userUuid: string): Promise<AttendanceRecord[]> {
@@ -529,8 +462,13 @@ function toIsoDateString(data: AttendanceDoc & { _id?: string }): string {
 }
 
 export async function fetchLateRankingThisMonth(): Promise<LateRankEntry[]> {
+  const now = new Date()
+  const monthStart = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-01`
+
+  // dateKey filter scopes to current month — was fetching all-time late records before
+  // Requires composite index on (status, dateKey) in Firestore console
   const snap = await getDocs(
-    query(collection(db, 'attendance'), where('status', '==', 'late')),
+    query(collection(db, 'attendance'), where('status', '==', 'late'), where('dateKey', '>=', monthStart)),
   )
 
   const map = new Map<string, LateRankEntry>()
