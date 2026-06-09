@@ -1,10 +1,9 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { usePendingDocLeaves, useAttachLeaveDocument } from '@/lib/use-leave-queries'
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
-import { storage } from '@/lib/firebase'
+import { uploadLeaveDocument } from '@/services/leaves'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
@@ -27,22 +26,23 @@ function PendingDocCard({
   leave: LeaveRequest
   userUuid: string
 }) {
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const attachDocument = useAttachLeaveDocument()
 
   const handleSubmit = async () => {
     if (!file) { toast.error('ກະລຸນາເລືອກໄຟລ໌ເອກະສານ'); return }
     try {
-      const ext = file.name.split('.').pop() ?? 'file'
-      const storageRef = ref(storage, `leaves/${userUuid}/${Date.now()}.${ext}`)
-      const snapshot = await uploadBytes(storageRef, file)
-      const docLink = await getDownloadURL(snapshot.ref)
+      setUploadProgress(0)
+      const docLink = await uploadLeaveDocument(file, userUuid, setUploadProgress)
       await attachDocument.mutateAsync({ leaveId: leave.id, docLink, userUuid })
       toast.success('ສົ່ງເອກະສານສຳເລັດ')
       setFile(null)
-    } catch {
-      toast.error('ສົ່ງເອກະສານລົ້ມເຫລວ ກະລຸນາລອງໃໝ່')
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'ສົ່ງເອກະສານລົ້ມເຫລວ ກະລຸນາລອງໃໝ່'
+      toast.error(msg)
+    } finally {
+      setUploadProgress(null)
     }
   }
 
@@ -68,36 +68,43 @@ function PendingDocCard({
 
         <div className="space-y-2">
           <label
-            htmlFor={`doc-file-${leave.id}`}
-            className="block"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <div className={cn(
-              'flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-5 cursor-pointer transition-colors active:bg-primary/10',
+            className={cn(
+              'relative cursor-pointer w-full flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-5 transition-colors active:bg-primary/10',
               file ? 'border-primary bg-primary/5' : 'border-input hover:bg-muted'
-            )}>
-              <Upload className="h-5 w-5 text-muted-foreground" />
-              {file ? (
-                <div className="text-center">
-                  <p className="text-sm font-medium text-primary truncate max-w-[14rem]">{file.name}</p>
-                  <p className="text-xs text-muted-foreground">{(file.size / 1024).toFixed(1)} KB</p>
-                </div>
-              ) : (
-                <div className="text-center">
-                  <p className="text-sm text-muted-foreground">ກົດເພື່ອເລືອກໄຟລ໌ເອກະສານ</p>
-                  <p className="text-xs text-muted-foreground">PDF, JPG, PNG (ສູງສຸດ 10MB)</p>
-                </div>
-              )}
-              <input
-                ref={fileInputRef}
-                id={`doc-file-${leave.id}`}
-                type="file"
-                accept=".pdf,.jpg,.jpeg,.png"
-                className="hidden"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                onClick={(e) => e.stopPropagation()}
-              />
-            </div>
+            )}
+          >
+            <input
+              type="file"
+              accept=".pdf,.jpg,.jpeg,.png"
+              className="absolute inset-0 opacity-[0.01] cursor-pointer w-full h-full"
+              onChange={(e) => {
+                const selected = e.target.files?.[0] ?? null
+                const ALLOWED_MIME = ['application/pdf', 'image/jpeg', 'image/png']
+                if (selected && !ALLOWED_MIME.includes(selected.type)) {
+                  toast.error('ອະນຸຍາດສະເພາະ PDF, JPG, PNG ເທົ່ານັ້ນ')
+                  e.target.value = ''
+                  return
+                }
+                if (selected && selected.size > 10 * 1024 * 1024) {
+                  toast.error('ໄຟລ໌ໃຫຍ່ເກີນ 10MB ກະລຸນາເລືອກໄຟລ໌ໃໝ່')
+                  e.target.value = ''
+                  return
+                }
+                setFile(selected)
+              }}
+            />
+            <Upload className="h-5 w-5 text-muted-foreground pointer-events-none" />
+            {file ? (
+              <div className="text-center pointer-events-none">
+                <p className="text-sm font-medium text-primary truncate max-w-[14rem]">{file.name}</p>
+                <p className="text-xs text-muted-foreground">{(file.size / 1024).toFixed(1)} KB</p>
+              </div>
+            ) : (
+              <div className="text-center pointer-events-none">
+                <p className="text-sm text-muted-foreground">ກົດເພື່ອເລືອກໄຟລ໌ເອກະສານ</p>
+                <p className="text-xs text-muted-foreground">PDF, JPG, PNG (ສູງສຸດ 10MB)</p>
+              </div>
+            )}
           </label>
           {file && (
             <button
@@ -110,15 +117,27 @@ function PendingDocCard({
           )}
         </div>
 
+        {uploadProgress !== null && (
+          <div className="space-y-1">
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-primary transition-all duration-300"
+                style={{ width: `${uploadProgress}%` }}
+              />
+            </div>
+            <p className="text-right text-xs text-muted-foreground">{uploadProgress}%</p>
+          </div>
+        )}
+
         <Button
           type="button"
           className="w-full"
           size="sm"
-          disabled={!file || attachDocument.isPending}
+          disabled={!file || attachDocument.isPending || uploadProgress !== null}
           onClick={handleSubmit}
         >
-          {attachDocument.isPending ? <Spinner className="mr-2" /> : <Send className="mr-2 h-4 w-4" />}
-          ສົ່ງເອກະສານ
+          {uploadProgress !== null ? <Spinner className="mr-2" /> : <Send className="mr-2 h-4 w-4" />}
+          {uploadProgress !== null ? `ກຳລັງສົ່ງ... ${uploadProgress}%` : 'ສົ່ງເອກະສານ'}
         </Button>
       </CardContent>
     </Card>
@@ -138,7 +157,7 @@ export default function LeaveDocPage() {
         <p className="text-muted-foreground text-sm">ລາຍການລາພັກທີ່ທ່ານເລືອກສົ່ງເອກະສານພາຍຫຼັງ</p>
       </div>
 
-      {isLoading ? (
+      {!userUuid || isLoading ? (
         <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
           <Spinner /> ກຳລັງໂຫຼດ...
         </div>

@@ -1,7 +1,32 @@
 import { addDoc, collection, doc, getDoc, getDocs, query, updateDoc, where } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
+import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
+import { db, storage } from '@/lib/firebase'
 import type { LeaveApprovalStep, LeaveRequest } from '@/lib/types'
 import { resolveLeaveRequestStatus } from '@/services/leave-approval'
+
+export async function uploadLeaveDocument(
+  file: File,
+  userUuid: string,
+  onProgress?: (percent: number) => void,
+): Promise<string> {
+  const ext = file.name.split('.').pop() ?? 'file'
+  const path = `leaves/${userUuid}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+  const fileRef = storageRef(storage, path)
+
+  return new Promise((resolve, reject) => {
+    const task = uploadBytesResumable(fileRef, file)
+    task.on(
+      'state_changed',
+      (snap) => {
+        if (onProgress) {
+          onProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100))
+        }
+      },
+      reject,
+      () => getDownloadURL(task.snapshot.ref).then(resolve).catch(reject),
+    )
+  })
+}
 
 export async function fetchLeaveById(leaveId: string): Promise<LeaveRequest | null> {
   const snapshot = await getDoc(doc(db, 'leaves', leaveId))

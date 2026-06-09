@@ -9,6 +9,7 @@ import {
   useCheckIn,
   useCheckOut,
 } from '@/lib/use-attendance-queries'
+import { useOfficialHolidays } from '@/lib/use-official-holidays-query'
 import {
   Card,
   CardContent,
@@ -89,6 +90,7 @@ export default function AttendancePage() {
 
   const { data: todayAttendance, isLoading: isLoadingHistory } = useTodayAttendance(user?.uuid)
   const { data: attendanceHistory = [] } = useAttendanceHistory(user?.uuid)
+  const { data: holidays = [] } = useOfficialHolidays()
   const checkInMutation = useCheckIn()
   const checkOutMutation = useCheckOut()
 
@@ -178,10 +180,25 @@ export default function AttendancePage() {
     return loc
   }, [getLocation, distanceToOffice])
 
+  // todayIso in deps prevents stale week boundary if app stays open across midnight
+  const todayIso = format(new Date(), 'yyyy-MM-dd')
+
+  const isBlockedDay = useMemo(() => {
+    const day = new Date().getDay()
+    if (day === 0 || day === 6) return { blocked: true, reason: 'ວັນນີ້ເປັນວັນພັກທ້າຍອາທິດ ບໍ່ສາມາດ Check-In ໄດ້' }
+    const holiday = holidays.find((h) => h.date === todayIso)
+    if (holiday) return { blocked: true, reason: `ວັນນີ້ເປັນວັນພັກ: ${holiday.name}` }
+    return { blocked: false, reason: '' }
+  }, [holidays, todayIso])
+
   // Merged handler — eliminates duplicate logic between checkIn / checkOut
   const handleAttendance = useCallback(async (type: 'checkIn' | 'checkOut') => {
     if (!user) {
       toast.error('ບໍ່ເຫັນຂໍ້ມູນຜູ້ໃຊ້. ກະລຸນາເຂົ້າລະບົບອີກຄັ້ງ.')
+      return
+    }
+    if (isBlockedDay.blocked) {
+      toast.error(isBlockedDay.reason)
       return
     }
     try {
@@ -220,7 +237,7 @@ export default function AttendancePage() {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'ເກີດຂໍ້ຜິດພາດ. ກະລຸນາລອງໃໝ່.')
     }
-  }, [user, isOffsite, getLocation, getValidatedLocation, checkInMutation, checkOutMutation, handleCameraCapture])
+  }, [user, isOffsite, isBlockedDay, getLocation, getValidatedLocation, checkInMutation, checkOutMutation, handleCameraCapture])
 
   const officeDistance = useMemo(() => {
     if (!location || location.error) return null
@@ -234,8 +251,6 @@ export default function AttendancePage() {
     return officeDistance !== null && officeDistance <= 50
   }, [location, officeDistance, geoFenceStatus])
 
-  // todayIso in deps prevents stale week boundary if app stays open across midnight
-  const todayIso = format(new Date(), 'yyyy-MM-dd')
   const weeklyHistory = useMemo(() => {
     const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 })
     const weekStartIso = format(weekStart, 'yyyy-MM-dd')
@@ -412,7 +427,7 @@ export default function AttendancePage() {
             size="lg"
             className="h-16 text-lg"
             onClick={() => handleAttendance('checkIn')}
-            disabled={checkInMutation.isPending || !!todayAttendance?.checkIn || (!isOffsite && !isWithinOffice)}
+            disabled={isBlockedDay.blocked || checkInMutation.isPending || !!todayAttendance?.checkIn || (!isOffsite && !isWithinOffice)}
           >
             {checkInMutation.isPending ? <Spinner className="mr-2" /> : <LogIn className="mr-2 h-5 w-5" />}
             Check In
@@ -423,7 +438,7 @@ export default function AttendancePage() {
             variant="outline"
             className="h-16 text-lg"
             onClick={() => handleAttendance('checkOut')}
-            disabled={checkOutMutation.isPending || !todayAttendance?.checkIn || !!todayAttendance?.checkOut || (!isOffsite && !isWithinOffice)}
+            disabled={isBlockedDay.blocked || checkOutMutation.isPending || !todayAttendance?.checkIn || !!todayAttendance?.checkOut || (!isOffsite && !isWithinOffice)}
           >
             {checkOutMutation.isPending ? <Spinner className="mr-2" /> : <LogOut className="mr-2 h-5 w-5" />}
             Check Out
