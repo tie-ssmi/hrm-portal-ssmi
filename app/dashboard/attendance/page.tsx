@@ -404,7 +404,6 @@ export default function AttendancePage() {
     setIsLoadingLocation(true)
     return new Promise((resolve) => {
       if (!navigator.geolocation) {
-        toast.error('Geolocation is not supported by your browser')
         setIsLoadingLocation(false)
         resolve(null)
         return
@@ -423,7 +422,6 @@ export default function AttendancePage() {
         (error) => {
           setLocation({ lat: 0, lng: 0, accuracy: 0, error: error.message })
           setIsLoadingLocation(false)
-          toast.error('Unable to get your location. Please enable location services.')
           resolve(null)
         },
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
@@ -432,9 +430,10 @@ export default function AttendancePage() {
   }, [])
 
   const getValidatedLocation = useCallback(async (): Promise<LocationState | null> => {
-    const loc = await getLocation()
-    if (!loc) {
-      toast.error('ບໍ່ສາມາດຮັບຂໍ້ມູນສະຖານທີ່. ກະລຸນາເປີດ GPS ແລະອະນຸຍາດການເຂົ້າເຖິງສະຖານທີ່.')
+    // Reuse cached GPS if already fetched — avoids double-fetch that causes false GPS failures on check-in/out
+    const loc = (location && !location.error) ? location : await getLocation()
+    if (!loc || loc.error) {
+      toast.error('ບໍ່ສາມາດຮັບຂໍ້ມູນສະຖານທີ່. ກະລຸນາກົດ "ດຶງຂໍ້ມູນຕຳແໜ່ງໃໝ່" ກ່ອນ.')
       return null
     }
     if (geoFenceStatus === 'no_coordinates') return loc
@@ -448,7 +447,7 @@ export default function AttendancePage() {
       return null
     }
     return loc
-  }, [getLocation, distanceToOffice, geoFenceStatus])
+  }, [location, getLocation, distanceToOffice, geoFenceStatus])
 
   // Recomputed each render to detect midnight boundary (intentional — cheap string)
   const todayIso = format(new Date(), 'yyyy-MM-dd')

@@ -92,7 +92,8 @@ type LeaveLike = {
 const callableCorsOrigins: Array<string | RegExp> = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
-  'capacitor://localhost',
+  'https://demohrm.ssmilaos.com', // Android Capacitor WebView
+  'capacitor://localhost',         // iOS Capacitor WebView
   'ionic://localhost',
   /^https:\/\/.*\.web\.app$/,
   /^https:\/\/.*\.firebaseapp\.com$/,
