@@ -8,6 +8,7 @@ import {
   useTodayAttendance,
   useCheckIn,
   useCheckOut,
+  useTodayLeaveStatus,
 } from '@/lib/use-attendance-queries'
 import { useOfficialHolidays } from '@/lib/use-official-holidays-query'
 import {
@@ -364,9 +365,13 @@ export default function AttendancePage() {
   const { user } = useAuth()
   const { distanceToOffice, geoFenceStatus } = useHRM()
 
+  // Recomputed each render to detect midnight boundary (intentional — cheap string)
+  const todayIso = format(new Date(), 'yyyy-MM-dd')
+
   const { data: todayAttendance, isLoading: isLoadingHistory } = useTodayAttendance(user?.uuid)
   const { data: attendanceHistory = [] } = useAttendanceHistory(user?.uuid)
   const { data: holidays = [] } = useOfficialHolidays()
+  const { data: todayLeaveStatus = 'none' } = useTodayLeaveStatus(user?.uuid, todayIso)
   const checkInMutation = useCheckIn()
   const checkOutMutation = useCheckOut()
 
@@ -449,20 +454,18 @@ export default function AttendancePage() {
     return loc
   }, [location, getLocation, distanceToOffice, geoFenceStatus])
 
-  // Recomputed each render to detect midnight boundary (intentional — cheap string)
-  const todayIso = format(new Date(), 'yyyy-MM-dd')
-
   const isBlockedDay = useMemo(() => {
     const day = new Date().getDay()
     if (day === 0 || day === 6) return { blocked: true, reason: 'ວັນນີ້ເປັນວັນພັກທ້າຍອາທິດ ບໍ່ສາມາດ Check-In ໄດ້' }
     const holiday = holidays.find((h) => h.date === todayIso)
     if (holiday) return { blocked: true, reason: `ວັນນີ້ເປັນວັນພັກ: ${holiday.name}` }
+    if (todayLeaveStatus === 'blocked') return { blocked: true, reason: 'ທ່ານມີວັນລາພັກທີ່ໄດ້ຮັບອະນຸມັດໃນວັນນີ້ ບໍ່ສາມາດ Check-In ໄດ້' }
     return { blocked: false, reason: '' }
-  }, [holidays, todayIso])
+  }, [holidays, todayIso, todayLeaveStatus])
 
   const handleAttendance = useCallback(async (type: 'checkIn' | 'checkOut') => {
     if (!user) { toast.error('ບໍ່ເຫັນຂໍ້ມູນຜູ້ໃຊ້. ກະລຸນາເຂົ້າລະບົບອີກຄັ້ງ.'); return }
-    if (isBlockedDay.blocked) { toast.error(isBlockedDay.reason); return }
+    if (type === 'checkIn' && isBlockedDay.blocked) { toast.error(isBlockedDay.reason); return }
 
     const mutation = type === 'checkIn' ? checkInMutation : checkOutMutation
     const successMsg = isOffsite
@@ -487,7 +490,18 @@ export default function AttendancePage() {
       }
       toast.success(successMsg)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'ເກີດຂໍ້ຜິດພາດ. ກະລຸນາລອງໃໝ່.')
+      const code = (error as { code?: string }).code ?? ''
+      let msg: string
+      if (code === 'functions/internal' || code === 'functions/unknown') {
+        msg = 'ເກີດຂໍ້ຜິດພາດ. ກະລຸນາລອງໃໝ່.'
+      } else if (code === 'functions/unavailable') {
+        msg = 'ບໍ່ສາມາດເຊື່ອມຕໍ່ server. ກະລຸນາກວດ internet.'
+      } else if (code === 'functions/unauthenticated') {
+        msg = 'ກະລຸນາເຂົ້າລະບົບໃໝ່.'
+      } else {
+        msg = error instanceof Error ? error.message : 'ເກີດຂໍ້ຜິດພາດ. ກະລຸນາລອງໃໝ່.'
+      }
+      toast.error(msg)
     }
   }, [user, isOffsite, isBlockedDay, getLocation, getValidatedLocation, checkInMutation, checkOutMutation])
 
@@ -546,33 +560,58 @@ export default function AttendancePage() {
         title={cameraType === 'checkIn' ? 'ຖ່າຍຮູບເຂົ້າວຽກ' : 'ຖ່າຍຮູບອອກວຽກ'}
       />
 
+      {/* Leave status banner */}
+      {todayLeaveStatus === 'blocked' && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-destructive">ລາພັກທີ່ໄດ້ຮັບອະນຸມັດ</p>
+            <p className="text-xs text-destructive/80 mt-0.5">ທ່ານມີວັນລາພັກທີ່ຄົບທັງໝົດໃນວັນນີ້ — ບໍ່ສາມາດ Check-In ໄດ້</p>
+          </div>
+        </div>
+      )}
+      {todayLeaveStatus === 'morning_leave' && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-900 p-3 flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-amber-800 dark:text-amber-400">ລາພັກເຄິ່ງເຊົ້າ</p>
+            <p className="text-xs text-amber-700 dark:text-amber-500 mt-0.5">ທ່ານລາພັກໃນຕອນເຊົ້າ — ສາມາດ Check-In ໄດ້ຮອດ 14:00 · ທັນ ≤ 12:30 · ຊ້າ 12:31–14:00</p>
+          </div>
+        </div>
+      )}
+
       {isLoadingHistory ? (
         <div className="grid grid-cols-2 gap-4">
           <Skeleton className="h-16 w-full rounded-lg" />
           <Skeleton className="h-16 w-full rounded-lg" />
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-4">
-          <Button
-            size="lg"
-            className="h-16 text-lg"
-            onClick={() => handleAttendance('checkIn')}
-            disabled={isBlockedDay.blocked || checkInMutation.isPending || !!todayAttendance?.checkIn || (!isOffsite && !isWithinOffice)}
-          >
-            {checkInMutation.isPending ? <Spinner className="mr-2" /> : <LogIn className="mr-2 h-5 w-5" />}
-            Check In
-          </Button>
+        <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-4">
+            <Button
+              size="lg"
+              className="h-16 text-lg"
+              onClick={() => handleAttendance('checkIn')}
+              disabled={isBlockedDay.blocked || checkInMutation.isPending || !!todayAttendance?.checkIn || (!isOffsite && !isWithinOffice)}
+            >
+              {checkInMutation.isPending ? <Spinner className="mr-2" /> : <LogIn className="mr-2 h-5 w-5" />}
+              Check In
+            </Button>
 
-          <Button
-            size="lg"
-            variant="outline"
-            className="h-16 text-lg"
-            onClick={() => handleAttendance('checkOut')}
-            disabled={isBlockedDay.blocked || checkOutMutation.isPending || !todayAttendance?.checkIn || !!todayAttendance?.checkOut || (!isOffsite && !isWithinOffice)}
-          >
-            {checkOutMutation.isPending ? <Spinner className="mr-2" /> : <LogOut className="mr-2 h-5 w-5" />}
-            Check Out
-          </Button>
+            <Button
+              size="lg"
+              variant="outline"
+              className="h-16 text-lg"
+              onClick={() => handleAttendance('checkOut')}
+              disabled={checkOutMutation.isPending || !todayAttendance?.checkIn || !!todayAttendance?.checkOut || (!isOffsite && !isWithinOffice)}
+            >
+              {checkOutMutation.isPending ? <Spinner className="mr-2" /> : <LogOut className="mr-2 h-5 w-5" />}
+              Check Out
+            </Button>
+          </div>
+          {isBlockedDay.blocked && isBlockedDay.reason && (
+            <p className="text-center text-xs text-muted-foreground">{isBlockedDay.reason}</p>
+          )}
         </div>
       )}
 

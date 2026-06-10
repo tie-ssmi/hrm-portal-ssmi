@@ -91,6 +91,7 @@ type AttendanceDoc = {
   location?: AttendanceRecord['location']
   workHours?: number
   isOffsite?: boolean
+  morningLeaveDay?: boolean
   checkInImageURL?: string
   checkOutImageURL?: string
   workLocation?: { name: string; uid?: string; code?: string }
@@ -390,20 +391,18 @@ export type LateRankEntry = {
   penaltyMinutes: number
 }
 
-// 8:15 is the on-time threshold — penalty = minutes after 8:15
-const LATE_THRESHOLD_MINUTES = 8 * 60 + 15
+const LATE_THRESHOLD_MINUTES = 8 * 60 + 15        // 08:15 — normal day
+const MORNING_LEAVE_THRESHOLD_MINUTES = 12 * 60 + 30 // 12:30 — half-day morning leave
 
-function checkInPenaltyMinutes(checkInTime: string | null | undefined): number {
+function checkInPenaltyMinutes(checkInTime: string | null | undefined, morningLeaveDay?: boolean): number {
   if (!checkInTime) return 0
   const [hStr, mStr] = checkInTime.split(':')
   const total = parseInt(hStr, 10) * 60 + parseInt(mStr, 10)
-  return Math.max(0, total - LATE_THRESHOLD_MINUTES)
+  const threshold = morningLeaveDay ? MORNING_LEAVE_THRESHOLD_MINUTES : LATE_THRESHOLD_MINUTES
+  return Math.max(0, total - threshold)
 }
 
-function isCurrentMonth(data: AttendanceDoc & { _id?: string }): boolean {
-  const now = new Date()
-  const monthPrefix = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`
-
+function isTargetMonth(data: AttendanceDoc, monthPrefix: string): boolean {
   // YYYY-MM-DD (dateKey field — most reliable)
   if (data.dateKey && /^\d{4}-\d{2}/.test(data.dateKey)) {
     return data.dateKey.startsWith(monthPrefix)
@@ -426,19 +425,10 @@ function isCurrentMonth(data: AttendanceDoc & { _id?: string }): boolean {
     }
   }
 
-  // Fallback: extract date from document _id (format: "userUuid_DD-MM-YYYY")
-  if (data._id) {
-    const idDatePart = data._id.split('_').pop() ?? ''
-    if (/^\d{2}-\d{2}-\d{4}$/.test(idDatePart)) {
-      const [, mm, yyyy] = idDatePart.split('-')
-      return `${yyyy}-${mm}` === monthPrefix
-    }
-  }
-
   return false
 }
 
-function toIsoDateString(data: AttendanceDoc & { _id?: string }): string {
+function toIsoDateString(data: AttendanceDoc): string {
   if (data.dateKey && /^\d{4}-\d{2}-\d{2}$/.test(data.dateKey)) return data.dateKey
   if (data.date) {
     if (/^\d{4}-\d{2}-\d{2}$/.test(data.date)) return data.date
@@ -451,53 +441,75 @@ function toIsoDateString(data: AttendanceDoc & { _id?: string }): string {
       return `${yyyy}-${mm}-${dd}`
     }
   }
-  if (data._id) {
-    const idDatePart = data._id.split('_').pop() ?? ''
-    if (/^\d{2}-\d{2}-\d{4}$/.test(idDatePart)) {
-      const [dd, mm, yyyy] = idDatePart.split('-')
-      return `${yyyy}-${mm}-${dd}`
-    }
-  }
   return ''
 }
 
-export async function fetchLateRankingThisMonth(): Promise<LateRankEntry[]> {
-  const now = new Date()
-  const monthStart = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-01`
+export async function fetchLateRankingForMonth(monthKey: string): Promise<LateRankEntry[]> {
+  const [yearStr, monthStr] = monthKey.split('-')
+  const year = parseInt(yearStr, 10)
+  const month = parseInt(monthStr, 10)
+  const monthStart = `${monthKey}-01`
+  const nextMonthStart = new Date(year, month, 1).toISOString().split('T')[0]
 
-  // dateKey filter scopes to current month — was fetching all-time late records before
-  // Requires composite index on (status, dateKey) in Firestore console
-  const snap = await getDocs(
-    query(collection(db, 'attendance'), where('status', '==', 'late'), where('dateKey', '>=', monthStart)),
-  )
+  // Try indexed query first (requires composite index on status + dateKey in Firestore console).
+  // If index missing or records pre-date the dateKey field, fall back to full status scan + JS filter.
+  let snapDocs: ReturnType<typeof snap.docs>[number][] = []
+  try {
+    const snap = await getDocs(
+      query(
+        collection(db, 'attendance'),
+        where('status', '==', 'late'),
+        where('dateKey', '>=', monthStart),
+        where('dateKey', '<', nextMonthStart),
+      ),
+    )
+    snapDocs = snap.docs
+    // If indexed query returns 0, records may use 'date' field only — fall through to fallback
+    if (snapDocs.length === 0) throw new Error('empty — try fallback')
+  } catch {
+    // Fallback: fetch all late records and filter in JS (works without composite index)
+    const snap = await getDocs(
+      query(collection(db, 'attendance'), where('status', '==', 'late')),
+    )
+    snapDocs = snap.docs
+  }
 
   const map = new Map<string, LateRankEntry>()
   const latestDate = new Map<string, string>()
 
-  for (const d of snap.docs) {
+  for (const d of snapDocs) {
     const data = d.data() as AttendanceDoc
 
-    if (!isCurrentMonth(data)) continue
+    if (!isTargetMonth(data, monthKey)) continue
 
-    const userUuid = data.userUuid ?? data.uid
-    if (!userUuid) continue
+    // Normalise key: same person may have records with userUuid on some docs and uid on others.
+    // Check both in the map so they merge into one entry instead of creating duplicates.
+    const uuidA = (data.userUuid || '').trim()
+    const uuidB = (data.uid || '').trim()
+    const mapKey = (uuidA && map.has(uuidA)) ? uuidA
+                 : (uuidB && map.has(uuidB)) ? uuidB
+                 : uuidA || uuidB
+    if (!mapKey) continue
 
-    const penalty = checkInPenaltyMinutes(data.checkInTime ?? null)
+    const penalty = checkInPenaltyMinutes(data.checkInTime ?? null, data.morningLeaveDay)
     const recordDate = toIsoDateString(data)
-    const existing = map.get(userUuid)
+    const existing = map.get(mapKey)
 
     if (existing) {
       existing.lateCount++
       existing.penaltyMinutes += penalty
-      // Update workLocation from the most recent record
-      if (recordDate > (latestDate.get(userUuid) ?? '')) {
-        latestDate.set(userUuid, recordDate)
+      if (recordDate > (latestDate.get(mapKey) ?? '')) {
+        latestDate.set(mapKey, recordDate)
         existing.workLocation = data.workLocation
+        existing.department = data.department
+        existing.fullNameLo = data.fullNameLo
+        existing.fullNameEn = data.fullNameEn
+        existing.employeeImage = data.employeeImage
       }
     } else {
-      latestDate.set(userUuid, recordDate)
-      map.set(userUuid, {
-        userUuid,
+      latestDate.set(mapKey, recordDate)
+      map.set(mapKey, {
+        userUuid: mapKey,
         fullNameLo: data.fullNameLo,
         fullNameEn: data.fullNameEn,
         employeeImage: data.employeeImage,

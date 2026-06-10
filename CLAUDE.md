@@ -61,13 +61,16 @@ TanStack Query (`lib/query-client.ts`) is the primary data-fetching and caching 
 - **Timezone:** All date/time logic uses `Asia/Vientiane` (UTC+7). Cloud Functions explicitly set this timezone for schedulers.
 - **UI components:** shadcn/ui (new-york style, Radix UI primitives). Add new components via `npx shadcn@latest add <component>`.
 - **Forms:** React Hook Form + Zod validation. See `components/dashboard/leave-request-form.tsx` for the established pattern.
+- **Navigation:** Use `router.push(href)` inside `<button onClick>` — do NOT use `<Link>` for nav items in `nav.tsx` and `mobile-nav.tsx`. This is an explicit project preference.
+- **No `loading.tsx` at dashboard segment level:** `app/dashboard/loading.tsx` was removed to prevent Chrome navigation flash. Do not recreate it. Per-page loading states are handled via TanStack Query `isLoading` skeletons inside each page.
+- **Shared nav utils:** `lib/nav-utils.ts` exports `isNavItemActive(pathname, href)` — use this in both nav components instead of inlining the logic.
 
 ### Firebase Collections (Firestore)
 
 Key collections accessed through `services/`:
 - `employees` — employee profiles
 - `attendance` — check-in/check-out records
-- `leaveRequests` — leave requests + approval status
+- `leaves` — leave requests + approval status (field: `leaveUserUuid`, `startDate`, `startPeriod`, `endDate`, `endPeriod`, `status`)
 - `workOutsideRequests` — off-site work requests
 - `workLocations` — available work locations
 - `leavePolicies` — leave policy rules

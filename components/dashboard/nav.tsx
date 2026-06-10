@@ -1,11 +1,11 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useMemo } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useNotifications } from "@/components/NotificationProvider";
 import { cn } from "@/lib/utils";
+import { isNavItemActive } from "@/lib/nav-utils";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
@@ -29,7 +29,6 @@ import {
   FileText,
   History,
   LogOut,
-  Newspaper,
   ClipboardCheck,
 } from "lucide-react";
 
@@ -48,27 +47,31 @@ function formatDepartment(value: unknown): string {
 
 export function DashboardNav() {
   const pathname = usePathname();
+  const router = useRouter();
   const { user, logout } = useAuth();
   const { notifications } = useNotifications();
 
   const canApproveDept = user?.rolePermissions?.approveDepartment ?? false;
   const canApproveBranch = user?.rolePermissions?.approveBranch ?? false;
-  const canSee = canApproveBranch || canApproveDept;
+  const canApprove = canApproveBranch || canApproveDept;
 
-  const initials = user
-    ? `${user.firstName?.[0] ?? ""}${user.lastName?.[0] ?? ""}`.toUpperCase() ||
-      "U"
-    : "U";
+  const initials = useMemo(
+    () =>
+      user
+        ? `${user.firstName?.[0] ?? ""}${user.lastName?.[0] ?? ""}`.toUpperCase() || "U"
+        : "U",
+    [user?.firstName, user?.lastName],
+  );
 
-  // Fix: guard user null before checking gender — String(undefined) = "undefined" ≠ 'male'
-  const profileImage = user
-    ? user.profileImage ||
+  const profileImage = useMemo(() => {
+    if (!user) return "/info/woman.jpg";
+    return (
+      user.profileImage ||
       user.photo3x4Url ||
       user.avatar ||
-      (user.gender?.toLowerCase() === "male"
-        ? "/info/man.jpg"
-        : "/info/woman.jpg")
-    : "/info/woman.jpg";
+      (user.gender?.toLowerCase() === "male" ? "/info/man.jpg" : "/info/woman.jpg")
+    );
+  }, [user?.profileImage, user?.photo3x4Url, user?.avatar, user?.gender]);
 
   const notifCount = notifications.length;
 
@@ -94,12 +97,6 @@ export function DashboardNav() {
         show: true,
       },
       {
-        href: "/dashboard/news",
-        label: "ຂ່າວສານ",
-        icon: Newspaper,
-        show: true,
-      },
-      {
         href: "/dashboard/request",
         label: "ແບບຟອມ",
         icon: FileText,
@@ -109,7 +106,7 @@ export function DashboardNav() {
         href: "/dashboard/approv",
         label: "ການອະນຸມັດ",
         icon: ClipboardCheck,
-        show: canSee,
+        show: canApprove,
         badge: notifCount,
       },
       {
@@ -119,7 +116,7 @@ export function DashboardNav() {
         show: true,
       },
     ],
-    [canSee, notifCount],
+    [canApprove, notifCount],
   );
 
   return (
@@ -170,22 +167,19 @@ export function DashboardNav() {
         {navItems.map((item) => {
           if (!item.show) return null;
 
-          const isActive =
-            pathname === item.href ||
-            (item.href !== "/dashboard" && pathname.startsWith(item.href));
+          const isActive = isNavItemActive(pathname, item.href);
 
           // Fix: single clean check + cap badge at 99+
           const badgeCount = item.badge ?? 0;
 
           return (
-            // Fix: <Link href> instead of <button onClick router.push>
-            // — enables middle-click, right-click, browser prefetch, correct aria role
-            <Link
+            <button
               key={item.href}
-              href={item.href}
+              type="button"
+              onClick={() => router.push(item.href)}
               aria-current={isActive ? "page" : undefined}
               className={cn(
-                "flex w-full items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors no-underline",
+                "flex w-full items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer",
                 isActive
                   ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
                   : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
@@ -200,7 +194,7 @@ export function DashboardNav() {
                   {badgeCount > 99 ? "99+" : badgeCount}
                 </span>
               )}
-            </Link>
+            </button>
           );
         })}
       </nav>

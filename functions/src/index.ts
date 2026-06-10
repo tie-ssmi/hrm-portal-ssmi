@@ -84,39 +84,76 @@ function computeCheckInStatus(nowMinutes: number, hasMorningLeaveEndToday: boole
 }
 
 type LeaveLike = {
-  status?: string
+  startDate?: string
   endDate?: string
+  startPeriod?: string
   endPeriod?: string
+  status?: string
 }
 
 const callableCorsOrigins: Array<string | RegExp> = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
-  'https://demohrm.ssmilaos.com', // Android Capacitor WebView
+  'https://hrmapp.ssmilaos.com',  // Production web app
+  'https://demohrm.ssmilaos.com', // Android Capacitor WebView / staging
   'capacitor://localhost',         // iOS Capacitor WebView
   'ionic://localhost',
   /^https:\/\/.*\.web\.app$/,
   /^https:\/\/.*\.firebaseapp\.com$/,
 ]
 
-async function hasMorningLeaveEndingToday(userUuid: string | undefined, isoDate: string): Promise<boolean> {
-  if (!userUuid) return false
+// ຄຳນວນ leave status ສຳລັບວັນ isoDate ໜຶ່ງ:
+//   'blocked'      — ລາພັກທັງໝົດ, ຫ້າມ Check-In
+//   'morning_leave'— ລາພັກເຄິ່ງເຊົ້າ, Check-In ໄດ້ ແຕ່ threshold ຊ້ານານຂຶ້ນ (ທັນ ≤12:30)
+//   'none'         — ວັນທຳມະດາ
+async function getDayLeaveStatus(
+  userUuid: string | undefined,
+  isoDate: string,
+): Promise<'blocked' | 'morning_leave' | 'none'> {
+  if (!userUuid) return 'none'
 
-  // ກັ່ນຕອງ endDate + status ທີ່ Firestore ໂດຍກົງ — ກ່ອນໜ້ານີ້ດຶງ leaves ທັງໝົດຂອງ user ແລ້ວ filter ທີ່ JS
-  // ຕ້ອງການ composite index ໃນ Firestore console: (leaveUserUuid, endDate, status)
   const snapshot = await admin
     .firestore()
     .collection('leaves')
     .where('leaveUserUuid', '==', userUuid)
-    .where('endDate', '==', isoDate)
     .where('status', '==', 'approved')
     .get()
 
-  return snapshot.docs.some((doc) => {
-    const endPeriod = ((doc.data() as LeaveLike).endPeriod || '').toLowerCase()
-    // ຮັກສາ 'monning' ໄວ້ເພື່ອ compatibility ກັບຂໍ້ມູນເກົ່າໃນ database
-    return endPeriod === 'morning' || endPeriod === 'monning'
-  })
+  for (const d of snapshot.docs) {
+    const leave = d.data() as LeaveLike
+    const startDate = leave.startDate ?? ''
+    const endDate = leave.endDate ?? ''
+    const startPeriod = (leave.startPeriod ?? 'morning').toLowerCase()
+    // ຮັກສາ 'monning' ໄວ້ເພື່ອ compatibility ກັບຂໍ້ມູນເກົ່າ
+    const rawEnd = (leave.endPeriod ?? 'afternoon').toLowerCase()
+    const endPeriod = rawEnd === 'monning' ? 'morning' : rawEnd
+
+    if (!startDate || !endDate || isoDate < startDate || isoDate > endDate) continue
+
+    // ວັນກາງ — ລາພັກທັງໝົດ
+    if (isoDate > startDate && isoDate < endDate) return 'blocked'
+
+    if (isoDate === startDate && isoDate === endDate) {
+      if (startPeriod === 'morning' && endPeriod === 'afternoon') return 'blocked'
+      if (endPeriod === 'morning') return 'morning_leave'
+      continue // ລາພັກບ່າຍ — Check-In ປົກກະຕິ
+    }
+
+    if (isoDate === startDate) {
+      if (startPeriod === 'morning') return 'blocked'
+      continue // ເລີ່ມບ່າຍ — Check-In ໄດ້
+    }
+
+    // isoDate === endDate (isoDate > startDate)
+    return endPeriod === 'afternoon' ? 'blocked' : 'morning_leave'
+  }
+
+  return 'none'
+}
+
+// ຮັກສາ backward-compat ສຳລັບ getServerTime endpoint
+async function hasMorningLeaveEndingToday(userUuid: string | undefined, isoDate: string): Promise<boolean> {
+  return (await getDayLeaveStatus(userUuid, isoDate)) === 'morning_leave'
 }
 
 // =========================================================================
@@ -294,10 +331,16 @@ export const recordCheckIn = onCall(
     // ເວລາຈາກ server — client ບໍ່ສາມາດປ່ຽນເວລາ check-in ຫຼື status ໄດ້
     const { date, isoDate, checkTime } = getVientianeParts()
     const [hourStr, minuteStr] = checkTime.split(':')
-    const morningLeave = await hasMorningLeaveEndingToday(data.userUuid, isoDate)
+
+    // ກວດ leave — ຖ້າລາພັກທັງໝົດ ໃຫ້ block; ຖ້າລາພັກເຄິ່ງເຊົ້າ ໃຊ້ threshold ຊ້ານານຂຶ້ນ
+    const dayLeaveStatus = await getDayLeaveStatus(data.userUuid, isoDate)
+    if (dayLeaveStatus === 'blocked') {
+      throw new HttpsError('failed-precondition', 'ທ່ານມີວັນລາພັກທີ່ໄດ້ຮັບອະນຸມັດໃນວັນນີ້ ບໍ່ສາມາດ Check-In ໄດ້')
+    }
+
     const status = computeCheckInStatus(
       toMinuteOfDay(parseInt(hourStr, 10), parseInt(minuteStr, 10)),
-      morningLeave
+      dayLeaveStatus === 'morning_leave',
     )
 
     // ກວດ Geofence — ດຶງ coordinates ຫ້ອງການຈາກ Firestore (client ປອມບໍ່ໄດ້)
@@ -342,6 +385,7 @@ export const recordCheckIn = onCall(
           dateKey: isoDate,
           checkInTime: checkTime,
           status,
+          ...(dayLeaveStatus === 'morning_leave' ? { morningLeaveDay: true } : {}),
           ...(data.location ? { location: { lat: data.location.lat, lng: data.location.lng } } : {}),
           ...(data.fullNameEn != null ? { fullNameEn: data.fullNameEn } : {}),
           ...(data.fullNameLo != null ? { fullNameLo: data.fullNameLo } : {}),

@@ -45,6 +45,29 @@ export function useUserLeaves(userUuid: string | null | undefined) {
   })
 }
 
+export function useMyMaternityThisYear(userUuid: string | null | undefined) {
+  return useQuery({
+    queryKey: [...leaveKeys.byUser(userUuid ?? ''), 'maternity-year'] as const,
+    queryFn: async () => {
+      const all = await fetchAllLeavesByUserUuid(userUuid!)
+      const year = new Date().getFullYear().toString()
+      return all.filter(
+        (l) =>
+          l.status === 'approved' &&
+          (l.startDate ?? '').startsWith(year) &&
+          (
+            (l.type ?? '').toLowerCase().includes('maternity') ||
+            (l.type ?? '').includes('ລາພັນ') ||
+            (l.policyName ?? '').includes('ລາພັນ') ||
+            (l.policyName ?? '').toLowerCase().includes('maternity')
+          )
+      )
+    },
+    enabled: !!userUuid,
+    staleTime: 1000 * 60 * 5,
+  })
+}
+
 export function useUpcomingLeaves(userUuid: string | null | undefined) {
   return useQuery({
     queryKey: leaveKeys.upcoming(userUuid ?? ''),

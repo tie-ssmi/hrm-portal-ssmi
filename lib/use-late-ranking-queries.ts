@@ -1,16 +1,17 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { fetchLateRankingThisMonth } from '@/services/attendance'
+import { fetchLateRankingForMonth } from '@/services/attendance'
 
 export const lateRankingKeys = {
-  thisMonth: () => ['attendance', 'late-ranking', 'this-month'] as const,
+  forMonth: (monthKey: string) => ['attendance', 'late-ranking', monthKey] as const,
 }
 
-export function useLateRankingThisMonth() {
+export function useLateRankingForMonth(monthKey: string, enabled = true) {
   return useQuery({
-    queryKey: lateRankingKeys.thisMonth(),
-    queryFn: fetchLateRankingThisMonth,
+    queryKey: lateRankingKeys.forMonth(monthKey),
+    queryFn: () => fetchLateRankingForMonth(monthKey),
+    enabled,
     staleTime: 1000 * 60 * 5,
   })
 }

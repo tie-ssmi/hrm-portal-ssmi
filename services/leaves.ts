@@ -193,3 +193,62 @@ export async function fetchLeavesByUserUuidFromToday(userUuid: string): Promise<
       return bTime.localeCompare(aTime) // newest first
     })
 }
+
+// =====================================================================
+// Leave status for a specific date — ໃຊ້ໃນໜ້າ attendance ເພື່ອ block/adjust check-in
+// =====================================================================
+
+export type DayLeaveStatus = 'blocked' | 'morning_leave' | 'none'
+
+function computeDayLeaveStatus(isoDate: string, leave: LeaveRequest): DayLeaveStatus {
+  const startDate = leave.startDate ?? ''
+  const endDate = leave.endDate ?? ''
+  const startPeriod = leave.startPeriod ?? 'morning'
+  const endPeriod = leave.endPeriod ?? 'afternoon'
+
+  if (!startDate || !endDate || isoDate < startDate || isoDate > endDate) return 'none'
+
+  // ວັນກາງ (ລະຫວ່າງ startDate ແລະ endDate) — ຢຸດວຽກທັງໝົດ
+  if (isoDate > startDate && isoDate < endDate) return 'blocked'
+
+  if (isoDate === startDate && isoDate === endDate) {
+    // ລາພັກເຕັມວັນ: ເຊົ້າ–ບ່າຍ
+    if (startPeriod === 'morning' && endPeriod === 'afternoon') return 'blocked'
+    // ລາພັກເຄິ່ງເຊົ້າເທົ່ານັ້ນ: Check-In ໄດ້ຮອດ 14:00
+    if (endPeriod === 'morning') return 'morning_leave'
+    // ລາພັກບ່າຍເທົ່ານັ້ນ: Check-In ປົກກະຕິ
+    return 'none'
+  }
+
+  // ວັນທຳອິດ (startDate < endDate)
+  if (isoDate === startDate) {
+    // ເລີ່ມເຊົ້າ = ຢຸດວຽກ; ເລີ່ມບ່າຍ = Check-In ໄດ້ປົກກະຕິ
+    return startPeriod === 'morning' ? 'blocked' : 'none'
+  }
+
+  // ວັນສຸດທ້າຍ (isoDate === endDate, isoDate > startDate)
+  return endPeriod === 'afternoon' ? 'blocked' : 'morning_leave'
+}
+
+export async function fetchTodayLeaveStatus(
+  userUuid: string,
+  isoDate: string,
+): Promise<DayLeaveStatus> {
+  if (!userUuid) return 'none'
+
+  const snap = await getDocs(
+    query(
+      collection(db, 'leaves'),
+      where('leaveUserUuid', '==', userUuid),
+      where('status', '==', 'approved'),
+    ),
+  )
+
+  for (const d of snap.docs) {
+    const leave = { id: d.id, ...(d.data() as Omit<LeaveRequest, 'id'>) }
+    const status = computeDayLeaveStatus(isoDate, leave)
+    if (status !== 'none') return status
+  }
+
+  return 'none'
+}

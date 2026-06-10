@@ -12,6 +12,9 @@ import {
   uploadAttendanceImage,
 } from '@/services/attendance'
 import { fetchServerTime } from '@/lib/server-time'
+import { fetchTodayLeaveStatus, type DayLeaveStatus } from '@/services/leaves'
+
+export type { DayLeaveStatus }
 
 type AttendanceLocation = {
   lat: number
@@ -258,5 +261,18 @@ export function useCheckOut() {
 
       queryClient.invalidateQueries({ queryKey: attendanceKeys.history(userUuid) })
     },
+  })
+}
+
+export const leaveStatusKeys = {
+  today: (userUuid: string, isoDate: string) => ['leave-status', userUuid, isoDate] as const,
+}
+
+export function useTodayLeaveStatus(userUuid: string | null | undefined, isoDate: string) {
+  return useQuery({
+    queryKey: leaveStatusKeys.today(userUuid || '', isoDate),
+    queryFn: () => fetchTodayLeaveStatus(userUuid!, isoDate),
+    enabled: !!userUuid,
+    staleTime: 1000 * 60 * 5,
   })
 }
