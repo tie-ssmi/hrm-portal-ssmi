@@ -1,8 +1,28 @@
 "use client";
 
+// ** core
 import { useEffect, useRef, useState, useMemo } from "react";
-import { useAuth } from "@/lib/auth-context";
-import { useHRM } from "@/lib/hrm-context";
+import { useRouter } from "next/navigation";
+
+// ** assets / icons
+import {
+  Calendar as CalendarIcon,
+  Send,
+  Clock,
+  CheckCircle,
+  XCircle,
+  Sun,
+  Sunset,
+  FileText,
+  Users,
+  ArrowRight,
+  User,
+  Upload,
+  Timer,
+  X,
+} from "lucide-react";
+
+// ** shared components
 import {
   Card,
   CardContent,
@@ -28,36 +48,27 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  Calendar as CalendarIcon,
-  Send,
-  Clock,
-  CheckCircle,
-  XCircle,
-  Sun,
-  Sunset,
-  FileText,
-  Users,
-  ArrowRight,
-  User,
-  Upload,
-  Timer,
-  X,
-} from "lucide-react";
+import { Combobox } from "@/components/ui/combobox";
+
+// ** third party
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { format, isWeekend } from "date-fns";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+
+// ** config / utils / types / hooks
+import { useAuth } from "@/lib/auth-context";
+import { useHRM } from "@/lib/hrm-context";
+import { storage } from "@/lib/firebase";
+import { usePendingDocLeaves } from "@/lib/use-leave-queries";
 import { cn } from "@/lib/utils";
+
+// ** services
 import { getLeaveApproverRuleText } from "@/services/leave-approval";
 import { fetchLeavesByUserUuidFromToday } from "@/services/leaves";
-import { usePendingDocLeaves } from "@/lib/use-leave-queries";
 import { fetchOfficialHolidays } from "@/services/officialHolidays";
 import { fetchPoliciesForGender } from "@/services/policies";
 import { getEmployees } from "@/services/employees";
-import { useQuery } from "@tanstack/react-query";
-import { Combobox } from "@/components/ui/combobox";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { storage } from "@/lib/firebase";
-import { useRouter } from "next/navigation";
 
 type Period = "morning" | "afternoon";
 type LeaveTypeOption = {
@@ -957,8 +968,8 @@ export default function LeaveRequestForm() {
               <p className="text-sm">ຍັງບໍ່ມີຄໍາຮ້ອງຂໍ</p>
             </div>
           ) : (
-            <div className="space-y-2">
-              {myCurrentLeaveRequests.slice(0, 5).map((request) => (
+            <div className="space-y-2 ">
+              {myCurrentLeaveRequests.map((request) => (
                 <button
                   key={request.id}
                   type="button"

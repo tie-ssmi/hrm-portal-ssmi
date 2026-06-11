@@ -1,15 +1,27 @@
+// ** core
+import { useState } from "react"
+import { useRouter } from 'next/navigation'
+
+// ** assets / icons
+import { MapPin, MapPinX } from 'lucide-react'
+import {
+  CalendarDays,
+  User,
+  Building2,
+  Briefcase,
+  UserCheck,
+  FileText,
+  Tag,
+  StickyNote,
+  Loader2,
+} from "lucide-react"
+
+// ** shared components
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import type { LeaveData } from "@/types/employee"
 import { Label } from "@/components/ui/label"
-import { useTodayCheckInAttendance } from '@/lib/use-attendance-queries'
-import { useAuth } from '@/lib/auth-context'
-import { useTodayLeavesByWorkLocation } from '@/lib/use-leave-queries'
-import { useTodayOffsiteByWorkLocation } from '@/lib/use-work-outside-queries'
-import { useRouter } from 'next/navigation'
-import { MapPin, MapPinX } from 'lucide-react'
 import {
   Sheet,
   SheetClose,
@@ -32,20 +44,14 @@ import {
 } from "@/components/ui/dialog"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { translateJobTitle } from "./translater"
-import { useState } from "react"
-import {
-  CalendarDays,
-  User,
-  Building2,
-  Briefcase,
-  UserCheck,
-  FileText,
-  Tag,
-  StickyNote,
-  Loader2,
-} from "lucide-react"
-// countWorkDays
 import { countWorkDays } from "./theWorkingDays"
+
+// ** config / utils / types / hooks
+import { useAuth } from '@/lib/auth-context'
+import { useTodayCheckInAttendance } from '@/lib/use-attendance-queries'
+import { useTodayLeavesByWorkLocation } from '@/lib/use-leave-queries'
+import { useTodayOffsiteByWorkLocation } from '@/lib/use-work-outside-queries'
+import type { LeaveData } from "@/types/employee"
 // Reusable Sheet Detail Component
 function LeaveDetailSheet({
   leave,

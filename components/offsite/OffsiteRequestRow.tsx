@@ -1,6 +1,9 @@
 'use client'
 
+// ** assets / icons
 import { MoreHorizontal, Eye, Pencil, X } from 'lucide-react'
+
+// ** shared components
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -11,6 +14,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { StatusBadge } from './StatusBadge'
 import { ActivityTypeBadge } from './ActivityTypeBadge'
+
+// ** config / utils / types / hooks
 import { formatDateRange, formatKip } from '@/lib/format'
 import type { OffsiteRequestDoc } from '@/types/workOutside'
 

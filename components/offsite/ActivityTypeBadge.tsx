@@ -1,4 +1,7 @@
+// ** assets / icons
 import { Handshake, Users, Store, Megaphone, BookOpen } from 'lucide-react'
+
+// ** config / utils / types / hooks
 import { cn } from '@/lib/utils'
 import { activityLabel } from '@/lib/format'
 import type { ActivityCode } from '@/types/workOutside'

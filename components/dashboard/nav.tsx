@@ -1,11 +1,21 @@
 "use client";
 
+// ** core
 import { usePathname, useRouter } from "next/navigation";
-import { useMemo } from "react";
-import { useAuth } from "@/lib/auth-context";
-import { useNotifications } from "@/components/NotificationProvider";
-import { cn } from "@/lib/utils";
-import { isNavItemActive } from "@/lib/nav-utils";
+import { useMemo, useState, useEffect } from "react";
+
+// ** assets / icons
+import {
+  LayoutDashboard,
+  User,
+  Clock,
+  FileText,
+  History,
+  LogOut,
+  ClipboardCheck,
+} from "lucide-react";
+
+// ** shared components
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
@@ -19,18 +29,15 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { version } from "@/package.json";
+import { useNotifications } from "@/components/NotificationProvider";
 import TheThemes from "@/components/themes";
 import { PWAInstallButton } from "@/components/pwa-install-button";
-import {
-  LayoutDashboard,
-  User,
-  Clock,
-  FileText,
-  History,
-  LogOut,
-  ClipboardCheck,
-} from "lucide-react";
+
+// ** config / utils / types / hooks
+import { useAuth } from "@/lib/auth-context";
+import { cn } from "@/lib/utils";
+import { isNavItemActive } from "@/lib/nav-utils";
+import { version } from "@/package.json";
 
 function formatDepartment(value: unknown): string {
   if (!value) return "-";
@@ -74,6 +81,20 @@ export function DashboardNav() {
   }, [user?.profileImage, user?.photo3x4Url, user?.avatar, user?.gender]);
 
   const notifCount = notifications.length;
+
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+  const activeHref = pendingHref ?? pathname;
+
+  useEffect(() => {
+    setPendingHref(null);
+  }, [pathname]);
+
+  useEffect(() => {
+    ["/dashboard", "/dashboard/profile", "/dashboard/attendance", "/dashboard/request", "/dashboard/approv", "/dashboard/history"].forEach(
+      (href) => router.prefetch(href),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Fix: memoize — avoid recreating array on every render (notifCount changes on each poll)
   const navItems = useMemo(
@@ -167,7 +188,7 @@ export function DashboardNav() {
         {navItems.map((item) => {
           if (!item.show) return null;
 
-          const isActive = isNavItemActive(pathname, item.href);
+          const isActive = isNavItemActive(activeHref, item.href);
 
           // Fix: single clean check + cap badge at 99+
           const badgeCount = item.badge ?? 0;
@@ -176,7 +197,7 @@ export function DashboardNav() {
             <button
               key={item.href}
               type="button"
-              onClick={() => router.push(item.href)}
+              onClick={() => { setPendingHref(item.href); router.push(item.href); }}
               aria-current={isActive ? "page" : undefined}
               className={cn(
                 "flex w-full items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer",

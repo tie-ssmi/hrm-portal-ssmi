@@ -1,7 +1,12 @@
 'use client'
 
+// ** core
 import { useState, Fragment } from 'react'
+
+// ** assets / icons
 import { Briefcase, Plus, RefreshCw, ChevronLeft, ChevronRight, MapPin, CalendarDays, Users, Banknote, FileText, User } from 'lucide-react'
+
+// ** shared components
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
@@ -14,6 +19,8 @@ import {
 import { OffsiteRequestRow, OffsiteRequestCard } from './OffsiteRequestRow'
 import { StatusBadge } from './StatusBadge'
 import { ActivityTypeBadge } from './ActivityTypeBadge'
+
+// ** config / utils / types / hooks
 import { formatDateRange, formatKip } from '@/lib/format'
 import type { OffsiteRequestDoc } from '@/types/workOutside'
 

@@ -1,9 +1,16 @@
 'use client'
 
+// ** core
 import { useEffect, useState, useMemo } from 'react'
-import { useAuth } from '@/lib/auth-context'
-import { useHRM } from '@/lib/hrm-context'
-import { buildInitialLeaveApprovals } from '@/services/leave-approval'
+import { useRouter } from 'next/navigation'
+
+// ** assets / icons
+import {
+  Calendar as CalendarIcon, Send, Clock, CheckCircle, XCircle,
+  Sun, Sunset, User, Users, AlertTriangle, FileText, ArrowRight
+} from 'lucide-react'
+
+// ** shared components
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
@@ -14,24 +21,26 @@ import { Field, FieldLabel } from '@/components/ui/field'
 import { Spinner } from '@/components/ui/spinner'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import {
-  Calendar as CalendarIcon, Send, Clock, CheckCircle, XCircle,
-  Sun, Sunset, User, Users, AlertTriangle, FileText, ArrowRight
-} from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Combobox } from '@/components/ui/combobox'
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
+
+// ** third party
+import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { format, isWeekend } from 'date-fns'
-import { fetchOfficialHolidays } from '@/services/officialHolidays'
+
+// ** config / utils / types / hooks
+import { useAuth } from '@/lib/auth-context'
+import { useHRM } from '@/lib/hrm-context'
 import { cn } from '@/lib/utils'
-import { getLeaveApproverRuleText } from '@/services/leave-approval'
+
+// ** services
+import { buildInitialLeaveApprovals, getLeaveApproverRuleText } from '@/services/leave-approval'
 import { fetchLeavesByUserUuidFromToday } from '@/services/leaves'
 import { fetchPoliciesForGender } from '@/services/policies'
 import { getEmployees } from '@/services/employees'
-import { useQuery } from '@tanstack/react-query'
-import { Checkbox } from '@/components/ui/checkbox'
-import { useRouter } from 'next/navigation'
-
-import { Combobox } from '@/components/ui/combobox'
-import { Avatar, AvatarImage,AvatarFallback } from '@/components/ui/avatar';
+import { fetchOfficialHolidays } from '@/services/officialHolidays'
 type Period = 'morning' | 'afternoon'
 type LeaveTypeOption = {
   value: string

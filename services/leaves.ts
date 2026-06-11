@@ -173,7 +173,9 @@ export async function fetchLeavesByUserUuidFromToday(userUuid: string): Promise<
     return []
   }
 
-  const today = new Date().toISOString().split('T')[0]
+  const now = new Date()
+  const monthPrefix = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`
+
   const leavesQuery = query(collection(db, 'leaves'), where('leaveUserUuid', '==', userUuid))
 
   const snapshot = await getDocs(leavesQuery)
@@ -184,13 +186,20 @@ export async function fetchLeavesByUserUuidFromToday(userUuid: string): Promise<
 
   return rows
     .filter((row) =>
-      (typeof row.endDate === 'string' && row.endDate >= today) ||
-      row.status === 'pending'
+      // 1. any date — status pending
+      row.status === 'pending' ||
+      // 2. this month — any status
+      (typeof row.startDate === 'string' && row.startDate.startsWith(monthPrefix)) ||
+      (typeof row.endDate === 'string' && row.endDate.startsWith(monthPrefix))
     )
     .sort((a, b) => {
+      // pending always on top
+      if (a.status === 'pending' && b.status !== 'pending') return -1
+      if (a.status !== 'pending' && b.status === 'pending') return 1
+      // then newest first within each group
       const aTime = a.createdAt ?? ''
       const bTime = b.createdAt ?? ''
-      return bTime.localeCompare(aTime) // newest first
+      return bTime.localeCompare(aTime)
     })
 }
 

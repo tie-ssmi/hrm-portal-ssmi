@@ -1,10 +1,15 @@
 "use client";
 
+// ** core
 import { createContext, useContext, useEffect, useState, useRef, useMemo, useCallback } from "react";
-import { db } from "@/lib/firebase";
+
+// ** third party
 import { collection, doc, query, updateDoc, where, onSnapshot } from "firebase/firestore";
-import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
+
+// ** config / utils / types / hooks
+import { useAuth } from "@/lib/auth-context";
+import { db } from "@/lib/firebase";
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)

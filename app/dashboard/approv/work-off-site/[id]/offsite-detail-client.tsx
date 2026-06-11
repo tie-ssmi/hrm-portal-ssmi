@@ -1,16 +1,9 @@
 'use client'
 
+// ** core
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useQuery } from '@tanstack/react-query'
-import { doc, getDoc } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Separator } from '@/components/ui/separator'
-import { Skeleton } from '@/components/ui/skeleton'
-import { StatusBadge } from '@/components/offsite/StatusBadge'
-import { ActivityTypeBadge } from '@/components/offsite/ActivityTypeBadge'
-import { formatDateRange, formatKip, formatLaoDate } from '@/lib/format'
+
+// ** assets / icons
 import {
   ArrowLeft,
   Banknote,
@@ -22,6 +15,22 @@ import {
   MapPin,
   Users,
 } from 'lucide-react'
+
+// ** shared components
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Separator } from '@/components/ui/separator'
+import { Skeleton } from '@/components/ui/skeleton'
+import { StatusBadge } from '@/components/offsite/StatusBadge'
+import { ActivityTypeBadge } from '@/components/offsite/ActivityTypeBadge'
+
+// ** third party
+import { useQuery } from '@tanstack/react-query'
+import { doc, getDoc } from 'firebase/firestore'
+
+// ** config / utils / types / hooks
+import { db } from '@/lib/firebase'
+import { formatDateRange, formatKip, formatLaoDate } from '@/lib/format'
 import type { OffsiteRequestDoc } from '@/types/workOutside'
 
 function InfoField({

@@ -1,9 +1,21 @@
 "use client";
 
+// ** core
 import { useMemo, useState } from "react";
-import { useAuth } from "@/lib/auth-context";
-import { useHRM } from "@/lib/hrm-context";
-import { useQuery } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
+
+// ** assets / icons
+import {
+  Calendar,
+  Clock,
+  AlertTriangle,
+  DollarSign,
+  HeartPulse,
+  MapPinX,
+  ChevronDown,
+} from "lucide-react";
+
+// ** shared components
 import {
   Card,
   CardContent,
@@ -19,29 +31,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import HomeSkeleton from "@/components/skeletons/homeSkeleton";
-import { collection, getDocs, query, where } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { fetchPoliciesForGender } from "@/services/policies";
-import type { LeaveRequest } from "@/lib/types";
-import type { OffsiteRequestDoc } from "@/types/workOutside";
-import { useUserLeaves } from "@/lib/use-leave-queries";
-import { useLateRankingForMonth } from "@/lib/use-late-ranking-queries";
-import {
-  Calendar,
-  Clock,
-  AlertTriangle,
-  DollarSign,
-  HeartPulse,
-  MapPinX,
-  ChevronDown,
-} from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  CheckInToday,
-  TodayLeaveSection,
-  TodayOffsiteSection,
-} from "@/components/leaveLists";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -50,9 +40,29 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useRouter } from "next/navigation";
-import type { PolicyRecord } from "@/lib/types";
+import HomeSkeleton from "@/components/skeletons/homeSkeleton";
+import {
+  CheckInToday,
+  TodayLeaveSection,
+  TodayOffsiteSection,
+} from "@/components/leaveLists";
 import { formatDayDateLao, formatMonthYearLao } from "@/components/laoDate";
+
+// ** third party
+import { useQuery } from "@tanstack/react-query";
+import { collection, getDocs, query, where } from "firebase/firestore";
+
+// ** config / utils / types / hooks
+import { useAuth } from "@/lib/auth-context";
+import { useHRM } from "@/lib/hrm-context";
+import { db } from "@/lib/firebase";
+import { useUserLeaves } from "@/lib/use-leave-queries";
+import { useLateRankingForMonth } from "@/lib/use-late-ranking-queries";
+import type { LeaveRequest, PolicyRecord } from "@/lib/types";
+import type { OffsiteRequestDoc } from "@/types/workOutside";
+
+// ** services
+import { fetchPoliciesForGender } from "@/services/policies";
 
 const VISIBLE_COUNT = 3;
 

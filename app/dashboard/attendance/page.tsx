@@ -1,16 +1,23 @@
 'use client'
 
+// ** core
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useAuth } from '@/lib/auth-context'
-import { useHRM } from '@/lib/hrm-context'
+
+// ** assets / icons
 import {
-  useAttendanceHistory,
-  useTodayAttendance,
-  useCheckIn,
-  useCheckOut,
-  useTodayLeaveStatus,
-} from '@/lib/use-attendance-queries'
-import { useOfficialHolidays } from '@/lib/use-official-holidays-query'
+  MapPin,
+  LogIn,
+  LogOut,
+  Clock,
+  CheckCircle,
+  AlertTriangle,
+  Navigation,
+  Shield,
+  ShieldX,
+  MapPinOff,
+} from 'lucide-react'
+
+// ** shared components
 import {
   Card,
   CardContent,
@@ -26,27 +33,29 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import type { AttendanceRecord } from '@/lib/types'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
-import {
-  MapPin,
-  LogIn,
-  LogOut,
-  Clock,
-  CheckCircle,
-  AlertTriangle,
-  Navigation,
-  Shield,
-  ShieldX,
-  MapPinOff,
-} from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
-import { toast } from 'sonner'
-import { addDays, format, startOfWeek } from 'date-fns'
 import { CameraCapture } from '@/components/camera-capture'
 import { formatDateLao, formatDayDateLao } from '@/components/laoDate'
+
+// ** third party
+import { toast } from 'sonner'
+import { addDays, format, startOfWeek } from 'date-fns'
+
+// ** config / utils / types / hooks
+import { useAuth } from '@/lib/auth-context'
+import { useHRM } from '@/lib/hrm-context'
+import {
+  useAttendanceHistory,
+  useTodayAttendance,
+  useCheckIn,
+  useCheckOut,
+  useTodayLeaveStatus,
+} from '@/lib/use-attendance-queries'
+import { useOfficialHolidays } from '@/lib/use-official-holidays-query'
+import type { AttendanceRecord } from '@/lib/types'
 
 type LocationState = {
   lat: number

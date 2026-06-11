@@ -1,28 +1,9 @@
 "use client";
 
+// ** core
 import { useState, type ElementType } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { useAuth } from "@/lib/auth-context";
-import { useHRM } from "@/lib/hrm-context";
-import ProfileSkeleton from "@/components/skeletons/profileSkeleton";
-import { fetchEmployeeByUid } from "@/lib/employees";
-import type { EducationEntry, Employee } from "@/lib/types";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 
-// NumberFormatter
-import { NumberFormatter } from "@/components/formatNumber";
-//FileUpload
-import FileUpload from "@/components/cameraUpload";
+// ** assets / icons
 import {
   User,
   Mail,
@@ -41,14 +22,39 @@ import {
   EyeOff,
   Layers,
 } from "lucide-react";
-import { toast } from "sonner";
+
+// ** shared components
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
   DialogContent,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import ProfileSkeleton from "@/components/skeletons/profileSkeleton";
+import { NumberFormatter } from "@/components/formatNumber";
+import FileUpload from "@/components/cameraUpload";
 import { formatDateLao } from "@/components/laoDate";
+
+// ** third party
+import { useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
+
+// ** config / utils / types / hooks
+import { useAuth } from "@/lib/auth-context";
+import { useHRM } from "@/lib/hrm-context";
+import { fetchEmployeeByUid } from "@/lib/employees";
+import type { EducationEntry, Employee } from "@/lib/types";
 // Firestore may store reference fields as objects { nameLo, uuid, code }
 function toStr(value: unknown): string {
   if (value === null || value === undefined) return "-";

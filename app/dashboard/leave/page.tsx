@@ -1,8 +1,12 @@
 'use client'
 
+// ** core
 import { Fragment, useMemo, useState } from 'react'
-import { useAuth } from '@/lib/auth-context'
-import { useAllTodayLeaves } from '@/lib/use-leave-queries'
+
+// ** assets / icons
+import { Search, Users, Building2 } from 'lucide-react'
+
+// ** shared components
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -21,11 +25,14 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Avatar, AvatarFallback,AvatarImage } from '@/components/ui/avatar'
-import { Search, Users, Building2 } from 'lucide-react'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Spinner } from '@/components/ui/spinner'
-import type { LeaveRequest } from '@/lib/types'
 import { translateJobTitle } from '@/components/translater'
+
+// ** config / utils / types / hooks
+import { useAuth } from '@/lib/auth-context'
+import { useAllTodayLeaves } from '@/lib/use-leave-queries'
+import type { LeaveRequest } from '@/lib/types'
 
 // ── helpers ────────────────────────────────────────────────────────────────
 

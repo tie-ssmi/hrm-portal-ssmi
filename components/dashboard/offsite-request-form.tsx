@@ -1,18 +1,9 @@
 'use client'
 
+// ** core
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
-import { useAuth } from '@/lib/auth-context'
-import { db } from '@/lib/firebase'
-import {
-  collection,
-  getDocs,
-  addDoc,
-  doc,
-  updateDoc,
-} from 'firebase/firestore'
-import { useQuery } from '@tanstack/react-query'
-import { format, isWeekend, parseISO } from 'date-fns'
-import { fetchOfficialHolidays } from '@/services/officialHolidays'
+
+// ** assets / icons
 import {
   Handshake,
   Users,
@@ -30,9 +21,8 @@ import {
   Plus,
   Car,
 } from 'lucide-react'
-import { toast } from 'sonner'
-import { cn } from '@/lib/utils'
 
+// ** shared components
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -57,7 +47,24 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
+import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar'
 
+// ** third party
+import { useQuery } from '@tanstack/react-query'
+import { toast } from 'sonner'
+import { format, isWeekend, parseISO } from 'date-fns'
+import {
+  collection,
+  getDocs,
+  addDoc,
+  doc,
+  updateDoc,
+} from 'firebase/firestore'
+
+// ** config / utils / types / hooks
+import { useAuth } from '@/lib/auth-context'
+import { db } from '@/lib/firebase'
+import { cn } from '@/lib/utils'
 import type {
   ActivityCode,
   RoleInTrip,
@@ -68,7 +75,9 @@ import type {
   OffsiteRequestDoc,
 } from '@/types/workOutside'
 import { LAO_PROVINCES } from '@/public/data/laos-provinces'
-import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar'
+
+// ** services
+import { fetchOfficialHolidays } from '@/services/officialHolidays'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 

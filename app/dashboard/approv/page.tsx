@@ -1,27 +1,14 @@
 "use client";
+// ** core
 import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/lib/auth-context";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  collection,
-  doc,
-  getDocs,
-  query,
-  updateDoc,
-  where,
-} from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { fetchLeavesForApproval, updateLeaveApproval } from "@/services/leaves";
-import { toast } from "sonner";
-import type { LeaveTableItem } from "@/components/leaveTable";
-import type { OffsiteTableItem } from "@/components/offSiteTable";
-import FormsSkeleton from "@/components/skeletons/formsSkeleton";
+
+// ** assets / icons
+import { Palmtree, MapPin } from "lucide-react";
+
+// ** shared components
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Palmtree, MapPin } from "lucide-react";
-import LeaveTable from "@/components/leaveTable";
-import OffsiteTable from "@/components/offSiteTable";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -33,7 +20,31 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import FormsSkeleton from "@/components/skeletons/formsSkeleton";
+import LeaveTable from "@/components/leaveTable";
+import OffsiteTable from "@/components/offSiteTable";
+
+// ** third party
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  collection,
+  doc,
+  getDocs,
+  query,
+  updateDoc,
+  where,
+} from "firebase/firestore";
+import { toast } from "sonner";
+
+// ** config / utils / types / hooks
+import { useAuth } from "@/lib/auth-context";
+import { db } from "@/lib/firebase";
+import type { LeaveTableItem } from "@/components/leaveTable";
+import type { OffsiteTableItem } from "@/components/offSiteTable";
 import type { OffsiteRequestDoc } from "@/types/workOutside";
+
+// ** services
+import { fetchLeavesForApproval, updateLeaveApproval } from "@/services/leaves";
 
 export default function ApprovePage() {
   const router = useRouter();

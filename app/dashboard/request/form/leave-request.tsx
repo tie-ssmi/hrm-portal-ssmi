@@ -1,8 +1,12 @@
 ﻿'use client'
 
+// ** core
 import type { FormEvent } from 'react'
-import { format, isWeekend } from 'date-fns'
+
+// ** assets / icons
 import { Calendar as CalendarIcon, Send, Sun, Sunset } from 'lucide-react'
+
+// ** shared components
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -12,6 +16,11 @@ import { Spinner } from '@/components/ui/spinner'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+
+// ** third party
+import { format, isWeekend } from 'date-fns'
+
+// ** config / utils / types / hooks
 import { cn } from '@/lib/utils'
 
 type Period = 'morning' | 'afternoon'

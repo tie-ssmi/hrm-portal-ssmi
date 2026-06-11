@@ -1,8 +1,12 @@
 'use client'
 
+// ** core
 import { useState, useEffect } from 'react'
-import { useTheme } from 'next-themes'
-import { Moon, Sun, Monitor } from 'lucide-react';
+
+// ** assets / icons
+import { Moon, Sun, Monitor } from 'lucide-react'
+
+// ** shared components
 import {
   Popover,
   PopoverContent,
@@ -12,6 +16,9 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { Button } from './ui/button'
+
+// ** third party
+import { useTheme } from 'next-themes'
 
 export default function TheThemes({ color }: { color?: string } = {}) {
   const [mounted, setMounted] = useState(false)

@@ -1,8 +1,13 @@
 'use client'
 
+// ** core
 import { useEffect, useState } from 'react'
-import { Button } from '@/components/ui/button'
+
+// ** assets / icons
 import { Download, Share } from 'lucide-react'
+
+// ** shared components
+import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,

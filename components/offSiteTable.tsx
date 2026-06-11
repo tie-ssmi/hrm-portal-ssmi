@@ -1,6 +1,19 @@
 "use client";
 
+// ** core
 import { useState, useMemo } from "react";
+
+// ** assets / icons
+import {
+  CalendarRange,
+  Eye,
+  Check,
+  X,
+  MoreHorizontal,
+  UserRound,
+} from "lucide-react";
+
+// ** shared components
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -26,14 +39,6 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import {
-  CalendarRange,
-  Eye,
-  Check,
-  X,
-  MoreHorizontal,
-  UserRound,
-} from "lucide-react";
 import { StatusBadge } from "@/components/offsite/StatusBadge";
 
 // ─── Types ────────────────────────────────────────────────────────────────────

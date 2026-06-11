@@ -1,6 +1,9 @@
 'use client'
 
+// ** core
 import { useState } from 'react'
+
+// ** shared components
 import {
   Dialog,
   DialogContent,
@@ -18,6 +21,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import OffsiteRequestForm from '@/components/dashboard/offsite-request-form'
+
+// ** config / utils / types / hooks
 import type { OffsiteRequestDoc } from '@/types/workOutside'
 
 interface Props {

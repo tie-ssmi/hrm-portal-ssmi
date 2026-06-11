@@ -1,6 +1,13 @@
 'use client'
 
+// ** core
 import { useState, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
+
+// ** assets / icons
+import { CalendarRange, Eye, Check, X, MoreHorizontal, UserRound } from 'lucide-react'
+
+// ** shared components
 import { Button } from '@/components/ui/button'
 import {
 	Table,
@@ -18,9 +25,9 @@ import {
 	DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Card, CardContent } from '@/components/ui/card'
-import { CalendarRange, Eye, Check, X, MoreHorizontal, UserRound } from 'lucide-react'
 import { StatusBadge } from '@/components/offsite/StatusBadge'
-import { useRouter } from 'next/navigation'
+
+// ** config / utils / types / hooks
 import type { LeaveApprovalStep } from '@/lib/types'
 
 const ROLE_LABEL: Record<string, string> = {

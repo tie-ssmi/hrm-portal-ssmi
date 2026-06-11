@@ -1,10 +1,15 @@
 'use client'
 
+// ** core
 import { useState, useEffect } from 'react'
+
+// ** assets / icons
+import { Badge, CalendarDays, MessageSquare, User2, Building2 } from 'lucide-react'
+
+// ** shared components
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Badge, CalendarDays, MessageSquare, User2, Building2 } from 'lucide-react'
 import {
   Sheet,
   SheetClose,

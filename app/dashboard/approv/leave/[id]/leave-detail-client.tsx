@@ -1,11 +1,25 @@
 'use client'
 
+// ** core
 import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useAuth } from '@/lib/auth-context'
-import { fetchLeaveById, updateLeaveApproval } from '@/services/leaves'
-import { toast } from 'sonner'
+
+// ** assets / icons
+import {
+  ArrowLeft,
+  Briefcase,
+  Building2,
+  CalendarRange,
+  CheckCircle2,
+  ExternalLink,
+  FileText,
+  ShieldUser,
+  Timer,
+  UserRound,
+  XCircle,
+} from 'lucide-react'
+
+// ** shared components
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -22,20 +36,17 @@ import {
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
-import {
-  ArrowLeft,
-  Briefcase,
-  Building2,
-  CalendarRange,
-  CheckCircle2,
-  ExternalLink,
-  FileText,
-  ShieldUser,
-  Timer,
-  UserRound,
-  XCircle,
-} from 'lucide-react'
+
+// ** third party
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
+
+// ** config / utils / types / hooks
+import { useAuth } from '@/lib/auth-context'
 import type { LeaveApprovalStep, LeaveApproverRole } from '@/lib/types'
+
+// ** services
+import { fetchLeaveById, updateLeaveApproval } from '@/services/leaves'
 
 const roleLabel: Record<LeaveApproverRole, string> = {
   departmentHead: 'ຫົວໜ້າພະແນກ',

@@ -1,8 +1,12 @@
 'use client'
 
+// ** core
 import { useMemo, useState } from 'react'
-import { useAuth } from '@/lib/auth-context'
-import { useAllTodayOffsite } from '@/lib/use-work-outside-queries'
+
+// ** assets / icons
+import { Search, Users, Building2, MapPin, Calendar } from 'lucide-react'
+
+// ** shared components
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -14,8 +18,11 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Search, Users, Building2, MapPin, Calendar } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
+
+// ** config / utils / types / hooks
+import { useAuth } from '@/lib/auth-context'
+import { useAllTodayOffsite } from '@/lib/use-work-outside-queries'
 import type { Department, OffsiteRequestDoc } from '@/types/workOutside'
 
 // ── helpers ────────────────────────────────────────────────────────────────

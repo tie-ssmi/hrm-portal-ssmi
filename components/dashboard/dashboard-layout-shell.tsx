@@ -1,14 +1,18 @@
 'use client'
 
+// ** core
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
+// ** shared components
 import { MobileNav } from '@/components/dashboard/mobile-nav'
 import { DashboardNav } from '@/components/dashboard/nav'
 import { TanstackQueryProvider } from '@/components/query-provider-tanstack'
+import { NotificationProvider } from '@/components/NotificationProvider'
+
+// ** config / utils / types / hooks
 import { useAuth } from '@/lib/auth-context'
 import { HRMProvider } from '@/lib/hrm-context'
-import { NotificationProvider } from '@/components/NotificationProvider' // 🌟 1. Import ລະບົບແຈ້ງເຕືອນເຂົ້າມາ (ກວດເຊັກ Path ໃຫ້ຖືກຕ້ອງ)
 
 export function DashboardLayoutShell({
   children,

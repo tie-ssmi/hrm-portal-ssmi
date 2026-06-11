@@ -1,9 +1,10 @@
 "use client";
 
+// ** core
 import { useState, useEffect, useRef, useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { cn } from "@/lib/utils";
-import { isNavItemActive } from "@/lib/nav-utils";
+
+// ** assets / icons
 import {
   LayoutDashboard,
   User,
@@ -15,10 +16,8 @@ import {
   X,
   ClipboardCheck,
 } from "lucide-react";
-import { useAuth } from "@/lib/auth-context";
-import { useNotifications } from "@/components/NotificationProvider";
-import { version } from "@/package.json";
-import TheThemes from "@/components/themes";
+
+// ** shared components
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -39,7 +38,15 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { useNotifications } from "@/components/NotificationProvider";
+import TheThemes from "@/components/themes";
 import { PWAInstallButton } from "../pwa-install-button";
+
+// ** config / utils / types / hooks
+import { useAuth } from "@/lib/auth-context";
+import { cn } from "@/lib/utils";
+import { isNavItemActive } from "@/lib/nav-utils";
+import { version } from "@/package.json";
 
 type NavItem = {
   href: string;
@@ -58,7 +65,21 @@ export function MobileNav() {
   const { notifications } = useNotifications();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [showNav, setShowNav] = useState(true);
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
   const lastScrollYRef = useRef(0);
+
+  const activeHref = pendingHref ?? pathname;
+
+  useEffect(() => {
+    setPendingHref(null);
+  }, [pathname]);
+
+  useEffect(() => {
+    ["/dashboard", "/dashboard/history", "/dashboard/attendance", "/dashboard/approv", "/dashboard/profile", "/dashboard/request"].forEach(
+      (href) => router.prefetch(href),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const canApproveDept = user?.rolePermissions?.approveDepartment ?? false;
   const canApproveBranch = user?.rolePermissions?.approveBranch ?? false;
@@ -108,12 +129,12 @@ export function MobileNav() {
         <div className="flex items-center justify-around h-16 px-2">
           {navItems.map((item) => {
             if (!item.show) return null;
-            const isActive = isNavItemActive(pathname, item.href);
+            const isActive = isNavItemActive(activeHref, item.href);
             return (
               <button
                 key={item.href}
                 type="button"
-                onClick={() => router.push(item.href)}
+                onClick={() => { setPendingHref(item.href); router.push(item.href); }}
                 aria-current={isActive ? "page" : undefined}
                 className={cn(
                   "flex flex-col items-center justify-center gap-1 px-2 py-2 rounded-lg transition-colors min-h-[44px] min-w-[44px] select-none cursor-pointer relative",
@@ -164,12 +185,12 @@ export function MobileNav() {
 
               {navMenuItems.map((item) => {
                 if (!item.show) return null;
-                const isActive = isNavItemActive(pathname, item.href);
+                const isActive = isNavItemActive(activeHref, item.href);
                 return (
                   <button
                     key={item.href}
                     type="button"
-                    onClick={() => { router.push(item.href); setSheetOpen(false); }}
+                    onClick={() => { setPendingHref(item.href); router.push(item.href); setSheetOpen(false); }}
                     aria-current={isActive ? "page" : undefined}
                     className={cn(
                       "flex w-full items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer",

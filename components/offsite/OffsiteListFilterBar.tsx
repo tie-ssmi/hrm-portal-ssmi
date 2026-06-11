@@ -1,6 +1,9 @@
 'use client'
 
+// ** assets / icons
 import { Search, X } from 'lucide-react'
+
+// ** shared components
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import {
@@ -10,6 +13,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+
+// ** config / utils / types / hooks
 import { formatMonthKey } from '@/lib/format'
 import type { OffsiteFilters } from '@/hooks/useMyOffsiteRequests'
 import type { ActivityCode } from '@/types/workOutside'

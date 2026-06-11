@@ -1,18 +1,28 @@
 'use client'
 
+// ** core
 import { useState } from 'react'
-import { useAuth } from '@/lib/auth-context'
-import { usePendingDocLeaves, useAttachLeaveDocument } from '@/lib/use-leave-queries'
-import { uploadLeaveDocument } from '@/services/leaves'
-import { toast } from 'sonner'
-import { cn } from '@/lib/utils'
 
+// ** assets / icons
+import { FileText, Upload, X, Calendar, Send } from 'lucide-react'
+
+// ** shared components
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
-import { FileText, Upload, X, Calendar, Send } from 'lucide-react'
+
+// ** third party
+import { toast } from 'sonner'
+
+// ** config / utils / types / hooks
+import { useAuth } from '@/lib/auth-context'
+import { usePendingDocLeaves, useAttachLeaveDocument } from '@/lib/use-leave-queries'
+import { cn } from '@/lib/utils'
 import type { LeaveRequest } from '@/lib/types'
+
+// ** services
+import { uploadLeaveDocument } from '@/services/leaves'
 
 const statusLabel: Record<string, string> = {
   pending: 'ລໍຖ້າອະນຸມັດ',

@@ -1,6 +1,12 @@
 'use client'
 
+// ** core
 import { useCallback, useEffect, useRef, useState } from 'react'
+
+// ** assets / icons
+import { Camera, RotateCcw, Check, X } from 'lucide-react'
+
+// ** shared components
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -10,7 +16,6 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { Camera, RotateCcw, Check, X } from 'lucide-react'
 
 type CameraCaptureProps = {
   open: boolean

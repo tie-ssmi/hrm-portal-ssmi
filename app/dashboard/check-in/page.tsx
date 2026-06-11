@@ -1,8 +1,13 @@
 'use client'
 
+// ** core
 import { Fragment, Suspense, useMemo, useState } from 'react'
-import { useAuth } from '@/lib/auth-context'
-import { useTodayCheckInAttendance } from '@/lib/use-attendance-queries'
+import { useSearchParams } from 'next/navigation'
+
+// ** assets / icons
+import { Search, Users, Clock, LogOut, MapPinOff } from 'lucide-react'
+
+// ** shared components
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -22,11 +27,13 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Search, Users, Clock, LogOut, MapPinOff } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
-import type { AttendanceRecord } from '@/lib/types'
 import { translateJobTitle } from '@/components/translater'
-import { useSearchParams } from 'next/navigation'
+
+// ** config / utils / types / hooks
+import { useAuth } from '@/lib/auth-context'
+import { useTodayCheckInAttendance } from '@/lib/use-attendance-queries'
+import type { AttendanceRecord } from '@/lib/types'
 
 // ── helpers ────────────────────────────────────────────────────────────────
 

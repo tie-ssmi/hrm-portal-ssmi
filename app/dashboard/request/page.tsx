@@ -1,11 +1,9 @@
 "use client";
 
+// ** core
 import { useState, useEffect } from "react";
-import { useAuth } from "@/lib/auth-context";
-import { useHRM } from "@/lib/hrm-context";
-import { useQueryClient } from "@tanstack/react-query";
-import { db } from "@/lib/firebase";
-import { doc, updateDoc } from "firebase/firestore";
+
+// ** assets / icons
 import {
   Plus,
   Palmtree,
@@ -14,8 +12,8 @@ import {
   FileWarning,
   BriefcaseBusiness,
 } from "lucide-react";
-import { toast } from "sonner";
 
+// ** shared components
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -29,8 +27,21 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-
 import LeaveRequestForm from "@/components/dashboard/leave-request-form";
+import { OffsiteListFilterBar } from "@/components/offsite/OffsiteListFilterBar";
+import { OffsiteRequestList } from "@/components/offsite/OffsiteRequestList";
+import { CreateRequestDialog } from "@/components/offsite/CreateRequestDialog";
+import FormsSkeleton from "@/components/skeletons/formsSkeleton";
+
+// ** third party
+import { useQueryClient } from "@tanstack/react-query";
+import { doc, updateDoc } from "firebase/firestore";
+import { toast } from "sonner";
+
+// ** config / utils / types / hooks
+import { useAuth } from "@/lib/auth-context";
+import { useHRM } from "@/lib/hrm-context";
+import { db } from "@/lib/firebase";
 import {
   useUpcomingLeaves,
   usePendingDocLeaves,
@@ -40,10 +51,6 @@ import {
   OFFSITE_QUERY_KEY,
 } from "@/hooks/useMyOffsiteRequests";
 import type { OffsiteFilters } from "@/hooks/useMyOffsiteRequests";
-import { OffsiteListFilterBar } from "@/components/offsite/OffsiteListFilterBar";
-import { OffsiteRequestList } from "@/components/offsite/OffsiteRequestList";
-import { CreateRequestDialog } from "@/components/offsite/CreateRequestDialog";
-import FormsSkeleton from "@/components/skeletons/formsSkeleton";
 import type { OffsiteRequestDoc } from "@/types/workOutside";
 
 const DEFAULT_FILTERS: OffsiteFilters = {
