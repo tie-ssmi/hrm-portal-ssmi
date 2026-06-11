@@ -1,6 +1,6 @@
 "use client";
 // ** core
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 // ** assets / icons
@@ -52,20 +52,38 @@ export default function ApprovePage() {
   const { user, isLoading } = useAuth();
 
   // ── ຂໍ້ມູນ user ແລະ ສິດອະນຸມັດ ──────────────────────────────────────────────
-  const loggedInUserUuid = user?.uid || user?.id || "";
-  const departmentUuid =
-    typeof user?.department === "object"
-      ? (user.department as { uuid?: string })?.uuid
-      : undefined;
-  const workLocationUuid =
-    typeof user?.workLocation === "object"
-      ? (user.workLocation as { uuid?: string })?.uuid
-      : undefined;
-  const canApproveDept = user?.rolePermissions?.approveDepartment ?? false;
-  const canApproveBranch = user?.rolePermissions?.approveBranch ?? false;
-  // FIX #1: canApproveAny ບໍ່ໄດ້ declare ໃນ version ເກົ່າ → queries ບໍ່ເຄີຍ run ເລີຍ
-  const canApproveAny = canApproveDept || canApproveBranch;
-  const isUnauthorized = !isLoading && !canApproveAny;
+  const {
+    loggedInUserUuid,
+    departmentUuid,
+    workLocationUuid,
+    canApproveDept,
+    canApproveBranch,
+    canApproveAny,
+    isUnauthorized,
+  } = useMemo(() => {
+    const loggedInUserUuid = user?.uid || user?.id || "";
+    const departmentUuid =
+      typeof user?.department === "object"
+        ? (user.department as { uuid?: string })?.uuid
+        : undefined;
+    const workLocationUuid =
+      typeof user?.workLocation === "object"
+        ? (user.workLocation as { uuid?: string })?.uuid
+        : undefined;
+    const canApproveDept = user?.rolePermissions?.approveDepartment ?? false;
+    const canApproveBranch = user?.rolePermissions?.approveBranch ?? false;
+    const canApproveAny = canApproveDept || canApproveBranch;
+    const isUnauthorized = !isLoading && !canApproveAny;
+    return {
+      loggedInUserUuid,
+      departmentUuid,
+      workLocationUuid,
+      canApproveDept,
+      canApproveBranch,
+      canApproveAny,
+      isUnauthorized,
+    };
+  }, [user, isLoading]);
 
   // ເຖິງວ່າຈະ unauthorized ກໍ່ຕ້ອງ declare hooks ທັງໝົດກ່ອນ return
   // ຖ້າ return null ກ່ອນ hooks ຈະເກີດ "Rendered fewer hooks than expected"
@@ -203,11 +221,6 @@ export default function ApprovePage() {
     if (saved === "leave" || saved === "offsite") setActiveTab(saved);
   }, []);
 
-  function handleTabChange(value: string) {
-    setActiveTab(value);
-    localStorage.setItem("approv-tab", value);
-  }
-
   // ── Leave approval state ─────────────────────────────────────────────────
   const [openConfirmDialog, setOpenConfirmDialog] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
@@ -225,47 +238,70 @@ export default function ApprovePage() {
   const [confirmOffsite, setConfirmOffsite] = useState(false);
   const [isProcessingOffsite, setIsProcessingOffsite] = useState(false);
 
-  // ── Leave dialog handlers ────────────────────────────────────────────────
-  const handleConfirmLeaveChange = (checked: boolean | "indeterminate") => {
-    setConfirmLeave(checked === true);
-  };
+  // ── Handlers ────────────────────────────────────────────────────────────
+  const handleTabChange = useCallback((value: string) => {
+    setActiveTab(value);
+    localStorage.setItem("approv-tab", value);
+  }, []);
 
-  const handleDialogOpenChange = (open: boolean) => {
+  const handleConfirmLeaveChange = useCallback(
+    (checked: boolean | "indeterminate") => {
+      setConfirmLeave(checked === true);
+    },
+    [],
+  );
+
+  const handleDialogOpenChange = useCallback((open: boolean) => {
     setOpenConfirmDialog(open);
     if (!open) {
       setConfirmLeave(false);
       setPendingApproveItem(null);
     }
-  };
+  }, []);
 
-  const handleApprove = (item: LeaveTableItem) => {
+  const handleApprove = useCallback((item: LeaveTableItem) => {
     setPendingApproveItem(item);
     setOpenConfirmDialog(true);
-  };
+  }, []);
 
-  // ── Offsite handlers ─────────────────────────────────────────────────────
-  const handleOffsiteApprove = (item: OffsiteTableItem) => {
+  const handleOffsiteApprove = useCallback((item: OffsiteTableItem) => {
     setPendingOffsiteItem(item);
     setOffsiteAction("approve");
     setOpenOffsiteDialog(true);
-  };
+  }, []);
 
-  const handleOffsiteReject = (item: OffsiteTableItem) => {
+  const handleOffsiteReject = useCallback((item: OffsiteTableItem) => {
     setPendingOffsiteItem(item);
     setOffsiteAction("reject");
     setOpenOffsiteDialog(true);
-  };
+  }, []);
 
-  const handleOffsiteDialogOpenChange = (open: boolean) => {
+  const handleOffsiteDialogOpenChange = useCallback((open: boolean) => {
     setOpenOffsiteDialog(open);
     if (!open) {
       setPendingOffsiteItem(null);
       setOffsiteAction(null);
       setConfirmOffsite(false);
     }
-  };
+  }, []);
 
-  const handleConfirmOffsiteAction = async () => {
+  const handleConfirmOffsiteCheckChange = useCallback(
+    (v: boolean | "indeterminate") => setConfirmOffsite(v === true),
+    [],
+  );
+
+  const handleInsteadClick = useCallback(
+    () => router.push("/dashboard/approv/leave/instead"),
+    [router],
+  );
+
+  const handleViewDetail = useCallback(
+    (item: OffsiteTableItem) =>
+      router.push(`/dashboard/approv/work-off-site?id=${item.id}`),
+    [router],
+  );
+
+  const handleConfirmOffsiteAction = useCallback(async () => {
     if (!pendingOffsiteItem || !offsiteAction || !confirmOffsite) return;
     const reviewedBy =
       [user?.firstNameLo || user?.firstName, user?.lastNameLo || user?.lastName]
@@ -328,9 +364,19 @@ export default function ApprovePage() {
       setOffsiteAction(null);
       setConfirmOffsite(false);
     }
-  };
+  }, [
+    pendingOffsiteItem,
+    offsiteAction,
+    confirmOffsite,
+    user,
+    loggedInUserUuid,
+    canApproveDept,
+    offsiteRequests,
+    queryClient,
+    offsiteQueryKey,
+  ]);
 
-  const handleConfirmApprove = async () => {
+  const handleConfirmApprove = useCallback(async () => {
     if (!pendingApproveItem || !confirmLeave) return;
     const reviewedBy =
       [user?.firstNameLo || user?.firstName, user?.lastNameLo || user?.lastName]
@@ -366,7 +412,16 @@ export default function ApprovePage() {
       setConfirmLeave(false);
       setPendingApproveItem(null);
     }
-  };
+  }, [
+    pendingApproveItem,
+    confirmLeave,
+    user,
+    loggedInUserUuid,
+    canApproveBranch,
+    leaveRequests,
+    queryClient,
+    leaveQueryKey,
+  ]);
 
   if (isLoading || isUnauthorized) {
     return <FormsSkeleton />;
@@ -477,7 +532,7 @@ export default function ApprovePage() {
             <Checkbox
               id="confirm-offsite"
               checked={confirmOffsite}
-              onCheckedChange={(v) => setConfirmOffsite(v === true)}
+              onCheckedChange={handleConfirmOffsiteCheckChange}
               className="mt-0.5 shrink-0"
             />
             <span className="text-sm leading-relaxed">
@@ -525,11 +580,7 @@ export default function ApprovePage() {
 
         <TabsContent value="leave" className="mt-4">
           <div className="mb-4 flex w-full justify-end">
-            <Button
-              onClick={() => router.push("/dashboard/approv/leave/instead")}
-            >
-              ຂໍລາແທນ
-            </Button>
+            <Button onClick={handleInsteadClick}>ຂໍລາແທນ</Button>
           </div>
           <LeaveTable data={leaveTableData} onApprove={handleApprove} />
         </TabsContent>
@@ -540,9 +591,7 @@ export default function ApprovePage() {
             canApproveBranch={canApproveBranch}
             onApprove={handleOffsiteApprove}
             onReject={handleOffsiteReject}
-            onViewDetail={(item) =>
-              router.push(`/dashboard/approv/work-off-site?id=${item.id}`)
-            }
+            onViewDetail={handleViewDetail}
           />
         </TabsContent>
       </Tabs>

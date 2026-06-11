@@ -1,5 +1,6 @@
 'use client'
 
+import { useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -8,6 +9,10 @@ import { ArrowLeft, CirclePlus, FileText } from 'lucide-react'
 export default function LeavePage() {
 	const router = useRouter()
 
+	const handleAddNew = useCallback(() => router.push('/dashboard/request'), [router])
+	const handleBack = useCallback(() => router.back(), [router])
+	const handleGoApprovals = useCallback(() => router.push('/dashboard/approv'), [router])
+
 	return (
 		<div className="space-y-6 pb-8">
 			<div className="flex flex-wrap items-center justify-between gap-3">
@@ -15,7 +20,7 @@ export default function LeavePage() {
 					<p className="text-sm text-muted-foreground">Leave Requests</p>
 					<h1 className="text-2xl font-bold leading-tight">Select a leave request</h1>
 				</div>
-				<Button type="button" size="sm" onClick={() => router.push('/dashboard/request')}>
+				<Button type="button" size="sm" onClick={handleAddNew}>
 					<CirclePlus className="mr-2 h-4 w-4" />
 					Add New
 				</Button>
@@ -33,11 +38,11 @@ export default function LeavePage() {
 						</p>
 					</div>
 					<div className="flex items-center justify-center gap-2">
-						<Button type="button" variant="outline" size="sm" onClick={() => router.back()}>
+						<Button type="button" variant="outline" size="sm" onClick={handleBack}>
 							<ArrowLeft className="mr-2 h-4 w-4" />
 							Back
 						</Button>
-						<Button type="button" size="sm" onClick={() => router.push('/dashboard/approv')}>
+						<Button type="button" size="sm" onClick={handleGoApprovals}>
 							Go to Approvals
 						</Button>
 					</div>

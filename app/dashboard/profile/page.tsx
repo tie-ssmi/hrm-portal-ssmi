@@ -1,7 +1,7 @@
 "use client";
 
 // ** core
-import { useState, type ElementType } from "react";
+import { useState, useMemo, useCallback, memo, type ElementType } from "react";
 
 // ** assets / icons
 import {
@@ -55,6 +55,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useHRM } from "@/lib/hrm-context";
 import { fetchEmployeeByUid } from "@/lib/employees";
 import type { EducationEntry, Employee } from "@/lib/types";
+
 // Firestore may store reference fields as objects { nameLo, uuid, code }
 function toStr(value: unknown): string {
   if (value === null || value === undefined) return "-";
@@ -106,43 +107,6 @@ function resolveProfileImage(value: unknown, uid?: string): string {
     if (typeof nested === "string") return nested;
   }
   return "";
-}
-
-function InfoGrid({ fields }: { fields: InfoField[] }) {
-  return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-      {fields.map((f, i) => (
-        <div
-          key={i}
-          className="bg-muted/30 flex items-start gap-3 rounded-lg p-3"
-        >
-          <div className="bg-background flex h-8 w-8 shrink-0 items-center justify-center rounded-lg">
-            <f.icon className="text-muted-foreground h-4 w-4" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-muted-foreground text-xs">{f.label}</p>
-            <div className="flex items-center gap-2">
-              <p className="text-foreground truncate text-sm font-medium">
-                {f.masked && !f.revealed ? "••••••••" : f.value || "-"}
-              </p>
-              {f.masked && (
-                <button
-                  onClick={f.onToggle}
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {f.revealed ? (
-                    <EyeOff className="h-3.5 w-3.5" />
-                  ) : (
-                    <Eye className="h-3.5 w-3.5" />
-                  )}
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
 }
 
 function buildEducationFields(profileUser: Employee | null): InfoField[] {
@@ -201,9 +165,46 @@ function buildEducationFields(profileUser: Employee | null): InfoField[] {
   return fields;
 }
 
+const InfoGrid = memo(function InfoGrid({ fields }: { fields: InfoField[] }) {
+  return (
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+      {fields.map((f, i) => (
+        <div
+          key={i}
+          className="bg-muted/30 flex items-start gap-3 rounded-lg p-3"
+        >
+          <div className="bg-background flex h-8 w-8 shrink-0 items-center justify-center rounded-lg">
+            <f.icon className="text-muted-foreground h-4 w-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-muted-foreground text-xs">{f.label}</p>
+            <div className="flex items-center gap-2">
+              <p className="text-foreground truncate text-sm font-medium">
+                {f.masked && !f.revealed ? "••••••••" : f.value || "-"}
+              </p>
+              {f.masked && (
+                <button
+                  onClick={f.onToggle}
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {f.revealed ? (
+                    <EyeOff className="h-3.5 w-3.5" />
+                  ) : (
+                    <Eye className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+});
+
 export default function ProfilePage() {
   const { user, firebaseUser } = useAuth();
-  const { profileUpdateRequests, submitProfileUpdate } = useHRM();
+  const { submitProfileUpdate } = useHRM();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editField, setEditField] = useState("");
   const [editValue, setEditValue] = useState("");
@@ -220,41 +221,54 @@ export default function ProfilePage() {
     enabled: !!firebaseUser?.uid,
   });
 
-  const profileUser: Employee | null = user
-    ? {
-        ...user,
-        ...(employeeData ?? {}),
-        firstName: employeeData?.firstNameEn || user.firstName,
-        lastName: employeeData?.lastNameEn || user.lastName,
-        phone: employeeData?.tel || user.phone,
-        position: employeeData?.jobTitle || user.position,
-        department:
-          employeeData?.department ||
-          employeeData?.workLocation ||
-          user.department,
-      }
-    : null;
+  const profileUser = useMemo<Employee | null>(
+    () =>
+      user
+        ? {
+            ...user,
+            ...(employeeData ?? {}),
+            firstName: employeeData?.firstNameEn || user.firstName,
+            lastName: employeeData?.lastNameEn || user.lastName,
+            phone: employeeData?.tel || user.phone,
+            position: employeeData?.jobTitle || user.position,
+            department:
+              employeeData?.department ||
+              employeeData?.workLocation ||
+              user.department,
+          }
+        : null,
+    [user, employeeData],
+  );
 
-  const initials = profileUser
-    ? `${(profileUser.firstNameEn || profileUser.firstName)[0] ?? ""}${(profileUser.lastNameEn || profileUser.lastName)[0] ?? ""}`.toUpperCase()
-    : "U";
+  const initials = useMemo(
+    () =>
+      profileUser
+        ? `${(profileUser.firstNameEn || profileUser.firstName)[0] ?? ""}${(profileUser.lastNameEn || profileUser.lastName)[0] ?? ""}`.toUpperCase()
+        : "U",
+    [profileUser],
+  );
 
-  const avatarSrc =
-    uploadedAvatarUrl ||
-    resolveProfileImage(employeeData?.profileImage, firebaseUser?.uid) ||
-    employeeData?.photo3x4Url ||
-    profileUser?.avatar ||
-    (toStr(profileUser?.gender).toLowerCase() === "male"
-      ? "/info/man.jpg"
-      : "/info/woman.jpg");
+  const avatarSrc = useMemo(
+    () =>
+      uploadedAvatarUrl ||
+      resolveProfileImage(employeeData?.profileImage, firebaseUser?.uid) ||
+      employeeData?.photo3x4Url ||
+      profileUser?.avatar ||
+      (toStr(profileUser?.gender).toLowerCase() === "male"
+        ? "/info/man.jpg"
+        : "/info/woman.jpg"),
+    [uploadedAvatarUrl, employeeData, firebaseUser?.uid, profileUser],
+  );
 
-  const handleEditClick = (field: string, currentValue: string) => {
+  const toggleSalary = useCallback(() => setShowSalary((v) => !v), []);
+
+  const handleEditClick = useCallback((field: string, currentValue: string) => {
     setEditField(field);
     setEditValue(currentValue);
     setIsDialogOpen(true);
-  };
+  }, []);
 
-  const handleSubmitUpdate = async () => {
+  const handleSubmitUpdate = useCallback(async () => {
     if (!editValue.trim()) {
       toast.error("Please enter a value");
       return;
@@ -279,113 +293,129 @@ export default function ProfilePage() {
     } finally {
       setIsSubmitting(false);
     }
-  };
+  }, [editValue, editField, profileUser, submitProfileUpdate]);
+
+  const handleAvatarUploaded = useCallback((url: string) => {
+    setUploadedAvatarUrl(url);
+    toast.success("ຮູບໂປຣໄຟລ໌ຖືກອັບເດດແລ້ວ");
+  }, []);
 
   // Employment fields — list style with separators and edit buttons
-  const employmentFields: InfoField[] = [
-    {
-      label: "ລະຫັດພະນັກງານ",
-      value: toStr(profileUser?.employeeId),
-      icon: User,
-    },
-    { label: "ອີເມວ", value: toStr(profileUser?.email), icon: Mail },
-    {
-      label: "ເບີໂທ",
-      value: toStr(profileUser?.tel || profileUser?.phone),
-      icon: Phone,
-    },
-    {
-      label: "ຕຳແໜ່ງວຽກ",
-      value: toStr(profileUser?.jobTitle || profileUser?.position),
-      icon: Briefcase,
-    },
-    {
-      label: "ພະແນກ",
-      value: formatDepartment(profileUser?.department),
-      icon: Layers,
-    },
-    {
-      label: "ສະຖານທີ່ທຳວຽກ",
-      value: toStr(profileUser?.workLocation),
-      icon: Building,
-    },
-    {
-      label: "ປະເພດພະນັກງານ",
-      value: toStr(profileUser?.employeeType),
-      icon: IdCard,
-    },
-    {
-      label: "ເງິນເດືອນ",
-      value: toStr(NumberFormatter.NoZero(profileUser?.salary || 0)) + " ກີບ",
-      icon: DollarSign,
-      masked: true,
-      revealed: showSalary,
-      onToggle: () => setShowSalary((v) => !v),
-    },
-    // { label: 'ວັນເຂົ້າຮ່ວມ', value: profileUser?.joinDate ? format(new Date(profileUser.joinDate), 'MMM d, yyyy') : '-', icon: Calendar },
-    // {NumberFormatter.NoZero(employee?.salary || 0)} ກີບ
-  ];
-  const personalFields: InfoField[] = [
-    {
-      label: "ຊື່ (ພາສາອັງກິດ)",
-      value: `${profileUser?.firstNameEn || profileUser?.firstName} ${profileUser?.lastNameEn || profileUser?.lastName}`,
-      icon: User,
-    },
-    {
-      label: "ຊື່ (ພາສາລາວ)",
-      value:
-        profileUser?.firstNameLo && profileUser?.lastNameLo
-          ? `${profileUser.firstNameLo} ${profileUser.lastNameLo}`
+  const employmentFields = useMemo<InfoField[]>(
+    () => [
+      {
+        label: "ລະຫັດພະນັກງານ",
+        value: toStr(profileUser?.employeeId),
+        icon: User,
+      },
+      { label: "ອີເມວ", value: toStr(profileUser?.email), icon: Mail },
+      {
+        label: "ເບີໂທ",
+        value: toStr(profileUser?.tel || profileUser?.phone),
+        icon: Phone,
+      },
+      {
+        label: "ຕຳແໜ່ງວຽກ",
+        value: toStr(profileUser?.jobTitle || profileUser?.position),
+        icon: Briefcase,
+      },
+      {
+        label: "ພະແນກ",
+        value: formatDepartment(profileUser?.department),
+        icon: Layers,
+      },
+      {
+        label: "ສະຖານທີ່ທຳວຽກ",
+        value: toStr(profileUser?.workLocation),
+        icon: Building,
+      },
+      {
+        label: "ປະເພດພະນັກງານ",
+        value: toStr(profileUser?.employeeType),
+        icon: IdCard,
+      },
+      {
+        label: "ເງິນເດືອນ",
+        value: toStr(NumberFormatter.NoZero(profileUser?.salary || 0)) + " ກີບ",
+        icon: DollarSign,
+        masked: true,
+        revealed: showSalary,
+        onToggle: toggleSalary,
+      },
+    ],
+    [profileUser, showSalary, toggleSalary],
+  );
+
+  const personalFields = useMemo<InfoField[]>(
+    () => [
+      {
+        label: "ຊື່ (ພາສາອັງກິດ)",
+        value: `${profileUser?.firstNameEn || profileUser?.firstName} ${profileUser?.lastNameEn || profileUser?.lastName}`,
+        icon: User,
+      },
+      {
+        label: "ຊື່ (ພາສາລາວ)",
+        value:
+          profileUser?.firstNameLo && profileUser?.lastNameLo
+            ? `${profileUser.firstNameLo} ${profileUser.lastNameLo}`
+            : "-",
+        icon: User,
+      },
+      {
+        label: "ວັນເກີດ",
+        value: profileUser?.dateOfBirth
+          ? formatDateLao(new Date(profileUser.dateOfBirth))
           : "-",
-      icon: User,
-    },
-    {
-      label: "ວັນເກີດ",
-      value: profileUser?.dateOfBirth
-        ? formatDateLao(new Date(profileUser.dateOfBirth))
-        : "-",
-      icon: Calendar,
-    },
-    { label: "ເພດ", value: toStr(profileUser?.gender), icon: User },
-    { label: "ກຸ່ມເລືອດ", value: toStr(profileUser?.bloodType), icon: Heart },
-    {
-      label: "ສະຖານະ",
-      value: toStr(profileUser?.maritalStatus),
-      icon: Users,
-    },
-    { label: "ສາສະໜາ", value: toStr(profileUser?.religion), icon: User },
-    { label: "ຊາດ", value: toStr(profileUser?.ethnicity), icon: User },
-  ];
+        icon: Calendar,
+      },
+      { label: "ເພດ", value: toStr(profileUser?.gender), icon: User },
+      { label: "ກຸ່ມເລືອດ", value: toStr(profileUser?.bloodType), icon: Heart },
+      {
+        label: "ສະຖານະ",
+        value: toStr(profileUser?.maritalStatus),
+        icon: Users,
+      },
+      { label: "ສາສະໜາ", value: toStr(profileUser?.religion), icon: User },
+      { label: "ຊາດ", value: toStr(profileUser?.ethnicity), icon: User },
+    ],
+    [profileUser],
+  );
 
-  const originFields: InfoField[] = [
-    {
-      label: "ແຂວງເກີດ",
-      value: toStr(profileUser?.provinceOfBirth),
-      icon: MapPin,
-    },
-    {
-      label: "ເມືອງເກີດ",
-      value: toStr(profileUser?.cityOfBirth),
-      icon: MapPin,
-    },
-    {
-      label: "ສະຖານທີ່ເກີດ",
-      value: toStr(profileUser?.placeOfBirth),
-      icon: MapPin,
-    },
-    {
-      label: "ຈຳນວນສະມາຊິກຄອບຄົວ",
-      value: toStr(profileUser?.numberOfFamilyMembers),
-      icon: Users,
-    },
-    {
-      label: "ຕິດຕໍ່ສຸກເສີນ",
-      value: toStr(profileUser?.emergencyContactNumber),
-      icon: Phone,
-    },
-  ];
+  const originFields = useMemo<InfoField[]>(
+    () => [
+      {
+        label: "ແຂວງເກີດ",
+        value: toStr(profileUser?.provinceOfBirth),
+        icon: MapPin,
+      },
+      {
+        label: "ເມືອງເກີດ",
+        value: toStr(profileUser?.cityOfBirth),
+        icon: MapPin,
+      },
+      {
+        label: "ສະຖານທີ່ເກີດ",
+        value: toStr(profileUser?.placeOfBirth),
+        icon: MapPin,
+      },
+      {
+        label: "ຈຳນວນສະມາຊິກຄອບຄົວ",
+        value: toStr(profileUser?.numberOfFamilyMembers),
+        icon: Users,
+      },
+      {
+        label: "ຕິດຕໍ່ສຸກເສີນ",
+        value: toStr(profileUser?.emergencyContactNumber),
+        icon: Phone,
+      },
+    ],
+    [profileUser],
+  );
 
-  const educationFields = buildEducationFields(profileUser);
+  const educationFields = useMemo(
+    () => buildEducationFields(profileUser),
+    [profileUser],
+  );
 
   if (!profileUser || isEmployeeLoading) {
     return <ProfileSkeleton />;
@@ -440,10 +470,7 @@ export default function ProfilePage() {
                 <FileUpload
                   uid={firebaseUser?.uid || profileUser.id || ""}
                   className="border-background h-9 w-9 border-2 bg-black/70"
-                  onUploaded={(url) => {
-                    setUploadedAvatarUrl(url);
-                    toast.success("ຮູບໂປຣໄຟລ໌ຖືກອັບເດດແລ້ວ");
-                  }}
+                  onUploaded={handleAvatarUploaded}
                 />
               </div>
             </div>
@@ -467,7 +494,6 @@ export default function ProfilePage() {
                 <Badge variant="secondary">
                   {toStr(profileUser?.employeeId)}
                 </Badge>
-                {/* <Badge variant="outline">Active</Badge> */}
                 {profileUser?.employeeType && (
                   <Badge variant="outline">
                     {toStr(profileUser.employeeType)}

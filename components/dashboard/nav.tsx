@@ -1,7 +1,8 @@
 "use client";
 
 // ** core
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
+import { useRouter } from "nextjs-toploader/app";
 import { useMemo, useState, useEffect, useCallback } from "react";
 
 // ** assets / icons

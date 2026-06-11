@@ -1,7 +1,7 @@
 "use client";
 
 // ** core
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 
 // ** assets / icons
 import {
@@ -73,10 +73,10 @@ export default function FormsPage() {
     if (saved === "leave" || saved === "offsite") setActiveTab(saved);
   }, []);
 
-  function handleTabChange(value: string) {
+  const handleTabChange = useCallback((value: string) => {
     setActiveTab(value);
     localStorage.setItem("request-tab", value);
-  }
+  }, []);
 
   // ── offsite state ──
   const [filters, setFilters] = useState<OffsiteFilters>(DEFAULT_FILTERS);
@@ -96,34 +96,44 @@ export default function FormsPage() {
     availableMonths,
   } = useMyOffsiteRequests(filters);
 
-  const userUuid = user?.uuid ?? user?.uid ?? "";
+  const userUuid = useMemo(
+    () => user?.uuid ?? user?.uid ?? "",
+    [user?.uuid, user?.uid],
+  );
   const { data: upcomingLeaves = [] } = useUpcomingLeaves(userUuid);
   const { data: pendingDocLeaves = [] } = usePendingDocLeaves(userUuid);
-  const pendingLeaveCount = upcomingLeaves.filter(
-    (l) => l.status === "pending",
-  ).length;
-  const approvedOffsite = allDocs.filter((d) => d.status === "approved");
-  const approvedOffsiteCount = approvedOffsite.length;
-  const approvedOffsiteDays = approvedOffsite.reduce(
-    (sum, d) => sum + (d.durationDays ?? 0),
-    0,
+
+  const pendingLeaveCount = useMemo(
+    () => upcomingLeaves.filter((l) => l.status === "pending").length,
+    [upcomingLeaves],
   );
 
-  function handleCreateNew() {
+  const { approvedOffsiteCount, approvedOffsiteDays } = useMemo(() => {
+    const approved = allDocs.filter((d) => d.status === "approved");
+    return {
+      approvedOffsiteCount: approved.length,
+      approvedOffsiteDays: approved.reduce(
+        (sum, d) => sum + (d.durationDays ?? 0),
+        0,
+      ),
+    };
+  }, [allDocs]);
+
+  const handleCreateNew = useCallback(() => {
     setEditTarget(undefined);
     setDialogOpen(true);
-  }
+  }, []);
 
-  function handleEdit(d: OffsiteRequestDoc) {
+  const handleEdit = useCallback((d: OffsiteRequestDoc) => {
     setEditTarget(d);
     setDialogOpen(true);
-  }
+  }, []);
 
-  function handleSuccess() {
+  const handleSuccess = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: [OFFSITE_QUERY_KEY] });
-  }
+  }, [queryClient]);
 
-  async function handleConfirmCancel() {
+  const handleConfirmCancel = useCallback(async () => {
     if (!cancelTarget || !user) return;
     setIsCancelling(true);
     try {
@@ -144,7 +154,21 @@ export default function FormsPage() {
       setIsCancelling(false);
       setCancelTarget(null);
     }
-  }
+  }, [cancelTarget, user, queryClient]);
+
+  const handleCancel = useCallback(
+    (d: OffsiteRequestDoc) => setCancelTarget(d),
+    [],
+  );
+
+  const handleDialogOpenChange = useCallback((open: boolean) => {
+    setDialogOpen(open);
+    if (!open) setEditTarget(undefined);
+  }, []);
+
+  const handleAlertOpenChange = useCallback((open: boolean) => {
+    if (!open) setCancelTarget(null);
+  }, []);
 
   if (isLoading) return <FormsSkeleton />;
 
@@ -263,7 +287,7 @@ export default function FormsPage() {
             currentUid={user?.uid ?? ""}
             onCreateNew={handleCreateNew}
             onEdit={handleEdit}
-            onCancel={(d) => setCancelTarget(d)}
+            onCancel={handleCancel}
             onRetry={refetch}
           />
         </TabsContent>
@@ -272,10 +296,7 @@ export default function FormsPage() {
       {/* Create / Edit Dialog */}
       <CreateRequestDialog
         open={dialogOpen}
-        onOpenChange={(open) => {
-          setDialogOpen(open);
-          if (!open) setEditTarget(undefined);
-        }}
+        onOpenChange={handleDialogOpenChange}
         onSuccess={handleSuccess}
         initialData={editTarget}
       />
@@ -283,9 +304,7 @@ export default function FormsPage() {
       {/* Cancel confirmation */}
       <AlertDialog
         open={!!cancelTarget}
-        onOpenChange={(open) => {
-          if (!open) setCancelTarget(null);
-        }}
+        onOpenChange={handleAlertOpenChange}
       >
         <AlertDialogContent>
           <AlertDialogHeader>

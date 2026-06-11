@@ -17,9 +17,6 @@ import {
   Users,
   ArrowRight,
   User,
-  Upload,
-  Timer,
-  X,
 } from "lucide-react";
 
 // ** shared components
@@ -30,13 +27,6 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -69,6 +59,10 @@ import { fetchLeavesByUserUuidFromToday } from "@/services/leaves";
 import { fetchOfficialHolidays } from "@/services/officialHolidays";
 import { fetchPoliciesForGender } from "@/services/policies";
 import { getEmployees } from "@/services/employees";
+
+import type { LeaveRecord } from "./leave-detail-dialog";
+import LeaveDetailDialog from "./leave-detail-dialog";
+import LeaveDocUpload from "./leave-doc-upload";
 
 type Period = "morning" | "afternoon";
 type LeaveTypeOption = {
@@ -153,17 +147,6 @@ function getStatusIcon(status: string) {
   }
 }
 
-function getStatusBadgeClass(status: string) {
-  switch (status) {
-    case "approved":
-      return "bg-emerald-100 text-emerald-700 border-emerald-200";
-    case "rejected":
-      return "bg-red-100 text-red-700 border-red-200";
-    default:
-      return "bg-amber-100 text-amber-700 border-amber-200";
-  }
-}
-
 function getStatusVariant(status: string) {
   switch (status) {
     case "approved":
@@ -217,7 +200,7 @@ export default function LeaveRequestForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [docUploadChoice, setDocUploadChoice] = useState<DocUploadChoice>(null);
   const [docFile, setDocFile] = useState<File | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedLeave, setSelectedLeave] = useState<LeaveRecord | null>(null);
 
   const annualRemaining = leaveBalance.annual - leaveBalance.annualUsed;
   const sickRemaining = leaveBalance.sick - leaveBalance.sickUsed;
@@ -268,11 +251,6 @@ export default function LeaveRequestForm() {
   });
 
   const { data: pendingDocLeaves = [] } = usePendingDocLeaves(loggedInUserUuid);
-
-  // Declared after myCurrentLeaveRequests so typeof resolves correctly
-  const [selectedLeave, setSelectedLeave] = useState<
-    (typeof myCurrentLeaveRequests)[number] | null
-  >(null);
 
   const { data: employeesData = [] } = useQuery({
     queryKey: ["employees", departmentUuid ?? null],
@@ -458,7 +436,6 @@ export default function LeaveRequestForm() {
           ? (user.department as any)
           : undefined;
 
-      // Upload file to Firebase Storage if user chose 'now'
       let docLink: string | undefined = undefined;
       if (docUploadChoice === "now" && docFile) {
         const ext = docFile.name.split(".").pop() ?? "file";
@@ -766,165 +743,15 @@ export default function LeaveRequestForm() {
               )}
             </div>
 
-            {/* Section 4: Document Upload */}
+            {/* Section 4: Document Upload — lazy loaded */}
             {documentRequired !== "no" && (
-              <div className="rounded-lg border bg-card p-4 space-y-3">
-                <SectionHeader
-                  number={4}
-                  icon={Upload}
-                  title={
-                    documentRequired === "yes"
-                      ? "ເອກະສານປະກອບ (ຕ້ອງການ)"
-                      : "ເອກະສານປະກອບ (ທາງເລືອກ)"
-                  }
-                />
-
-                {documentRequired === "yes" && (
-                  <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">
-                    ປະເພດການລານີ້ຕ້ອງການເອກະສານ — ກະລຸນາເລືອກ
-                  </p>
-                )}
-
-                <div className="grid grid-cols-1 gap-2">
-                  {/* Upload now */}
-                  <button
-                    type="button"
-                    onClick={() => setDocUploadChoice("now")}
-                    className={cn(
-                      "flex items-center gap-3 rounded-lg border px-4 py-3 text-sm text-left transition-colors",
-                      docUploadChoice === "now"
-                        ? "border-primary bg-primary/5 text-primary"
-                        : "border-input hover:bg-muted",
-                    )}
-                  >
-                    <Upload className="w-4 h-4 shrink-0" />
-                    <div>
-                      <p className="font-medium">ອັບໂຫຼດຕອນນີ້</p>
-                      <p className="text-xs text-muted-foreground">
-                        ເລືອກໄຟລ໌ແນບທັນທີ
-                      </p>
-                    </div>
-                    {docUploadChoice === "now" && (
-                      <CheckCircle className="w-4 h-4 ml-auto shrink-0" />
-                    )}
-                  </button>
-
-                  {/* Upload later */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDocUploadChoice("later");
-                      setDocFile(null);
-                    }}
-                    className={cn(
-                      "flex items-center gap-3 rounded-lg border px-4 py-3 text-sm text-left transition-colors",
-                      docUploadChoice === "later"
-                        ? "border-primary bg-primary/5 text-primary"
-                        : "border-input hover:bg-muted",
-                    )}
-                  >
-                    <Timer className="w-4 h-4 shrink-0" />
-                    <div>
-                      <p className="font-medium">ອັບໂຫຼດພາຍຫຼັງ</p>
-                      <p className="text-xs text-muted-foreground">
-                        ສົ່ງຄໍາຮ້ອງກ່ອນ ແລ້ວຄ່ອຍແນບໃຫ້ທີ່ຫຼັງ
-                      </p>
-                    </div>
-                    {docUploadChoice === "later" && (
-                      <CheckCircle className="w-4 h-4 ml-auto shrink-0" />
-                    )}
-                  </button>
-
-                  {/* Skip — only for optional */}
-                  {documentRequired === "option" && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDocUploadChoice("skip");
-                        setDocFile(null);
-                      }}
-                      className={cn(
-                        "flex items-center gap-3 rounded-lg border px-4 py-3 text-sm text-left transition-colors",
-                        docUploadChoice === "skip"
-                          ? "border-primary bg-primary/5 text-primary"
-                          : "border-input hover:bg-muted",
-                      )}
-                    >
-                      <X className="w-4 h-4 shrink-0" />
-                      <div>
-                        <p className="font-medium">ບໍ່ຕ້ອງການເອກະສານ</p>
-                        <p className="text-xs text-muted-foreground">
-                          ດໍາເນີນການໂດຍບໍ່ຕ້ອງແນບໄຟລ໌
-                        </p>
-                      </div>
-                      {docUploadChoice === "skip" && (
-                        <CheckCircle className="w-4 h-4 ml-auto shrink-0" />
-                      )}
-                    </button>
-                  )}
-                </div>
-
-                {/* File input — shown when 'now' selected */}
-                {docUploadChoice === "now" && (
-                  <div className="space-y-2">
-                    <label
-                      htmlFor="doc-file-input"
-                      className="block"
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      <div
-                        className={cn(
-                          "flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-6 cursor-pointer transition-colors active:bg-primary/10",
-                          docFile
-                            ? "border-primary bg-primary/5"
-                            : "border-input hover:bg-muted",
-                        )}
-                      >
-                        <Upload className="w-6 h-6 text-muted-foreground" />
-                        {docFile ? (
-                          <div className="text-center">
-                            <p className="text-sm font-medium text-primary">
-                              {docFile.name}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {(docFile.size / 1024).toFixed(1)} KB
-                            </p>
-                          </div>
-                        ) : (
-                          <div className="text-center">
-                            <p className="text-sm text-muted-foreground">
-                              ກົດເພື່ອເລືອກໄຟລ໌
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              PDF, JPG, PNG (ສູງສຸດ 10MB)
-                            </p>
-                          </div>
-                        )}
-                        <input
-                          ref={fileInputRef}
-                          id="doc-file-input"
-                          type="file"
-                          accept=".pdf,.jpg,.jpeg,.png"
-                          className="hidden"
-                          onChange={(e) =>
-                            setDocFile(e.target.files?.[0] ?? null)
-                          }
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      </div>
-                    </label>
-                    {docFile && (
-                      <button
-                        type="button"
-                        onClick={() => setDocFile(null)}
-                        className="flex items-center gap-1 text-xs text-destructive hover:underline"
-                      >
-                        <X className="w-3 h-3" /> ລຶບໄຟລ໌
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
+              <LeaveDocUpload
+                documentRequired={documentRequired as "yes" | "option"}
+                docUploadChoice={docUploadChoice}
+                onChoiceChange={setDocUploadChoice}
+                docFile={docFile}
+                onFileChange={setDocFile}
+              />
             )}
 
             <Button
@@ -968,12 +795,12 @@ export default function LeaveRequestForm() {
               <p className="text-sm">ຍັງບໍ່ມີຄໍາຮ້ອງຂໍ</p>
             </div>
           ) : (
-            <div className="space-y-2 ">
+            <div className="space-y-2">
               {myCurrentLeaveRequests.map((request) => (
                 <button
                   key={request.id}
                   type="button"
-                  onClick={() => setSelectedLeave(request)}
+                  onClick={() => setSelectedLeave(request as LeaveRecord)}
                   className="w-full flex items-center gap-3 p-3 rounded-lg border bg-card text-left hover:bg-muted/50 transition-colors"
                 >
                   <div className="flex-1 min-w-0">
@@ -1006,114 +833,11 @@ export default function LeaveRequestForm() {
         </CardContent>
       </Card>
 
-      {/* Detail dialog */}
-      <Dialog
-        open={!!selectedLeave}
-        onOpenChange={(open) => {
-          if (!open) setSelectedLeave(null);
-        }}
-      >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              {selectedLeave?.policyName || selectedLeave?.type}
-            </DialogTitle>
-          </DialogHeader>
-          {selectedLeave && (
-            <div className="space-y-3 text-sm">
-              <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">ສະຖານະ</span>
-                <Badge
-                  variant={getStatusVariant(selectedLeave.status)}
-                  className="flex items-center gap-1"
-                >
-                  {getStatusIcon(selectedLeave.status)}
-                  {selectedLeave.status}
-                </Badge>
-              </div>
-              <Separator />
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-0.5">
-                  <p className="text-xs text-muted-foreground">ວັນເລີ່ມຕົ້ນ</p>
-                  <p className="font-medium">
-                    {format(new Date(selectedLeave.startDate), "dd MMM yyyy")}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {selectedLeave.startPeriod === "morning"
-                      ? "ຕອນເຊົ້າ"
-                      : "ຕອນບ່າຍ"}
-                  </p>
-                </div>
-                <div className="space-y-0.5">
-                  <p className="text-xs text-muted-foreground">ວັນສິ້ນສຸດ</p>
-                  <p className="font-medium">
-                    {format(new Date(selectedLeave.endDate), "dd MMM yyyy")}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {selectedLeave.endPeriod === "morning"
-                      ? "ຕອນເຊົ້າ"
-                      : "ຕອນບ່າຍ"}
-                  </p>
-                </div>
-              </div>
-              {selectedLeave.duration !== undefined && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">ຈຳນວນ</span>
-                  <Badge variant="secondary">
-                    {formatDuration(selectedLeave.duration)}
-                  </Badge>
-                </div>
-              )}
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">ວັນທີຍື່ນ</span>
-                <span>{selectedLeave.createdAt}</span>
-              </div>
-              <Separator />
-              <div>
-                <p className="text-xs text-muted-foreground mb-1">ເຫດຜົນ</p>
-                <p>{selectedLeave.reason}</p>
-                {selectedLeave.species === "instead" && (
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    ແທນດ້ວຍ: {selectedLeave.createdBy}
-                  </p>
-                )}
-              </div>
-              {selectedLeave.approvals &&
-                selectedLeave.approvals.length > 0 && (
-                  <>
-                    <Separator />
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-2">
-                        ການອານຸມັດ
-                      </p>
-                      <div className="space-y-1.5">
-                        {selectedLeave.approvals
-                          .filter(Boolean)
-                          .map((approval, i) => (
-                            <div
-                              key={i}
-                              className="flex items-center justify-between"
-                            >
-                              <span className="text-xs capitalize">
-                                {approval.role}
-                              </span>
-                              <Badge
-                                variant={getStatusVariant(approval.decision)}
-                                className="flex items-center gap-1 text-xs"
-                              >
-                                {getStatusIcon(approval.decision)}
-                                {approval.decision}
-                              </Badge>
-                            </div>
-                          ))}
-                      </div>
-                    </div>
-                  </>
-                )}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      {/* Detail dialog — lazy loaded */}
+      <LeaveDetailDialog
+        selectedLeave={selectedLeave}
+        onClose={() => setSelectedLeave(null)}
+      />
     </>
   );
 }

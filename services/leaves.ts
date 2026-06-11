@@ -40,8 +40,9 @@ export async function updateLeaveApproval(params: {
   decision: 'approved' | 'rejected'
   reviewedBy: string
   reviewedByUid: string
+  rejectReason?: string
 }): Promise<void> {
-  const { leaveId, approvalIndex, decision, reviewedBy, reviewedByUid } = params
+  const { leaveId, approvalIndex, decision, reviewedBy, reviewedByUid, rejectReason } = params
   const leaveRef = doc(db, 'leaves', leaveId)
   const snapshot = await getDoc(leaveRef)
   if (!snapshot.exists()) throw new Error('Leave request not found')
@@ -51,7 +52,13 @@ export async function updateLeaveApproval(params: {
 
   const updatedApprovals = approvals.map((a, i) =>
     i === approvalIndex
-      ? { ...a, decision, reviewedBy, reviewedAt: new Date().toISOString() }
+      ? {
+          ...a,
+          decision,
+          reviewedBy,
+          reviewedAt: new Date().toISOString(),
+          ...(decision === 'rejected' && rejectReason ? { rejectReason } : {}),
+        }
       : a
   )
 

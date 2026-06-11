@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { memo, useCallback, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { doc, getDoc, updateDoc } from 'firebase/firestore'
@@ -39,7 +39,20 @@ import {
 } from 'lucide-react'
 import type { OffsiteRequestDoc } from '@/types/workOutside'
 
-function InfoField({
+const ROLE_LABEL: Record<string, string> = {
+  departmentHead: 'ຫົວໜ້າພະແນກ',
+  hr: 'ຝ່າຍ HR',
+  manager: 'ຜູ້ຈັດການ',
+}
+
+const ICON_USERS = <Users className="h-3.5 w-3.5" />
+const ICON_BRIEFCASE = <Briefcase className="h-3.5 w-3.5" />
+const ICON_BUILDING = <Building2 className="h-3.5 w-3.5" />
+const ICON_MAP_PIN = <MapPin className="h-3.5 w-3.5" />
+const ICON_CALENDAR = <CalendarRange className="h-3.5 w-3.5" />
+const ICON_BANKNOTE = <Banknote className="h-3.5 w-3.5" />
+
+const InfoField = memo(function InfoField({
   label,
   value,
   icon,
@@ -57,7 +70,7 @@ function InfoField({
       <p className="text-sm font-medium text-foreground">{value || '—'}</p>
     </div>
   )
-}
+})
 
 function PageSkeleton() {
   return (
@@ -95,11 +108,13 @@ export default function OffsiteDetailClient() {
     enabled: !!id,
   })
 
-  const canApproveDept = user?.rolePermissions?.approveDepartment ?? false
-  const canApproveBranch = user?.rolePermissions?.approveBranch ?? false
-  const canAct = (canApproveDept || canApproveBranch) && record?.status === 'pending'
+  const canAct = useMemo(() => {
+    const canApproveDept = user?.rolePermissions?.approveDepartment ?? false
+    const canApproveBranch = user?.rolePermissions?.approveBranch ?? false
+    return (canApproveDept || canApproveBranch) && record?.status === 'pending'
+  }, [user, record?.status])
 
-  async function handleConfirm() {
+  const handleConfirm = useCallback(async () => {
     if (!action || !confirmed || !record) return
     const reviewedBy = [user?.firstNameLo || user?.firstName, user?.lastNameLo || user?.lastName]
       .filter(Boolean).join(' ') || user?.uid || ''
@@ -107,7 +122,7 @@ export default function OffsiteDetailClient() {
 
     setIsProcessing(true)
     try {
-      // Determine which approval entry belongs to the current approver's role
+      const canApproveDept = user?.rolePermissions?.approveDepartment ?? false
       const approvalRole = canApproveDept ? 'departmentHead' : 'manager'
       const approvalIndex = record.approvals.findIndex((ap) => ap.role === approvalRole)
       const decision = action === 'approve' ? 'approved' : 'rejected'
@@ -135,14 +150,37 @@ export default function OffsiteDetailClient() {
     } finally {
       setIsProcessing(false)
     }
-  }
+  }, [action, confirmed, record, user, queryClient, id])
+
+  const handleRejectClick = useCallback(() => {
+    setAction('reject')
+    setConfirmed(false)
+  }, [])
+
+  const handleApproveClick = useCallback(() => {
+    setAction('approve')
+    setConfirmed(false)
+  }, [])
+
+  const handleDialogOpenChange = useCallback((open: boolean) => {
+    if (!open) {
+      setAction(null)
+      setConfirmed(false)
+    }
+  }, [])
+
+  const handleCheckedChange = useCallback((v: boolean | 'indeterminate') => {
+    setConfirmed(v === true)
+  }, [])
+
+  const handleBack = useCallback(() => router.back(), [router])
 
   if (isLoading) return <PageSkeleton />
 
   if (error || !record) {
     return (
       <div className="space-y-4">
-        <Button type="button" variant="outline" size="sm" onClick={() => router.back()}>
+        <Button type="button" variant="outline" size="sm" onClick={handleBack}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           ກັບຄືນ
         </Button>
@@ -162,7 +200,7 @@ export default function OffsiteDetailClient() {
         {/* Header */}
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <Button type="button" variant="ghost" size="sm" onClick={() => router.back()} className="-ml-2 mb-1">
+            <Button type="button" variant="ghost" size="sm" onClick={handleBack} className="-ml-2 mb-1">
               <ArrowLeft className="mr-2 h-4 w-4" />
               ກັບຄືນ
             </Button>
@@ -181,7 +219,7 @@ export default function OffsiteDetailClient() {
                 variant="destructive"
                 size="sm"
                 className="gap-1.5"
-                onClick={() => { setAction('reject'); setConfirmed(false) }}
+                onClick={handleRejectClick}
               >
                 <X className="w-4 h-4" />
                 ປະຕິເສດ
@@ -189,7 +227,7 @@ export default function OffsiteDetailClient() {
               <Button
                 size="sm"
                 className="gap-1.5"
-                onClick={() => { setAction('approve'); setConfirmed(false) }}
+                onClick={handleApproveClick}
               >
                 <Check className="w-4 h-4" />
                 ອະນຸມັດ
@@ -208,17 +246,17 @@ export default function OffsiteDetailClient() {
               <InfoField
                 label="ຊື່ ແລະ ນາມສະກຸນ"
                 value={record.requester.fullNameLo || record.requester.fullNameEn}
-                icon={<Users className="h-3.5 w-3.5" />}
+                icon={ICON_USERS}
               />
               <InfoField
                 label="ຕໍາແໜ່ງ"
                 value={record.requester.jobTitle}
-                icon={<Briefcase className="h-3.5 w-3.5" />}
+                icon={ICON_BRIEFCASE}
               />
               <InfoField
                 label="ພະແນກ"
                 value={record.requester.department.title || record.requester.department.department}
-                icon={<Building2 className="h-3.5 w-3.5" />}
+                icon={ICON_BUILDING}
               />
             </div>
           </CardContent>
@@ -234,23 +272,23 @@ export default function OffsiteDetailClient() {
               <InfoField
                 label="ສະຖານທີ່"
                 value={record.location}
-                icon={<MapPin className="h-3.5 w-3.5" />}
+                icon={ICON_MAP_PIN}
               />
               <InfoField
                 label="ວັນທີ"
                 value={`${formatDateRange(record.startDate, record.endDate)} (${record.durationDays} ມື້)`}
-                icon={<CalendarRange className="h-3.5 w-3.5" />}
+                icon={ICON_CALENDAR}
               />
               <InfoField
                 label="ຄ່າໃຊ້ຈ່າຍ"
                 value={formatKip(record.estimatedCost)}
-                icon={<Banknote className="h-3.5 w-3.5" />}
+                icon={ICON_BANKNOTE}
               />
               {record.customerName && (
                 <InfoField
                   label="ລູກຄ້າ / ຄູ່ຄ້າ"
                   value={record.customerName}
-                  icon={<Users className="h-3.5 w-3.5" />}
+                  icon={ICON_USERS}
                 />
               )}
             </div>
@@ -298,19 +336,12 @@ export default function OffsiteDetailClient() {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {record.approvals.map((ap) => {
-                const roleLabel: Record<string, string> = {
-                  departmentHead: 'ຫົວໜ້າພະແນກ',
-                  hr: 'ຝ່າຍ HR',
-                  manager: 'ຜູ້ຈັດການ',
-                }
-                return (
-                  <div key={ap.role} className="flex items-center justify-between rounded-lg border px-3 py-2">
-                    <span className="text-sm">{roleLabel[ap.role] ?? ap.role}</span>
-                    <StatusBadge status={ap.decision} />
-                  </div>
-                )
-              })}
+              {record.approvals.map((ap) => (
+                <div key={ap.role} className="flex items-center justify-between rounded-lg border px-3 py-2">
+                  <span className="text-sm">{ROLE_LABEL[ap.role] ?? ap.role}</span>
+                  <StatusBadge status={ap.decision} />
+                </div>
+              ))}
             </div>
             {record.rejectReason && (
               <div className="mt-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
@@ -328,10 +359,7 @@ export default function OffsiteDetailClient() {
       </div>
 
       {/* Confirm Dialog */}
-      <Dialog
-        open={!!action}
-        onOpenChange={(open) => { if (!open) { setAction(null); setConfirmed(false) } }}
-      >
+      <Dialog open={!!action} onOpenChange={handleDialogOpenChange}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>
@@ -350,7 +378,7 @@ export default function OffsiteDetailClient() {
             <Checkbox
               id="confirm-action"
               checked={confirmed}
-              onCheckedChange={(v) => setConfirmed(v === true)}
+              onCheckedChange={handleCheckedChange}
               className="mt-0.5 shrink-0"
             />
             <span className="text-sm leading-relaxed">

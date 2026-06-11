@@ -1,7 +1,7 @@
 'use client'
 
 import { Suspense } from 'react'
-import LeaveDetailClient from '../[id]/leave-detail-client'
+import LeaveDetailClient from '../leave-detail-client'
 import { Spinner } from '@/components/ui/spinner'
 
 export default function LeaveDetailPage() {

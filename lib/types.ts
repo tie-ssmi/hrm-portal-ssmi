@@ -140,6 +140,7 @@ export interface LeaveApprovalStep {
   decision: 'pending' | 'approved' | 'rejected'
   reviewedBy?: string
   reviewedAt?: string
+  rejectReason?: string
 }
 
 export interface LeaveRequest {
