@@ -93,7 +93,7 @@ const LiveClock = memo(function LiveClock() {
   )
 })
 
-function LocationCard({
+const LocationCard = memo(function LocationCard({
   location,
   isLoadingLocation,
   isWithinOffice,
@@ -173,9 +173,9 @@ function LocationCard({
       </CardContent>
     </Card>
   )
-}
+})
 
-function DailySummaryCard({
+const DailySummaryCard = memo(function DailySummaryCard({
   todayAttendance,
   isLoadingHistory,
   isOffsite,
@@ -254,9 +254,9 @@ function DailySummaryCard({
       </CardContent>
     </Card>
   )
-}
+})
 
-function WeeklyHistoryCard({
+const WeeklyHistoryCard = memo(function WeeklyHistoryCard({
   weeklyHistory,
   isLoadingHistory,
   onSelectOffsiteDetail,
@@ -323,9 +323,9 @@ function WeeklyHistoryCard({
       </CardContent>
     </Card>
   )
-}
+})
 
-function OffsiteDetailDialog({
+const OffsiteDetailDialog = memo(function OffsiteDetailDialog({
   detail,
   onClose,
 }: {
@@ -366,7 +366,7 @@ function OffsiteDetailDialog({
       </DialogContent>
     </Dialog>
   )
-}
+})
 
 // --- Main page ---
 
@@ -393,13 +393,19 @@ export default function AttendancePage() {
   const [cameraType, setCameraType] = useState<'checkIn' | 'checkOut'>('checkIn')
   const pendingResolveRef = useRef<((file: File | null) => void) | null>(null)
 
-  function captureImage(type: 'checkIn' | 'checkOut'): Promise<File | null> {
+  // Refs keep handleAttendance stable across mutation isPending state changes
+  const checkInMutRef = useRef(checkInMutation)
+  checkInMutRef.current = checkInMutation
+  const checkOutMutRef = useRef(checkOutMutation)
+  checkOutMutRef.current = checkOutMutation
+
+  const captureImage = useCallback((type: 'checkIn' | 'checkOut'): Promise<File | null> => {
     return new Promise((resolve) => {
       pendingResolveRef.current = resolve
       setCameraType(type)
       setCameraOpen(true)
     })
-  }
+  }, [])
 
   const handleCameraCapture = useCallback((file: File) => {
     pendingResolveRef.current?.(file)
@@ -476,7 +482,7 @@ export default function AttendancePage() {
     if (!user) { toast.error('ບໍ່ເຫັນຂໍ້ມູນຜູ້ໃຊ້. ກະລຸນາເຂົ້າລະບົບອີກຄັ້ງ.'); return }
     if (type === 'checkIn' && isBlockedDay.blocked) { toast.error(isBlockedDay.reason); return }
 
-    const mutation = type === 'checkIn' ? checkInMutation : checkOutMutation
+    const mutation = type === 'checkIn' ? checkInMutRef.current : checkOutMutRef.current
     const successMsg = isOffsite
       ? (type === 'checkIn' ? 'ເຂົ້າວຽກນອກສຳເລັດ' : 'ອອກວຽກນອກສຳເລັດ')
       : (type === 'checkIn' ? 'ເຂົ້າການສຳເລັດແລ້ວ' : 'ອອກຈາກການສຳເລັດແລ້ວ')
@@ -512,7 +518,7 @@ export default function AttendancePage() {
       }
       toast.error(msg)
     }
-  }, [user, isOffsite, isBlockedDay, getLocation, getValidatedLocation, checkInMutation, checkOutMutation])
+  }, [user, isOffsite, isBlockedDay, getLocation, getValidatedLocation, captureImage])
 
   const officeDistance = useMemo(() => {
     if (!location || location.error) return null
@@ -536,6 +542,8 @@ export default function AttendancePage() {
       })
       .sort((a, b) => b.date.localeCompare(a.date))
   }, [attendanceHistory, todayIso])
+
+  const handleCloseOffsiteDetail = useCallback(() => setOffsiteDetail(null), [])
 
   return (
     <div className="space-y-6">
@@ -632,7 +640,7 @@ export default function AttendancePage() {
 
       <OffsiteDetailDialog
         detail={offsiteDetail}
-        onClose={() => setOffsiteDetail(null)}
+        onClose={handleCloseOffsiteDetail}
       />
     </div>
   )

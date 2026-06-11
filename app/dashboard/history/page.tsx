@@ -76,6 +76,71 @@ function toSafeDate(value: unknown): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
+const CURRENT_YEAR = new Date().getFullYear().toString();
+
+const ACTIVITY_CODES: ActivityCode[] = [
+  "MEET_CLIENT",
+  "MEETING",
+  "BOOTH",
+  "PROMO",
+  "TRAINING",
+];
+
+function getStatusVariant(status: string) {
+  switch (status) {
+    case "approved":
+    case "present":
+      return "default" as const;
+    case "rejected":
+    case "absent":
+    case "not_check_in":
+    case "not_checked_in":
+      return "destructive" as const;
+    case "late":
+      return "secondary" as const;
+    default:
+      return "outline" as const;
+  }
+}
+
+function getStatusLabel(
+  status: string,
+  checkIn: string | null | undefined,
+  checkOut: string | null | undefined,
+) {
+  const forgotOut = !checkOut ? " (ລືມກົດອອກ)" : "";
+
+  switch (status) {
+    case "present":
+      return "ມາທັນ" + forgotOut;
+    case "late":
+      return "ມາຊ້າ" + forgotOut;
+    case "absent":
+      return "ຂາດ";
+    case "not_checked_in":
+    case "not_check_in":
+      if (!checkIn) return "ຂາດ";
+      return "ລືມກົດເຂົ້າ" + forgotOut;
+    case "leave":
+      return "ລາພັກ";
+    case "offsite":
+      return "ອອກວຽກນອກ" + forgotOut;
+    default:
+      return status;
+  }
+}
+
+function getStatusIcon(status: string) {
+  switch (status) {
+    case "approved":
+      return <CheckCircle className="h-3 w-3" />;
+    case "rejected":
+      return <XCircle className="h-3 w-3" />;
+    default:
+      return <Clock className="h-3 w-3" />;
+  }
+}
+
 export default function HistoryPage() {
   const { user, isLoading } = useAuth();
   useHRM();
@@ -88,9 +153,7 @@ export default function HistoryPage() {
     queryFn: () => fetchAttendanceByUser(user!.uuid!),
     enabled: !!user?.uuid,
   });
-  if (isLoading) {
-    return <HistorySkeleton />;
-  }
+
   const { data: myOffsiteRequests = [] } = useQuery<OffsiteRequestDoc[]>({
     queryKey: ["workOutside", "participant", userUid],
     queryFn: async () => {
@@ -136,6 +199,25 @@ export default function HistoryPage() {
     enabled: !!userUid,
   });
 
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}`;
+  });
+
+  const [selectedLeaveMonth, setSelectedLeaveMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}`;
+  });
+
+  const [selectedOffsiteMonth, setSelectedOffsiteMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}`;
+  });
+
+  const [selectedActivityType, setSelectedActivityType] = useState<
+    ActivityCode | "all"
+  >("all");
+
   const monthOptions = useMemo(() => {
     const options: { value: string; label: string }[] = [];
     const now = new Date();
@@ -158,33 +240,6 @@ export default function HistoryPage() {
     }
     return options;
   }, []);
-
-  const [selectedMonth, setSelectedMonth] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}`;
-  });
-
-  const [selectedLeaveMonth, setSelectedLeaveMonth] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}`;
-  });
-
-  const [selectedOffsiteMonth, setSelectedOffsiteMonth] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}`;
-  });
-
-  const [selectedActivityType, setSelectedActivityType] = useState<
-    ActivityCode | "all"
-  >("all");
-
-  const ACTIVITY_CODES: ActivityCode[] = [
-    "MEET_CLIENT",
-    "MEETING",
-    "BOOTH",
-    "PROMO",
-    "TRAINING",
-  ];
 
   const filteredOffsiteRequests = useMemo(
     () =>
@@ -286,11 +341,6 @@ export default function HistoryPage() {
     return days.reverse();
   }, [selectedMonth, filteredAttendance]);
 
-  const monthLateCount = useMemo(
-    () => filteredAttendance.filter((r) => r.status === "late").length,
-    [filteredAttendance],
-  );
-
   const filteredLeaveRequests = useMemo(() => {
     return leaveRequests
       .filter((r) => {
@@ -309,74 +359,53 @@ export default function HistoryPage() {
       });
   }, [leaveRequests, selectedLeaveMonth]);
 
-  const getStatusVariant = (status: string) => {
-    switch (status) {
-      case "approved":
-      case "present":
-        return "default" as const;
-      case "rejected":
-      case "absent":
-      case "not_check_in":
+  const yearAttendanceCount = useMemo(
+    () =>
+      allAttendance.filter(
+        (r) =>
+          r.date.startsWith(CURRENT_YEAR) &&
+          r.status !== "not_check_in" &&
+          r.status !== "not_checked_in" &&
+          r.status !== "leave",
+      ).length,
+    [allAttendance],
+  );
 
-      case "not_checked_in":
-        return "destructive" as const;
-      case "late":
-        return "secondary" as const;
-      default:
-        return "outline" as const;
-    }
-  };
+  const yearLeaveDays = useMemo(
+    () =>
+      leaveRequests
+        .filter(
+          (r) =>
+            r.status === "approved" &&
+            (typeof r.startDate === "string" ? r.startDate : "").startsWith(
+              CURRENT_YEAR,
+            ),
+        )
+        .reduce((sum, r) => sum + (r.duration ?? 0), 0),
+    [leaveRequests],
+  );
 
-  const getStatusLabel = (
-    status: string,
-    checkIn: string | null | undefined,
-    checkOut: string | null | undefined,
-  ) => {
-    const forgotOut = !checkOut ? " (ລືມກົດອອກ)" : "";
+  const yearOffsiteDays = useMemo(
+    () =>
+      myOffsiteRequests
+        .filter(
+          (r) => r.status === "approved" && r.startDate?.startsWith(CURRENT_YEAR),
+        )
+        .reduce((sum, r) => sum + (r.durationDays ?? 0), 0),
+    [myOffsiteRequests],
+  );
 
-    switch (status) {
-      case "present":
-        return "ມາທັນ" + forgotOut;
-      case "late":
-        return "ມາຊ້າ" + forgotOut;
-      case "absent":
-        return "ຂາດ";
-      case "not_checked_in":
-      case "not_check_in":
-        if (!checkIn) return "ຂາດ";
-        return "ລືມກົດເຂົ້າ" + forgotOut;
-      case "leave":
-        return "ລາພັກ";
-      case "offsite":
-        return "ອອກວຽກນອກ" + forgotOut;
-      default:
-        return status;
-    }
-  };
+  const yearFines = useMemo(
+    () =>
+      monthlyFineSummaries
+        .filter((m) => m.month.startsWith(CURRENT_YEAR))
+        .reduce((sum, m) => sum + m.fines, 0),
+    [monthlyFineSummaries],
+  );
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "approved":
-        return <CheckCircle className="h-3 w-3" />;
-      case "rejected":
-        return <XCircle className="h-3 w-3" />;
-      default:
-        return <Clock className="h-3 w-3" />;
-    }
-  };
-
-  const currentYear = new Date().getFullYear().toString();
-  console.log("[offsite debug]", {
-    userUid,
-    count: myOffsiteRequests.length,
-    requests: myOffsiteRequests.map((r) => ({
-      id: r.id,
-      status: r.status,
-      startDate: r.startDate,
-      durationDays: r.durationDays,
-      participantIds: r.participantIds,
-    })),
-  });
+  if (isLoading) {
+    return <HistorySkeleton />;
+  }
 
   return (
     <div className="space-y-6">
@@ -395,34 +424,13 @@ export default function HistoryPage() {
               <div>
                 <p className="text-muted-foreground text-xs">ຈຳນວນມື້ມາການ</p>
                 <p className="text-foreground text-xl font-bold">
-                  {
-                    allAttendance.filter(
-                      (r) =>
-                        r.date.startsWith(currentYear) &&
-                        r.status !== "not_check_in" &&
-                        r.status !== "not_checked_in" &&
-                        r.status !== "leave",
-                    ).length
-                  }
+                  {yearAttendanceCount}
                 </p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* <Card>
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-chart-3/10">
-                <AlertTriangle className="w-5 h-5 text-chart-3" />
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">ຈຳນວນມື້ມາຊ້າ</p>
-                <p className="text-xl font-bold text-foreground">{monthLateCount}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card> */}
         <Card>
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-3">
@@ -432,16 +440,7 @@ export default function HistoryPage() {
               <div>
                 <p className="text-muted-foreground text-xs">ຈຳນວນມື້ທີລາພັກ</p>
                 <p className="text-foreground text-xl font-bold">
-                  {leaveRequests
-                    .filter(
-                      (r) =>
-                        r.status === "approved" &&
-                        (typeof r.startDate === "string"
-                          ? r.startDate
-                          : ""
-                        ).startsWith(currentYear),
-                    )
-                    .reduce((sum, r) => sum + (r.duration ?? 0), 0)}
+                  {yearLeaveDays}
                 </p>
               </div>
             </div>
@@ -458,13 +457,7 @@ export default function HistoryPage() {
                   ຈຳນວນມື້ອອກວຽກນອກ
                 </p>
                 <p className="text-foreground text-xl font-bold">
-                  {myOffsiteRequests
-                    .filter(
-                      (r) =>
-                        r.status === "approved" &&
-                        r.startDate?.startsWith(currentYear),
-                    )
-                    .reduce((sum, r) => sum + (r.durationDays ?? 0), 0)}
+                  {yearOffsiteDays}
                 </p>
               </div>
             </div>
@@ -480,18 +473,10 @@ export default function HistoryPage() {
               <div>
                 <p className="text-muted-foreground text-xs">ຄ່າປັບທັງໝົດ</p>
                 <p className="text-foreground hidden text-xl font-bold md:block">
-                  {formatKip(
-                    monthlyFineSummaries
-                      .filter((m) => m.month.startsWith(currentYear))
-                      .reduce((sum, m) => sum + m.fines, 0),
-                  )}
+                  {formatKip(yearFines)}
                 </p>
                 <p className="text-foreground block text-xl font-bold md:hidden">
-                  {formatKipText(
-                    monthlyFineSummaries
-                      .filter((m) => m.month.startsWith(currentYear))
-                      .reduce((sum, m) => sum + m.fines, 0),
-                  )}
+                  {formatKipText(yearFines)}
                 </p>
               </div>
             </div>
