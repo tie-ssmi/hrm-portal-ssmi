@@ -1,7 +1,7 @@
 "use client";
 
 // ** core
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
 // ** assets / icons
@@ -48,15 +48,34 @@ import { cn } from "@/lib/utils";
 import { isNavItemActive } from "@/lib/nav-utils";
 import { version } from "@/package.json";
 
-type NavItem = {
+const NAV_STYLE = {
+  WebkitUserSelect: "none" as const,
+  WebkitTouchCallout: "none" as const,
+};
+
+type NavConfig = {
   href: string;
   label: string;
   menuLabel?: string;
   icon: React.ElementType;
-  show: boolean;
   inBottomBar: boolean;
+};
+
+type NavItem = NavConfig & {
+  show: boolean;
   badge?: number;
 };
+
+const MOBILE_NAV_CONFIGS: NavConfig[] = [
+  { href: "/dashboard",            label: "ໜ້າຫຼັກ",       icon: LayoutDashboard, inBottomBar: true  },
+  { href: "/dashboard/history",    label: "ປະຫວັດ",        icon: History,         inBottomBar: true  },
+  { href: "/dashboard/attendance", label: "Check-In",      menuLabel: "Check-In / Check-Out", icon: Clock, inBottomBar: true  },
+  { href: "/dashboard/approv",     label: "ການອະນຸມັດ",    icon: ClipboardCheck,  inBottomBar: true  },
+  { href: "/dashboard/profile",    label: "ຂໍ້ມູນສ່ວນຕົວ", icon: User,            inBottomBar: true  },
+  { href: "/dashboard/request",    label: "ແບບຟອມ",        icon: FileText,        inBottomBar: false },
+];
+
+const MOBILE_PREFETCH_HREFS = MOBILE_NAV_CONFIGS.map((c) => c.href);
 
 export function MobileNav() {
   const pathname = usePathname();
@@ -75,32 +94,46 @@ export function MobileNav() {
   }, [pathname]);
 
   useEffect(() => {
-    ["/dashboard", "/dashboard/history", "/dashboard/attendance", "/dashboard/approv", "/dashboard/profile", "/dashboard/request"].forEach(
-      (href) => router.prefetch(href),
-    );
+    MOBILE_PREFETCH_HREFS.forEach((href) => router.prefetch(href));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const canApproveDept = user?.rolePermissions?.approveDepartment ?? false;
-  const canApproveBranch = user?.rolePermissions?.approveBranch ?? false;
-  const canApprove = canApproveBranch || canApproveDept;
+  const canApprove = useMemo(
+    () =>
+      (user?.rolePermissions?.approveBranch ?? false) ||
+      (user?.rolePermissions?.approveDepartment ?? false),
+    [user?.rolePermissions?.approveBranch, user?.rolePermissions?.approveDepartment],
+  );
 
   const notifCount = notifications.length;
 
+  const handleNavClick = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    const href = e.currentTarget.dataset.href!;
+    setPendingHref(href);
+    router.push(href);
+  }, [router]);
+
+  const handleMenuClick = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    const href = e.currentTarget.dataset.href!;
+    setPendingHref(href);
+    router.push(href);
+    setSheetOpen(false);
+  }, [router]);
+
   const allNavItems = useMemo<NavItem[]>(
-    () => [
-      { href: "/dashboard", label: "ໜ້າຫຼັກ", icon: LayoutDashboard, show: true, inBottomBar: true },
-      { href: "/dashboard/history", label: "ປະຫວັດ", icon: History, show: true, inBottomBar: true },
-      { href: "/dashboard/attendance", label: "Check-In", menuLabel: "Check-In / Check-Out", icon: Clock, show: true, inBottomBar: true },
-      { href: "/dashboard/approv", label: "ການອະນຸມັດ", icon: ClipboardCheck, show: canApprove, badge: notifCount, inBottomBar: true },
-      { href: "/dashboard/profile", label: "ຂໍ້ມູນສ່ວນຕົວ", icon: User, show: true, inBottomBar: true },
-      { href: "/dashboard/request", label: "ແບບຟອມ", icon: FileText, show: true, inBottomBar: false },
-    ],
+    () =>
+      MOBILE_NAV_CONFIGS.map((cfg) => ({
+        ...cfg,
+        show: cfg.href === "/dashboard/approv" ? canApprove : true,
+        badge: cfg.href === "/dashboard/approv" ? notifCount : undefined,
+      })),
     [canApprove, notifCount],
   );
 
-  const navItems = useMemo(() => allNavItems.filter((i) => i.inBottomBar), [allNavItems]);
-  const navMenuItems = allNavItems;
+  const bottomBarItems = useMemo(
+    () => allNavItems.filter((i) => i.inBottomBar && i.show),
+    [allNavItems],
+  );
 
   useEffect(() => {
     const handleScroll = () => {
@@ -124,17 +157,17 @@ export function MobileNav() {
           "lg:hidden fixed bottom-0 left-0 right-0 z-60 bg-card border-t border-border select-none transition-transform duration-300",
           showNav ? "translate-y-0" : "translate-y-full",
         )}
-        style={{ WebkitUserSelect: "none", WebkitTouchCallout: "none" }}
+        style={NAV_STYLE}
       >
         <div className="flex items-center justify-around h-16 px-2">
-          {navItems.map((item) => {
-            if (!item.show) return null;
+          {bottomBarItems.map((item) => {
             const isActive = isNavItemActive(activeHref, item.href);
             return (
               <button
                 key={item.href}
                 type="button"
-                onClick={() => { setPendingHref(item.href); router.push(item.href); }}
+                data-href={item.href}
+                onClick={handleNavClick}
                 aria-current={isActive ? "page" : undefined}
                 className={cn(
                   "flex flex-col items-center justify-center gap-1 px-2 py-2 rounded-lg transition-colors min-h-[44px] min-w-[44px] select-none cursor-pointer relative",
@@ -145,9 +178,9 @@ export function MobileNav() {
               >
                 <div className="relative">
                   <item.icon className="w-5 h-5" />
-                  {!!item.badge && item.badge > 0 && (
+                  {(item.badge ?? 0) > 0 && (
                     <span className="absolute -top-1.5 -right-2 bg-red-500 text-white font-bold text-[9px] min-w-[15px] h-3.5 px-0.5 rounded-full flex items-center justify-center border border-card shadow-sm">
-                      {item.badge > 99 ? "99+" : item.badge}
+                      {(item.badge ?? 0) > 99 ? "99+" : item.badge}
                     </span>
                   )}
                 </div>
@@ -183,14 +216,15 @@ export function MobileNav() {
             <div className="grid flex-1 auto-rows-min gap-2 px-4">
               <TheThemes />
 
-              {navMenuItems.map((item) => {
+              {allNavItems.map((item) => {
                 if (!item.show) return null;
                 const isActive = isNavItemActive(activeHref, item.href);
                 return (
                   <button
                     key={item.href}
                     type="button"
-                    onClick={() => { setPendingHref(item.href); router.push(item.href); setSheetOpen(false); }}
+                    data-href={item.href}
+                    onClick={handleMenuClick}
                     aria-current={isActive ? "page" : undefined}
                     className={cn(
                       "flex w-full items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer",
@@ -203,9 +237,9 @@ export function MobileNav() {
                       <item.icon className="w-5 h-5" />
                       {item.menuLabel ?? item.label}
                     </div>
-                    {!!item.badge && item.badge > 0 && (
+                    {(item.badge ?? 0) > 0 && (
                       <span className="bg-red-500 text-white font-bold text-[11px] min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center shadow-sm">
-                        {item.badge > 99 ? "99+" : item.badge}
+                        {(item.badge ?? 0) > 99 ? "99+" : item.badge}
                       </span>
                     )}
                   </button>
@@ -241,7 +275,7 @@ export function MobileNav() {
                     <DialogClose asChild>
                       <Button variant="outline">ຍົກເລີກ</Button>
                     </DialogClose>
-                    <Button onClick={() => logout()}>ອອກຈາກລະບົບ</Button>
+                    <Button onClick={logout}>ອອກຈາກລະບົບ</Button>
                   </DialogFooter>
                 </DialogContent>
               </Dialog>

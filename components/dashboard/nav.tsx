@@ -2,7 +2,7 @@
 
 // ** core
 import { usePathname, useRouter } from "next/navigation";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 
 // ** assets / icons
 import {
@@ -39,6 +39,23 @@ import { cn } from "@/lib/utils";
 import { isNavItemActive } from "@/lib/nav-utils";
 import { version } from "@/package.json";
 
+type NavConfig = {
+  href: string;
+  label: string;
+  icon: React.ElementType;
+};
+
+const NAV_CONFIGS: NavConfig[] = [
+  { href: "/dashboard",            label: "ໜ້າຫຼັກ",       icon: LayoutDashboard },
+  { href: "/dashboard/profile",    label: "ຂໍ້ມູນສ່ວນຕົວ", icon: User            },
+  { href: "/dashboard/attendance", label: "Check-In/Out",   icon: Clock           },
+  { href: "/dashboard/request",    label: "ແບບຟອມ",         icon: FileText        },
+  { href: "/dashboard/approv",     label: "ການອະນຸມັດ",     icon: ClipboardCheck  },
+  { href: "/dashboard/history",    label: "ປະຫວັດ",         icon: History         },
+];
+
+const PREFETCH_HREFS = NAV_CONFIGS.map((c) => c.href);
+
 function formatDepartment(value: unknown): string {
   if (!value) return "-";
   if (typeof value === "string") return value;
@@ -58,9 +75,12 @@ export function DashboardNav() {
   const { user, logout } = useAuth();
   const { notifications } = useNotifications();
 
-  const canApproveDept = user?.rolePermissions?.approveDepartment ?? false;
-  const canApproveBranch = user?.rolePermissions?.approveBranch ?? false;
-  const canApprove = canApproveBranch || canApproveDept;
+  const canApprove = useMemo(
+    () =>
+      (user?.rolePermissions?.approveBranch ?? false) ||
+      (user?.rolePermissions?.approveDepartment ?? false),
+    [user?.rolePermissions?.approveBranch, user?.rolePermissions?.approveDepartment],
+  );
 
   const initials = useMemo(
     () =>
@@ -80,6 +100,25 @@ export function DashboardNav() {
     );
   }, [user?.profileImage, user?.photo3x4Url, user?.avatar, user?.gender]);
 
+  const fullName = useMemo(
+    () => `${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim(),
+    [user?.firstName, user?.lastName],
+  );
+
+  const dept = user?.department;
+  const deptString   = typeof dept === "string" ? dept : "";
+  const deptObjName  = dept && typeof dept === "object"
+    ? ((dept as Record<string, unknown>).department as string | undefined) ?? ""
+    : "";
+  const deptObjTitle = dept && typeof dept === "object"
+    ? ((dept as Record<string, unknown>).title as string | undefined) ?? ""
+    : "";
+
+  const departmentLabel = useMemo(
+    () => formatDepartment(user?.department),
+    [deptString, deptObjName, deptObjTitle],
+  );
+
   const notifCount = notifications.length;
 
   const [pendingHref, setPendingHref] = useState<string | null>(null);
@@ -90,53 +129,23 @@ export function DashboardNav() {
   }, [pathname]);
 
   useEffect(() => {
-    ["/dashboard", "/dashboard/profile", "/dashboard/attendance", "/dashboard/request", "/dashboard/approv", "/dashboard/history"].forEach(
-      (href) => router.prefetch(href),
-    );
+    PREFETCH_HREFS.forEach((href) => router.prefetch(href));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Fix: memoize — avoid recreating array on every render (notifCount changes on each poll)
+  const handleNavClick = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    const href = e.currentTarget.dataset.href!;
+    setPendingHref(href);
+    router.push(href);
+  }, [router]);
+
   const navItems = useMemo(
-    () => [
-      {
-        href: "/dashboard",
-        label: "ໜ້າຫຼັກ",
-        icon: LayoutDashboard,
-        show: true,
-      },
-      {
-        href: "/dashboard/profile",
-        label: "ຂໍ້ມູນສ່ວນຕົວ",
-        icon: User,
-        show: true,
-      },
-      {
-        href: "/dashboard/attendance",
-        label: "Check-In/Out",
-        icon: Clock,
-        show: true,
-      },
-      {
-        href: "/dashboard/request",
-        label: "ແບບຟອມ",
-        icon: FileText,
-        show: true,
-      },
-      {
-        href: "/dashboard/approv",
-        label: "ການອະນຸມັດ",
-        icon: ClipboardCheck,
-        show: canApprove,
-        badge: notifCount,
-      },
-      {
-        href: "/dashboard/history",
-        label: "ປະຫວັດ",
-        icon: History,
-        show: true,
-      },
-    ],
+    () =>
+      NAV_CONFIGS.map((cfg) => ({
+        ...cfg,
+        show: cfg.href === "/dashboard/approv" ? canApprove : true,
+        badge: cfg.href === "/dashboard/approv" ? notifCount : undefined,
+      })),
     [canApprove, notifCount],
   );
 
@@ -163,7 +172,7 @@ export function DashboardNav() {
           <Avatar className="w-10 h-10">
             <AvatarImage
               src={profileImage}
-              alt={`${user?.firstName ?? ""} ${user?.lastName ?? ""}`}
+              alt={fullName}
               className="object-cover"
             />
             <AvatarFallback className="bg-sidebar-accent text-sidebar-accent-foreground">
@@ -172,10 +181,10 @@ export function DashboardNav() {
           </Avatar>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium truncate">
-              {user?.firstName} {user?.lastName}
+              {fullName}
             </p>
             <p className="text-xs text-sidebar-foreground/70 truncate">
-              {formatDepartment(user?.department)}
+              {departmentLabel}
             </p>
           </div>
         </div>
@@ -190,14 +199,14 @@ export function DashboardNav() {
 
           const isActive = isNavItemActive(activeHref, item.href);
 
-          // Fix: single clean check + cap badge at 99+
           const badgeCount = item.badge ?? 0;
 
           return (
             <button
               key={item.href}
               type="button"
-              onClick={() => { setPendingHref(item.href); router.push(item.href); }}
+              data-href={item.href}
+              onClick={handleNavClick}
               aria-current={isActive ? "page" : undefined}
               className={cn(
                 "flex w-full items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer",
@@ -252,7 +261,7 @@ export function DashboardNav() {
               <DialogClose asChild>
                 <Button variant="outline">ຍົກເລີກ</Button>
               </DialogClose>
-              <Button onClick={() => logout()}>ອອກຈາກລະບົບ</Button>
+              <Button onClick={logout}>ອອກຈາກລະບົບ</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
