@@ -1,9 +1,6 @@
 "use client";
 
-// ** core
 import { useState, useMemo } from "react";
-
-// ** assets / icons
 import {
   Clock,
   Calendar,
@@ -15,8 +12,6 @@ import {
   LogIn,
   LogOut,
 } from "lucide-react";
-
-// ** shared components
 import { ActivityTypeBadge } from "@/components/offsite/ActivityTypeBadge";
 import HistorySkeleton from "@/components/skeletons/historySkeleton";
 import {
@@ -36,14 +31,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-// ** third party
 import { useQuery } from "@tanstack/react-query";
 import { collection, getDocs, query, where } from "firebase/firestore";
-
-// ** config / utils / types / hooks
 import { useAuth } from "@/lib/auth-context";
-import { useHRM } from "@/lib/hrm-context";
 import { db } from "@/lib/firebase";
 import { useUserLeaves } from "@/lib/use-leave-queries";
 import { activityLabel, formatKip, formatKipText } from "@/lib/format";
@@ -55,9 +45,8 @@ import {
   formatDateMonthLao,
   formatMonthYearLao,
 } from "@/components/laoDate";
+import { cn } from "@/lib/utils";
 import type { ActivityCode, OffsiteRequestDoc } from "@/types/workOutside";
-
-// ** services
 import { fetchAttendanceByUser } from "@/services/attendance";
 
 // Safely convert any Firestore value (string, Timestamp, undefined) to a Date.
@@ -85,6 +74,28 @@ const ACTIVITY_CODES: ActivityCode[] = [
   "PROMO",
   "TRAINING",
 ];
+
+// Bug #1: both status names mean the same thing
+const isAbsent = (s: string) => s === "not_check_in" || s === "not_checked_in";
+// Bug #4: Firestore may store "null" as a string instead of null
+const isNullish = (v: unknown) => v == null || v === "null" || v === "";
+
+function buildMonthOptions(aheadMonths: number, total: number) {
+  const now = new Date();
+  return Array.from({ length: total }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() + aheadMonths - i, 1);
+    const value = `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, "0")}`;
+    return { value, label: formatMonthYearLao(d) };
+  });
+}
+
+const MONTH_OPTIONS = buildMonthOptions(0, 12);
+const LEAVE_MONTH_OPTIONS = buildMonthOptions(2, 14);
+
+function currentMonthKey() {
+  const now = new Date();
+  return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}`;
+}
 
 function getStatusVariant(status: string) {
   switch (status) {
@@ -141,10 +152,42 @@ function getStatusIcon(status: string) {
   }
 }
 
+function SummaryCard({
+  icon,
+  iconBg,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  iconBg: string;
+  label: string;
+  value: React.ReactNode;
+}) {
+  return (
+    <Card>
+      <CardContent className="pt-4 pb-4">
+        <div className="flex items-center gap-3">
+          <div
+            className={cn(
+              "flex h-10 w-10 items-center justify-center rounded-lg",
+              iconBg,
+            )}
+          >
+            {icon}
+          </div>
+          <div>
+            <p className="text-muted-foreground text-xs">{label}</p>
+            <p className="text-foreground text-xl font-bold">{value}</p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function HistoryPage() {
-  const { user, isLoading } = useAuth();
-  useHRM();
-  const userUid = user?.uid || user?.id || "";
+  const { user } = useAuth();
+  const userUid = user?.uid ?? user?.id ?? "";
 
   const { data: leaveRequests = [] } = useUserLeaves(user?.uuid);
 
@@ -199,47 +242,17 @@ export default function HistoryPage() {
     enabled: !!userUid,
   });
 
-  const [selectedMonth, setSelectedMonth] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}`;
-  });
-
-  const [selectedLeaveMonth, setSelectedLeaveMonth] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}`;
-  });
-
-  const [selectedOffsiteMonth, setSelectedOffsiteMonth] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}`;
-  });
+  const [selectedMonth, setSelectedMonth] = useState(currentMonthKey);
+  const [selectedLeaveMonth, setSelectedLeaveMonth] = useState(currentMonthKey);
+  const [selectedOffsiteMonth, setSelectedOffsiteMonth] =
+    useState(currentMonthKey);
 
   const [selectedActivityType, setSelectedActivityType] = useState<
     ActivityCode | "all"
   >("all");
 
-  const monthOptions = useMemo(() => {
-    const options: { value: string; label: string }[] = [];
-    const now = new Date();
-    for (let i = 0; i < 12; i++) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const value = `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, "0")}`;
-      options.push({ value, label: formatMonthYearLao(d) });
-    }
-    return options;
-  }, []);
-
-  // Leave tab: 12 months past + 2 months future
-  const leaveMonthOptions = useMemo(() => {
-    const options: { value: string; label: string }[] = [];
-    const now = new Date();
-    for (let i = -2; i < 12; i++) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const value = `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, "0")}`;
-      options.push({ value, label: formatMonthYearLao(d) });
-    }
-    return options;
-  }, []);
+  const monthOptions = MONTH_OPTIONS;
+  const leaveMonthOptions = LEAVE_MONTH_OPTIONS;
 
   const filteredOffsiteRequests = useMemo(
     () =>
@@ -261,12 +274,6 @@ export default function HistoryPage() {
     const todayStr = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}-${now.getDate().toString().padStart(2, "0")}`;
     const isAfter10 =
       now.getHours() > 10 || (now.getHours() === 10 && now.getMinutes() >= 1);
-
-    // Bug #1: unified helper — both status names mean the same thing
-    const isAbsent = (s: string) =>
-      s === "not_check_in" || s === "not_checked_in";
-    // Bug #4: Firestore may store "null" as a string instead of null
-    const isNullish = (v: unknown) => v == null || v === "null" || v === "";
 
     const byMonth = new Map<string, typeof allAttendance>();
     for (const r of allAttendance) {
@@ -307,16 +314,12 @@ export default function HistoryPage() {
       .sort((a, b) => b.month.localeCompare(a.month));
   }, [allAttendance]);
 
-  const computedTotalFines = useMemo(
-    () => monthlyFineSummaries.reduce((sum, m) => sum + m.fines, 0),
-    [monthlyFineSummaries],
+  const computedTotalFines = monthlyFineSummaries.reduce(
+    (sum, m) => sum + m.fines,
+    0,
   );
 
-  const filteredAttendance = useMemo(() => {
-    return allAttendance.filter((r) => r.date.startsWith(selectedMonth));
-  }, [allAttendance, selectedMonth]);
-
-  // All weekdays (Mon–Fri) in the selected month, merged with actual records
+  // All weekdays (Mon–Fri) in the selected month, merged with actual records via O(1) Map lookup
   const allWeekdays = useMemo(() => {
     const [y, m] = selectedMonth.split("-").map(Number);
     const now = new Date();
@@ -324,22 +327,21 @@ export default function HistoryPage() {
     const lastDay = isCurrentMonth
       ? now.getDate()
       : new Date(y, m, 0).getDate();
-
-    const days: {
-      date: string;
-      record: (typeof filteredAttendance)[0] | null;
-    }[] = [];
+    const byDate = new Map(
+      allAttendance
+        .filter((r) => r.date.startsWith(selectedMonth))
+        .map((r) => [r.date, r]),
+    );
+    const days: { date: string; record: (typeof allAttendance)[0] | null }[] =
+      [];
     for (let day = 1; day <= lastDay; day++) {
       const dow = new Date(y, m - 1, day).getDay();
       if (dow === 0 || dow === 6) continue;
       const dateStr = `${y}-${m.toString().padStart(2, "0")}-${day.toString().padStart(2, "0")}`;
-      days.push({
-        date: dateStr,
-        record: filteredAttendance.find((r) => r.date === dateStr) ?? null,
-      });
+      days.push({ date: dateStr, record: byDate.get(dateStr) ?? null });
     }
     return days.reverse();
-  }, [selectedMonth, filteredAttendance]);
+  }, [allAttendance, selectedMonth]);
 
   const filteredLeaveRequests = useMemo(() => {
     return leaveRequests
@@ -364,8 +366,7 @@ export default function HistoryPage() {
       allAttendance.filter(
         (r) =>
           r.date.startsWith(CURRENT_YEAR) &&
-          r.status !== "not_check_in" &&
-          r.status !== "not_checked_in" &&
+          !isAbsent(r.status) &&
           r.status !== "leave",
       ).length,
     [allAttendance],
@@ -389,7 +390,8 @@ export default function HistoryPage() {
     () =>
       myOffsiteRequests
         .filter(
-          (r) => r.status === "approved" && r.startDate?.startsWith(CURRENT_YEAR),
+          (r) =>
+            r.status === "approved" && r.startDate?.startsWith(CURRENT_YEAR),
         )
         .reduce((sum, r) => sum + (r.durationDays ?? 0), 0),
     [myOffsiteRequests],
@@ -403,9 +405,6 @@ export default function HistoryPage() {
     [monthlyFineSummaries],
   );
 
-  if (isLoading) {
-    return <HistorySkeleton />;
-  }
 
   return (
     <div className="space-y-6">
@@ -415,73 +414,35 @@ export default function HistoryPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Card>
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="bg-chart-1/10 flex h-10 w-10 items-center justify-center rounded-lg">
-                <Calendar className="text-chart-1 h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-muted-foreground text-xs">ຈຳນວນມື້ມາການ</p>
-                <p className="text-foreground text-xl font-bold">
-                  {yearAttendanceCount}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="bg-chart-2/10 flex h-10 w-10 items-center justify-center rounded-lg">
-                <Palmtree className="text-chart-2 h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-muted-foreground text-xs">ຈຳນວນມື້ທີລາພັກ</p>
-                <p className="text-foreground text-xl font-bold">
-                  {yearLeaveDays}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="bg-chart-2/10 flex h-10 w-10 items-center justify-center rounded-lg">
-                <MapPin className="text-chart-2 h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-muted-foreground text-xs">
-                  ຈຳນວນມື້ອອກວຽກນອກ
-                </p>
-                <p className="text-foreground text-xl font-bold">
-                  {yearOffsiteDays}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="bg-destructive/10 flex h-10 w-10 items-center justify-center rounded-lg">
-                <DollarSign className="text-destructive h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-muted-foreground text-xs">ຄ່າປັບທັງໝົດ</p>
-                <p className="text-foreground hidden text-xl font-bold md:block">
-                  {formatKip(yearFines)}
-                </p>
-                <p className="text-foreground block text-xl font-bold md:hidden">
-                  {formatKipText(yearFines)}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <SummaryCard
+          icon={<Calendar className="text-chart-1 h-5 w-5" />}
+          iconBg="bg-chart-1/10"
+          label="ຈຳນວນມື້ມາການ"
+          value={yearAttendanceCount}
+        />
+        <SummaryCard
+          icon={<Palmtree className="text-chart-2 h-5 w-5" />}
+          iconBg="bg-chart-2/10"
+          label="ຈຳນວນມື້ທີລາພັກ"
+          value={yearLeaveDays}
+        />
+        <SummaryCard
+          icon={<MapPin className="text-chart-2 h-5 w-5" />}
+          iconBg="bg-chart-2/10"
+          label="ຈຳນວນມື້ອອກວຽກນອກ"
+          value={yearOffsiteDays}
+        />
+        <SummaryCard
+          icon={<DollarSign className="text-destructive h-5 w-5" />}
+          iconBg="bg-destructive/10"
+          label="ຄ່າປັບທັງໝົດ"
+          value={
+            <>
+              <span className="hidden md:inline">{formatKip(yearFines)}</span>
+              <span className="md:hidden">{formatKipText(yearFines)}</span>
+            </>
+          }
+        />
       </div>
 
       <Tabs defaultValue="attendance" className="w-full">
@@ -503,7 +464,7 @@ export default function HistoryPage() {
             <span className="hidden sm:inline">ຄ່າປັບ</span>
           </TabsTrigger>
         </TabsList>
-        {/* Checkin */}
+
         <TabsContent value="attendance" className="mt-4">
           <Card>
             <CardHeader>
@@ -560,8 +521,8 @@ export default function HistoryPage() {
                             >
                               {getStatusLabel(
                                 record.status,
-                                record?.checkIn,
-                                record?.checkOut,
+                                record.checkIn,
+                                record.checkOut,
                               )}
                             </Badge>
                           ) : (
@@ -595,7 +556,7 @@ export default function HistoryPage() {
             </CardContent>
           </Card>
         </TabsContent>
-        {/* Leave */}
+
         <TabsContent value="leave" className="mt-4">
           <Card>
             <CardHeader>
@@ -663,7 +624,7 @@ export default function HistoryPage() {
                           <p className="text-muted-foreground mt-2 text-sm">
                             {request.reason}
                           </p>
-                          <div className="text-muted-foreground mt-3 flex hidden items-center gap-4 text-xs md:block">
+                          <div className="text-muted-foreground mt-3 hidden text-xs md:block">
                             <span>
                               ມື້ສົ່ງຄຳຮອງ :{" "}
                               {createdD ? formatDayDateLao(createdD) : "—"}
@@ -751,7 +712,6 @@ export default function HistoryPage() {
                           key={request.id}
                           className="bg-muted/50 space-y-2 rounded-lg p-3"
                         >
-                          {/* Row 1: type + role badge + status */}
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                               <ActivityTypeBadge
@@ -769,11 +729,9 @@ export default function HistoryPage() {
                               {request.status}
                             </Badge>
                           </div>
-                          {/* Row 2: subject */}
                           <p className="text-sm leading-snug font-medium">
                             {request.subject}
                           </p>
-                          {/* Row 3: location + date */}
                           <div className="text-muted-foreground flex flex-col gap-0.5 text-xs">
                             <span className="flex items-center gap-1">
                               <MapPin className="h-3 w-3 shrink-0" />

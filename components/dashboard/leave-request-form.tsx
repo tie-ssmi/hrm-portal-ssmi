@@ -1,10 +1,7 @@
 "use client";
 
-// ** core
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
-
-// ** assets / icons
 import {
   Calendar as CalendarIcon,
   Send,
@@ -18,8 +15,6 @@ import {
   ArrowRight,
   User,
 } from "lucide-react";
-
-// ** shared components
 import {
   Card,
   CardContent,
@@ -39,27 +34,20 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Combobox } from "@/components/ui/combobox";
-
-// ** third party
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { format, isWeekend } from "date-fns";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-
-// ** config / utils / types / hooks
 import { useAuth } from "@/lib/auth-context";
 import { useHRM } from "@/lib/hrm-context";
 import { storage } from "@/lib/firebase";
 import { usePendingDocLeaves } from "@/lib/use-leave-queries";
 import { cn } from "@/lib/utils";
-
-// ** services
 import { getLeaveApproverRuleText } from "@/services/leave-approval";
 import { fetchLeavesByUserUuidFromToday } from "@/services/leaves";
 import { fetchOfficialHolidays } from "@/services/officialHolidays";
 import { fetchPoliciesForGender } from "@/services/policies";
 import { getEmployees } from "@/services/employees";
-
 import type { LeaveRecord } from "./leave-detail-dialog";
 import LeaveDetailDialog from "./leave-detail-dialog";
 import LeaveDocUpload from "./leave-doc-upload";
@@ -136,25 +124,17 @@ function formatPolicyLimit(
   return `${limitDay} ວັນ / ${translatedType}`;
 }
 
-function getStatusIcon(status: string) {
+function getStatusProps(status: string): {
+  icon: React.ReactNode;
+  variant: "default" | "destructive" | "secondary";
+} {
   switch (status) {
     case "approved":
-      return <CheckCircle className="w-3 h-3" />;
+      return { icon: <CheckCircle className="w-3 h-3" />, variant: "default" };
     case "rejected":
-      return <XCircle className="w-3 h-3" />;
+      return { icon: <XCircle className="w-3 h-3" />, variant: "destructive" };
     default:
-      return <Clock className="w-3 h-3" />;
-  }
-}
-
-function getStatusVariant(status: string) {
-  switch (status) {
-    case "approved":
-      return "default" as const;
-    case "rejected":
-      return "destructive" as const;
-    default:
-      return "secondary" as const;
+      return { icon: <Clock className="w-3 h-3" />, variant: "secondary" };
   }
 }
 
@@ -174,6 +154,45 @@ function SectionHeader({
       </div>
       <Icon className="w-4 h-4 text-muted-foreground" />
       <span className="text-sm font-semibold">{title}</span>
+    </div>
+  );
+}
+
+function PeriodPicker({
+  value,
+  onChange,
+  disableMorning,
+}: {
+  value: Period;
+  onChange: (p: Period) => void;
+  disableMorning?: boolean;
+}) {
+  return (
+    <div className="flex gap-1 mt-1.5">
+      {(["morning", "afternoon"] as Period[]).map((p) => (
+        <button
+          key={p}
+          type="button"
+          disabled={p === "morning" && !!disableMorning}
+          onClick={() => onChange(p)}
+          className={cn(
+            "flex-1 flex items-center justify-center gap-1 text-xs py-1.5 rounded border transition-colors disabled:opacity-40 disabled:cursor-not-allowed",
+            value === p
+              ? "bg-primary text-primary-foreground border-primary"
+              : "bg-transparent border-input text-muted-foreground hover:bg-muted",
+          )}
+        >
+          {p === "morning" ? (
+            <>
+              <Sun className="w-3 h-3" /> ເຊົ້າ
+            </>
+          ) : (
+            <>
+              <Sunset className="w-3 h-3" /> ບ່າຍ
+            </>
+          )}
+        </button>
+      ))}
     </div>
   );
 }
@@ -328,15 +347,7 @@ export default function LeaveRequestForm() {
       })
       .filter((o) => o !== null) as LeaveTypeOption[];
     return filtered.length > 0 ? filtered : fallback;
-  }, [
-    annualRemaining,
-    leaveBalance.annualUsed,
-    leaveBalance.personalUsed,
-    leaveBalance.sickUsed,
-    personalRemaining,
-    policyRecords,
-    sickRemaining,
-  ]);
+  }, [policyRecords, annualRemaining, sickRemaining, personalRemaining]);
 
   const selectedPolicy = useMemo(
     () =>
@@ -345,10 +356,7 @@ export default function LeaveRequestForm() {
     [leaveTypeOptions, selectedPolicyValue],
   );
 
-  const documentRequired = useMemo(
-    () => selectedPolicy?.documentRequired ?? "no",
-    [selectedPolicy],
-  );
+  const documentRequired = selectedPolicy?.documentRequired ?? "no";
 
   useEffect(() => {
     setDocUploadChoice(null);
@@ -374,6 +382,18 @@ export default function LeaveRequestForm() {
       console.error(myCurrentLeavesError);
     }
   }, [myCurrentLeavesError]);
+
+  const resetForm = useCallback(() => {
+    setSelectedPolicyValue(leaveTypeOptions[0]?.value || "annual");
+    setSelectedSuccessorUid("");
+    setLeaveStartDate(undefined);
+    setStartPeriod("morning");
+    setLeaveEndDate(undefined);
+    setEndPeriod("afternoon");
+    setLeaveReason("");
+    setDocUploadChoice(null);
+    setDocFile(null);
+  }, [leaveTypeOptions]);
 
   function handleStartDateSelect(date?: Date) {
     setLeaveStartDate(date);
@@ -490,15 +510,7 @@ export default function LeaveRequestForm() {
       });
       await refetchMyCurrentLeaves();
       toast.success("ສົ່ງຄໍາຮ້ອງຂໍສໍາເລັດ");
-      setSelectedPolicyValue(leaveTypeOptions[0]?.value || "annual");
-      setSelectedSuccessorUid("");
-      setLeaveStartDate(undefined);
-      setStartPeriod("morning");
-      setLeaveEndDate(undefined);
-      setEndPeriod("afternoon");
-      setLeaveReason("");
-      setDocUploadChoice(null);
-      setDocFile(null);
+      resetForm();
     } catch (err) {
       toast.error("ບໍ່ສາມາດສົ່ງຄໍາຮ້ອງຂໍໄດ້");
       console.error(err);
@@ -517,7 +529,6 @@ export default function LeaveRequestForm() {
 
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Section 1: Leave type */}
             <div className="rounded-lg border bg-card p-4 space-y-3">
               <SectionHeader number={1} icon={FileText} title="ປະເພດການລາ" />
               <Combobox
@@ -532,7 +543,6 @@ export default function LeaveRequestForm() {
               />
             </div>
 
-            {/* Section 2: Dates */}
             <div className="rounded-lg border bg-card p-4 space-y-4">
               <SectionHeader
                 number={2}
@@ -570,31 +580,10 @@ export default function LeaveRequestForm() {
                       />
                     </PopoverContent>
                   </Popover>
-                  <div className="flex gap-1 mt-1.5">
-                    {(["morning", "afternoon"] as Period[]).map((p) => (
-                      <button
-                        key={p}
-                        type="button"
-                        onClick={() => handleStartPeriodChange(p)}
-                        className={cn(
-                          "flex-1 flex items-center justify-center gap-1 text-xs py-1.5 rounded border transition-colors",
-                          startPeriod === p
-                            ? "bg-primary text-primary-foreground border-primary"
-                            : "bg-transparent border-input text-muted-foreground hover:bg-muted",
-                        )}
-                      >
-                        {p === "morning" ? (
-                          <>
-                            <Sun className="w-3 h-3" /> ເຊົ້າ
-                          </>
-                        ) : (
-                          <>
-                            <Sunset className="w-3 h-3" /> ບ່າຍ
-                          </>
-                        )}
-                      </button>
-                    ))}
-                  </div>
+                  <PeriodPicker
+                    value={startPeriod}
+                    onChange={handleStartPeriodChange}
+                  />
                 </Field>
 
                 <Field>
@@ -627,42 +616,19 @@ export default function LeaveRequestForm() {
                       />
                     </PopoverContent>
                   </Popover>
-                  <div className="flex gap-1 mt-1.5">
-                    {(["morning", "afternoon"] as Period[]).map((p) => (
-                      <button
-                        key={p}
-                        type="button"
-                        disabled={
-                          p === "morning" &&
-                          !!(
-                            leaveStartDate &&
-                            leaveEndDate &&
-                            leaveStartDate.toDateString() ===
-                              leaveEndDate.toDateString() &&
-                            startPeriod === "afternoon"
-                          )
-                        }
-                        onClick={() => setEndPeriod(p)}
-                        className={cn(
-                          "flex-1 flex items-center justify-center gap-1 text-xs py-1.5 rounded border transition-colors",
-                          endPeriod === p
-                            ? "bg-primary text-primary-foreground border-primary"
-                            : "bg-transparent border-input text-muted-foreground hover:bg-muted",
-                          "disabled:opacity-40 disabled:cursor-not-allowed",
-                        )}
-                      >
-                        {p === "morning" ? (
-                          <>
-                            <Sun className="w-3 h-3" /> ເຊົ້າ
-                          </>
-                        ) : (
-                          <>
-                            <Sunset className="w-3 h-3" /> ບ່າຍ
-                          </>
-                        )}
-                      </button>
-                    ))}
-                  </div>
+                  <PeriodPicker
+                    value={endPeriod}
+                    onChange={setEndPeriod}
+                    disableMorning={
+                      !!(
+                        leaveStartDate &&
+                        leaveEndDate &&
+                        leaveStartDate.toDateString() ===
+                          leaveEndDate.toDateString() &&
+                        startPeriod === "afternoon"
+                      )
+                    }
+                  />
                 </Field>
               </div>
 
@@ -690,7 +656,6 @@ export default function LeaveRequestForm() {
               </Field>
             </div>
 
-            {/* Section 3: Successor */}
             <div className="rounded-lg border bg-card p-4 space-y-3">
               <SectionHeader
                 number={3}
@@ -743,7 +708,6 @@ export default function LeaveRequestForm() {
               )}
             </div>
 
-            {/* Section 4: Document Upload — lazy loaded */}
             {documentRequired !== "no" && (
               <LeaveDocUpload
                 documentRequired={documentRequired as "yes" | "option"}
@@ -771,7 +735,6 @@ export default function LeaveRequestForm() {
         </CardContent>
       </Card>
 
-      {/* Recent requests */}
       <Card className="mt-4">
         <CardHeader className="flex justify-between pb-3">
           <CardTitle className="text-base">ຄໍາຮ້ອງຂໍລ່າສຸດ</CardTitle>
@@ -796,44 +759,46 @@ export default function LeaveRequestForm() {
             </div>
           ) : (
             <div className="space-y-2">
-              {myCurrentLeaveRequests.map((request) => (
-                <button
-                  key={request.id}
-                  type="button"
-                  onClick={() => setSelectedLeave(request as LeaveRecord)}
-                  className="w-full flex items-center gap-3 p-3 rounded-lg border bg-card text-left hover:bg-muted/50 transition-colors"
-                >
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">
-                      {request.policyName || request.type}
-                    </p>
-                    <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                      <CalendarIcon className="w-3 h-3" />
-                      {format(new Date(request.startDate), "dd/MM")}
-                      <ArrowRight className="w-3 h-3" />
-                      {format(new Date(request.endDate), "dd/MM/yyyy")}
-                      {request.duration !== undefined && (
-                        <span className="ml-1 opacity-70">
-                          · {formatDuration(request.duration)}
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                  <Badge
-                    variant={getStatusVariant(request.status)}
-                    className="flex items-center gap-1 shrink-0"
+              {myCurrentLeaveRequests.map((request) => {
+                const { icon, variant } = getStatusProps(request.status);
+                return (
+                  <button
+                    key={request.id}
+                    type="button"
+                    onClick={() => setSelectedLeave(request as LeaveRecord)}
+                    className="w-full flex items-center gap-3 p-3 rounded-lg border bg-card text-left hover:bg-muted/50 transition-colors"
                   >
-                    {getStatusIcon(request.status)}
-                    {request.status}
-                  </Badge>
-                </button>
-              ))}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        {request.policyName || request.type}
+                      </p>
+                      <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                        <CalendarIcon className="w-3 h-3" />
+                        {format(new Date(request.startDate), "dd/MM")}
+                        <ArrowRight className="w-3 h-3" />
+                        {format(new Date(request.endDate), "dd/MM/yyyy")}
+                        {request.duration !== undefined && (
+                          <span className="ml-1 opacity-70">
+                            · {formatDuration(request.duration)}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                    <Badge
+                      variant={variant}
+                      className="flex items-center gap-1 shrink-0"
+                    >
+                      {icon}
+                      {request.status}
+                    </Badge>
+                  </button>
+                );
+              })}
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Detail dialog — lazy loaded */}
       <LeaveDetailDialog
         selectedLeave={selectedLeave}
         onClose={() => setSelectedLeave(null)}

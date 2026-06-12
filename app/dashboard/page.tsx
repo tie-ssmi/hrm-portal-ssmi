@@ -154,7 +154,7 @@ function PolicyList({
 }
 
 export default function DashboardPage() {
-  const { user, isLoading } = useAuth();
+  const { user } = useAuth();
   const { leaveBalance, todayAttendance, attendanceHistory } = useHRM();
   const router = useRouter();
   const userUid = user?.uid ?? "";
@@ -279,9 +279,6 @@ export default function DashboardPage() {
       };
     }, [attendanceHistory]);
 
-  if (isLoading) {
-    return <HomeSkeleton />;
-  }
 
   // Keep stat cards working: derive totals from the matching policy types
   const annualPolicy = policies.find((p) => p.requestType === "annual");

@@ -1,12 +1,8 @@
 "use client";
-// ** core
+
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
-
-// ** assets / icons
 import { Palmtree, MapPin } from "lucide-react";
-
-// ** shared components
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -23,8 +19,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import FormsSkeleton from "@/components/skeletons/formsSkeleton";
 import LeaveTable from "@/components/leaveTable";
 import OffsiteTable from "@/components/offSiteTable";
-
-// ** third party
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   collection,
@@ -35,15 +29,11 @@ import {
   where,
 } from "firebase/firestore";
 import { toast } from "sonner";
-
-// ** config / utils / types / hooks
 import { useAuth } from "@/lib/auth-context";
 import { db } from "@/lib/firebase";
 import type { LeaveTableItem } from "@/components/leaveTable";
 import type { OffsiteTableItem } from "@/components/offSiteTable";
 import type { OffsiteRequestDoc } from "@/types/workOutside";
-
-// ** services
 import { fetchLeavesForApproval, updateLeaveApproval } from "@/services/leaves";
 
 export default function ApprovePage() {
@@ -51,7 +41,6 @@ export default function ApprovePage() {
   const queryClient = useQueryClient();
   const { user, isLoading } = useAuth();
 
-  // ── ຂໍ້ມູນ user ແລະ ສິດອະນຸມັດ ──────────────────────────────────────────────
   const {
     loggedInUserUuid,
     departmentUuid,
@@ -61,7 +50,7 @@ export default function ApprovePage() {
     canApproveAny,
     isUnauthorized,
   } = useMemo(() => {
-    const loggedInUserUuid = user?.uid || user?.id || "";
+    const loggedInUserUuid = user?.uid ?? user?.id ?? "";
     const departmentUuid =
       typeof user?.department === "object"
         ? (user.department as { uuid?: string })?.uuid
@@ -85,13 +74,19 @@ export default function ApprovePage() {
     };
   }, [user, isLoading]);
 
-  // ເຖິງວ່າຈະ unauthorized ກໍ່ຕ້ອງ declare hooks ທັງໝົດກ່ອນ return
-  // ຖ້າ return null ກ່ອນ hooks ຈະເກີດ "Rendered fewer hooks than expected"
+  // Must declare all hooks before any conditional return to avoid "Rendered fewer hooks than expected"
   useEffect(() => {
     if (isUnauthorized) router.push("/dashboard");
   }, [isUnauthorized, router]);
 
-  // ── Leave approval query ────────────────────────────────────────────────────
+  const reviewedBy = useMemo(
+    () =>
+      [user?.firstNameLo || user?.firstName, user?.lastNameLo || user?.lastName]
+        .filter(Boolean)
+        .join(" ") || loggedInUserUuid,
+    [user, loggedInUserUuid],
+  );
+
   const leaveQueryKey = useMemo(
     () => [
       "leaves",
@@ -111,7 +106,6 @@ export default function ApprovePage() {
         workLocationUid: workLocationUuid!,
         excludeUserUuid: loggedInUserUuid,
       }),
-    // FIX #1: ໃຊ້ canApproveAny ທີ່ declare ຢ່າງຖືກຕ້ອງແລ້ວ
     enabled:
       !!departmentUuid &&
       !!workLocationUuid &&
@@ -139,11 +133,9 @@ export default function ApprovePage() {
     [leaveRequests],
   );
 
-  // ── Offsite approval query ──────────────────────────────────────────────────
   // canApproveBranch → ສາຂາດຽວກັນ, ທຸກພະແນກ
   // canApproveDept   → ສາຂາດຽວກັນ + ພະແນກດຽວກັນ
   // ທັງສອງກໍລະນີ: ຕັດ record ຂອງ user ເອງອອກ (client-side filter)
-  // FIX #5: ໃຊ້ useMemo ເພື່ອໃຫ້ array reference stable — ບໍ່ສ້າງ array ໃໝ່ທຸກ render
   const offsiteQueryKey = useMemo(
     () => [
       "workOutside",
@@ -175,7 +167,6 @@ export default function ApprovePage() {
         .filter((d) => d.status === "pending" || d.endDate >= monthStart)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     },
-    // FIX #1: ໃຊ້ canApproveAny ທີ່ declare ຢ່າງຖືກຕ້ອງແລ້ວ
     enabled: !!workLocationUuid && !!loggedInUserUuid && canApproveAny,
   });
 
@@ -198,14 +189,13 @@ export default function ApprovePage() {
           | "pending"
           | "approved"
           | "rejected",
-        // FIX #2: ລຶບ `as` cast ທີ່ຕັດ reviewedAt/reviewedBy ອອກ — type ກົງກັນຢູ່ແລ້ວ
         approvals: r.approvals,
         teammate: r.teammate,
-        // FIX #1: Firestore ເກັບ participantIds ເປັນ (string | object)[]
+        // Firestore ເກັບ participantIds ເປັນ (string | object)[]
         // string = uid ຮຸ່ນເກົ່າ, object = ParticipantEntry ຮຸ່ນໃໝ່
-        // ຕ້ອງ filter string ອອກກ່ອນ ຖ້າບໍ່ TypeScript ຟ້ອງ type mismatch
+        // filter string ອອກກ່ອນ ຖ້າບໍ່ TypeScript ຟ້ອງ type mismatch
         participantIds: r.participantIds.filter(
-          (p): p is Exclude<typeof p, string> => typeof p !== "string"
+          (p): p is Exclude<typeof p, string> => typeof p !== "string",
         ),
         createdAt: r.createdAt,
         createdBy: r.createdBy,
@@ -213,22 +203,18 @@ export default function ApprovePage() {
     [offsiteRequests],
   );
 
-  // ── Persistent tab state ─────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState("leave");
-
-  useEffect(() => {
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window === "undefined") return "leave";
     const saved = localStorage.getItem("approv-tab");
-    if (saved === "leave" || saved === "offsite") setActiveTab(saved);
-  }, []);
+    return saved === "leave" || saved === "offsite" ? saved : "leave";
+  });
 
-  // ── Leave approval state ─────────────────────────────────────────────────
   const [openConfirmDialog, setOpenConfirmDialog] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [pendingApproveItem, setPendingApproveItem] =
     useState<LeaveTableItem | null>(null);
   const [isApproving, setIsApproving] = useState(false);
 
-  // ── Offsite approval state ───────────────────────────────────────────────
   const [openOffsiteDialog, setOpenOffsiteDialog] = useState(false);
   const [offsiteAction, setOffsiteAction] = useState<
     "approve" | "reject" | null
@@ -238,7 +224,6 @@ export default function ApprovePage() {
   const [confirmOffsite, setConfirmOffsite] = useState(false);
   const [isProcessingOffsite, setIsProcessingOffsite] = useState(false);
 
-  // ── Handlers ────────────────────────────────────────────────────────────
   const handleTabChange = useCallback((value: string) => {
     setActiveTab(value);
     localStorage.setItem("approv-tab", value);
@@ -303,10 +288,6 @@ export default function ApprovePage() {
 
   const handleConfirmOffsiteAction = useCallback(async () => {
     if (!pendingOffsiteItem || !offsiteAction || !confirmOffsite) return;
-    const reviewedBy =
-      [user?.firstNameLo || user?.firstName, user?.lastNameLo || user?.lastName]
-        .filter(Boolean)
-        .join(" ") || loggedInUserUuid;
     const now = new Date().toISOString();
 
     setIsProcessingOffsite(true);
@@ -334,8 +315,8 @@ export default function ApprovePage() {
         );
         payload.approvals = updatedApprovals;
 
-        // FIX #2: ຄຳນວນ status ສຸດທ້າຍຫຼັງ update approvals
-        // ເກົ່າ: ສະເພາະ rejected ເທົ່ານັ້ນທີ່ set status — approved ຕິດຄ້າງເປັນ pending ຕລອດ
+        // ຄຳນວນ status ສຸດທ້າຍຫຼັງ update approvals
+        // ຖ້າ set ສະເພາະ rejected — approved ຈະຕິດຄ້າງເປັນ pending ຕລອດ
         const anyRejected = updatedApprovals.some(
           (ap) => ap.decision === "rejected",
         );
@@ -368,8 +349,7 @@ export default function ApprovePage() {
     pendingOffsiteItem,
     offsiteAction,
     confirmOffsite,
-    user,
-    loggedInUserUuid,
+    reviewedBy,
     canApproveDept,
     offsiteRequests,
     queryClient,
@@ -378,14 +358,8 @@ export default function ApprovePage() {
 
   const handleConfirmApprove = useCallback(async () => {
     if (!pendingApproveItem || !confirmLeave) return;
-    const reviewedBy =
-      [user?.firstNameLo || user?.firstName, user?.lastNameLo || user?.lastName]
-        .filter(Boolean)
-        .join(" ") || loggedInUserUuid;
 
-    // FIX #3: approvalIndex ເກົ່າ hardcode ເປັນ 0 ສະເໝີ
-    // ຖ້າ user ເປັນ approver ທີ່ 2 (index 1) ຈະເຂียນໄປ slot ຜິດ
-    // ແກ້: ຊອກຫາ index ຂອງ slot ທີ່ກົງກັບ role ຂອງ user ປັດຈຸບັນ
+    // ຖ້າ user ເປັນ approver ທີ 2 ຂຶ້ນໄປ, hardcode index 0 ຈະຂຽນໄປ slot ຜິດ
     const approvalRole = canApproveBranch ? "branchManager" : "departmentHead";
     const fullLeave = leaveRequests.find((r) => r.id === pendingApproveItem.id);
     const approvalIndex =
@@ -415,7 +389,7 @@ export default function ApprovePage() {
   }, [
     pendingApproveItem,
     confirmLeave,
-    user,
+    reviewedBy,
     loggedInUserUuid,
     canApproveBranch,
     leaveRequests,
@@ -429,7 +403,6 @@ export default function ApprovePage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div>
         <h1 className="text-foreground text-2xl font-bold">ອະນຸມັດຄຳຮ້ອງ</h1>
         <p className="text-muted-foreground">
@@ -437,7 +410,6 @@ export default function ApprovePage() {
         </p>
       </div>
 
-      {/* ສະຫຼຸບຈຳນວນຄຳຮ້ອງ */}
       <div className="grid grid-cols-2 gap-3">
         <Card className="border-chart-2/20 bg-chart-2/5">
           <CardContent className="pt-4 pb-4">
@@ -445,7 +417,6 @@ export default function ApprovePage() {
               <Palmtree className="text-chart-2 h-3.5 w-3.5" />
               ຂໍລາພັກ
             </p>
-            {/* FIX #6: "list" ພາສາອັງກິດ → "ລາຍການ" ພາສາລາວ */}
             <p className="text-foreground text-lg font-bold">
               {leaveTableData.length} ລາຍການ
             </p>
@@ -457,7 +428,6 @@ export default function ApprovePage() {
               <MapPin className="text-chart-1 h-3.5 w-3.5" />
               ຂໍອອກວຽກນອກ
             </p>
-            {/* FIX #6: "list" ພາສາອັງກິດ → "ລາຍການ" ພາສາລາວ */}
             <p className="text-foreground text-lg font-bold">
               {offsiteTableData.length} ລາຍການ
             </p>
@@ -465,7 +435,6 @@ export default function ApprovePage() {
         </Card>
       </div>
 
-      {/* Dialog ຢືນຢັນການອະນຸມັດລາພັກ */}
       <Dialog open={openConfirmDialog} onOpenChange={handleDialogOpenChange}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
@@ -504,7 +473,6 @@ export default function ApprovePage() {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog ຢືນຢັນການອະນຸມັດ/ປະຕິເສດ offsite */}
       <Dialog
         open={openOffsiteDialog}
         onOpenChange={handleOffsiteDialogOpenChange}
@@ -518,7 +486,6 @@ export default function ApprovePage() {
             </DialogTitle>
             <DialogDescription>
               {offsiteAction === "approve" ? "ອະນຸມັດ" : "ປະຕິເສດ"}ຄໍາຮ້ອງຂໍຂອງ{" "}
-              {/* FIX #4: OffsiteTableItem ບໍ່ມີ field 'name' — ໃຊ້ requester.fullNameLo ແທນ */}
               <strong>
                 {pendingOffsiteItem?.requester?.fullNameLo ??
                   pendingOffsiteItem?.requester?.fullNameEn}
@@ -561,7 +528,6 @@ export default function ApprovePage() {
         </DialogContent>
       </Dialog>
 
-      {/* Tabs */}
       <Tabs
         value={activeTab}
         onValueChange={handleTabChange}

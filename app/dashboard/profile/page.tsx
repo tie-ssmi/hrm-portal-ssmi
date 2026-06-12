@@ -1,9 +1,6 @@
 "use client";
 
-// ** core
 import { useState, useMemo, useCallback, memo, type ElementType } from "react";
-
-// ** assets / icons
 import {
   User,
   Mail,
@@ -11,7 +8,6 @@ import {
   Building,
   Briefcase,
   Calendar,
-  Edit3,
   MapPin,
   Heart,
   GraduationCap,
@@ -22,8 +18,6 @@ import {
   EyeOff,
   Layers,
 } from "lucide-react";
-
-// ** shared components
 import {
   Card,
   CardContent,
@@ -31,7 +25,6 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -45,14 +38,9 @@ import ProfileSkeleton from "@/components/skeletons/profileSkeleton";
 import { NumberFormatter } from "@/components/formatNumber";
 import FileUpload from "@/components/cameraUpload";
 import { formatDateLao } from "@/components/laoDate";
-
-// ** third party
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-
-// ** config / utils / types / hooks
 import { useAuth } from "@/lib/auth-context";
-import { useHRM } from "@/lib/hrm-context";
 import { fetchEmployeeByUid } from "@/lib/employees";
 import type { EducationEntry, Employee } from "@/lib/types";
 
@@ -75,8 +63,6 @@ type InfoField = {
   label: string;
   value: string;
   icon: ElementType;
-  editable?: boolean;
-  field?: string;
   masked?: boolean;
   revealed?: boolean;
   onToggle?: () => void;
@@ -204,49 +190,54 @@ const InfoGrid = memo(function InfoGrid({ fields }: { fields: InfoField[] }) {
 
 export default function ProfilePage() {
   const { user, firebaseUser } = useAuth();
-  const { submitProfileUpdate } = useHRM();
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editField, setEditField] = useState("");
-  const [editValue, setEditValue] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSalary, setShowSalary] = useState(false);
   const [uploadedAvatarUrl, setUploadedAvatarUrl] = useState<string | null>(
     null,
   );
   const [isImageDialogOpen, setIsImageDialogOpen] = useState(false);
 
-  const { data: employeeData, isLoading: isEmployeeLoading } = useQuery({
+  const { data: employeeData } = useQuery({
     queryKey: ["employee", firebaseUser?.uid],
     queryFn: () => fetchEmployeeByUid(firebaseUser!.uid),
     enabled: !!firebaseUser?.uid,
   });
 
-  const profileUser = useMemo<Employee | null>(
-    () =>
-      user
-        ? {
-            ...user,
-            ...(employeeData ?? {}),
-            firstName: employeeData?.firstNameEn || user.firstName,
-            lastName: employeeData?.lastNameEn || user.lastName,
-            phone: employeeData?.tel || user.phone,
-            position: employeeData?.jobTitle || user.position,
-            department:
-              employeeData?.department ||
-              employeeData?.workLocation ||
-              user.department,
-          }
-        : null,
-    [user, employeeData],
-  );
+  const profileUser = useMemo<Employee | null>(() => {
+    if (!firebaseUser) return null;
+    if (user) {
+      return {
+        ...user,
+        ...(employeeData ?? {}),
+        firstName: employeeData?.firstNameEn || user.firstName,
+        lastName: employeeData?.lastNameEn || user.lastName,
+        phone: employeeData?.tel || user.phone,
+        position: employeeData?.jobTitle || user.position,
+        department:
+          employeeData?.department ||
+          employeeData?.workLocation ||
+          user.department,
+      };
+    }
+    // Render immediately with Firebase auth data while Employee doc loads
+    const nameParts = (firebaseUser.displayName || "").split(" ");
+    return {
+      id: firebaseUser.uid,
+      uid: firebaseUser.uid,
+      email: firebaseUser.email || "",
+      firstName: nameParts[0] || "",
+      lastName: nameParts.slice(1).join(" ") || "",
+      avatar: firebaseUser.photoURL || undefined,
+      department: "",
+      position: "",
+      employeeId: "",
+      phone: "",
+      joinDate: "",
+    } as Employee;
+  }, [firebaseUser, user, employeeData]);
 
-  const initials = useMemo(
-    () =>
-      profileUser
-        ? `${(profileUser.firstNameEn || profileUser.firstName)[0] ?? ""}${(profileUser.lastNameEn || profileUser.lastName)[0] ?? ""}`.toUpperCase()
-        : "U",
-    [profileUser],
-  );
+  const initials = profileUser
+    ? `${(profileUser.firstNameEn || profileUser.firstName)[0] ?? ""}${(profileUser.lastNameEn || profileUser.lastName)[0] ?? ""}`.toUpperCase()
+    : "U";
 
   const avatarSrc = useMemo(
     () =>
@@ -262,45 +253,11 @@ export default function ProfilePage() {
 
   const toggleSalary = useCallback(() => setShowSalary((v) => !v), []);
 
-  const handleEditClick = useCallback((field: string, currentValue: string) => {
-    setEditField(field);
-    setEditValue(currentValue);
-    setIsDialogOpen(true);
-  }, []);
-
-  const handleSubmitUpdate = useCallback(async () => {
-    if (!editValue.trim()) {
-      toast.error("Please enter a value");
-      return;
-    }
-    setIsSubmitting(true);
-    try {
-      const currentValue =
-        editField === "phone"
-          ? profileUser?.phone || ""
-          : profileUser?.email || "";
-      await submitProfileUpdate({
-        field: editField,
-        oldValue: currentValue,
-        newValue: editValue,
-      });
-      toast.success("Update request submitted for approval");
-      setIsDialogOpen(false);
-      setEditField("");
-      setEditValue("");
-    } catch {
-      toast.error("Failed to submit update request");
-    } finally {
-      setIsSubmitting(false);
-    }
-  }, [editValue, editField, profileUser, submitProfileUpdate]);
-
   const handleAvatarUploaded = useCallback((url: string) => {
     setUploadedAvatarUrl(url);
     toast.success("ຮູບໂປຣໄຟລ໌ຖືກອັບເດດແລ້ວ");
   }, []);
 
-  // Employment fields — list style with separators and edit buttons
   const employmentFields = useMemo<InfoField[]>(
     () => [
       {
@@ -417,7 +374,7 @@ export default function ProfilePage() {
     [profileUser],
   );
 
-  if (!profileUser || isEmployeeLoading) {
+  if (!profileUser) {
     return <ProfileSkeleton />;
   }
 
@@ -430,7 +387,6 @@ export default function ProfilePage() {
         </p>
       </div>
 
-      {/* Profile card */}
       <Card>
         <CardContent className="pt-6">
           <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-start">
@@ -505,7 +461,6 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
 
-      {/* Employment information */}
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">ຂໍ້ມູນການຈ້າງງານ</CardTitle>
@@ -545,15 +500,6 @@ export default function ProfilePage() {
                       </div>
                     </div>
                   </div>
-                  {f.editable && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleEditClick(f.field!, f.value)}
-                    >
-                      <Edit3 className="h-4 w-4" />
-                    </Button>
-                  )}
                 </div>
                 {i < employmentFields.length - 1 && <Separator />}
               </div>
@@ -562,7 +508,6 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
 
-      {/* Personal information */}
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">ຂໍ້ມູນສ່ວນຕົວ</CardTitle>
@@ -573,7 +518,6 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
 
-      {/* Origin & family */}
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">ຕົ້ນກຳເນີດ & ຄອບຄົວ</CardTitle>
@@ -584,7 +528,6 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
 
-      {/* Education */}
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">ການສຶກສາ & ວິຊາການ</CardTitle>
@@ -597,41 +540,6 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
 
-      {/* Update requests */}
-      {/* <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Clock className="w-5 h-5" />
-            ຄໍາຮ້ອງຂໍອັບເດດ
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {profileUpdateRequests.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-6">ບໍ່ມີຄໍາຮ້ອງຂໍອັບເດດທີ່ກຳລັງລໍຖ້າ</p>
-          ) : (
-            <div className="space-y-3">
-              {profileUpdateRequests.map((request) => (
-                <div key={request.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium capitalize">{request.field} Update</p>
-                    <p className="text-xs text-muted-foreground">{request.oldValue} → {request.newValue}</p>
-                    <p className="text-xs text-muted-foreground mt-1">Submitted: {format(new Date(request.createdAt), 'MMM d, yyyy')}</p>
-                  </div>
-                  <Badge
-                    variant={request.status === 'approved' ? 'default' : request.status === 'rejected' ? 'destructive' : 'secondary'}
-                    className="flex items-center gap-1"
-                  >
-                    {request.status === 'approved' && <CheckCircle className="w-3 h-3" />}
-                    {request.status === 'rejected' && <XCircle className="w-3 h-3" />}
-                    {request.status === 'pending' && <Clock className="w-3 h-3" />}
-                    {request.status}
-                  </Badge>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card> */}
     </div>
   );
 }

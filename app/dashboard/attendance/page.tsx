@@ -1,9 +1,6 @@
-'use client'
+"use client";
 
-// ** core
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-
-// ** assets / icons
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   MapPin,
   LogIn,
@@ -15,66 +12,60 @@ import {
   Shield,
   ShieldX,
   MapPinOff,
-} from 'lucide-react'
-
-// ** shared components
+} from "lucide-react";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
   CardDescription,
-} from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Spinner } from '@/components/ui/spinner'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Label } from '@/components/ui/label'
-import { CameraCapture } from '@/components/camera-capture'
-import { formatDateLao, formatDayDateLao } from '@/components/laoDate'
-
-// ** third party
-import { toast } from 'sonner'
-import { addDays, format, startOfWeek } from 'date-fns'
-
-// ** config / utils / types / hooks
-import { useAuth } from '@/lib/auth-context'
-import { useHRM } from '@/lib/hrm-context'
+} from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { CameraCapture } from "@/components/camera-capture";
+import { formatDateLao, formatDayDateLao } from "@/components/laoDate";
+import { toast } from "sonner";
+import { addDays, format, startOfWeek } from "date-fns";
+import { useAuth } from "@/lib/auth-context";
+import { useHRM } from "@/lib/hrm-context";
 import {
   useAttendanceHistory,
   useTodayAttendance,
   useCheckIn,
   useCheckOut,
   useTodayLeaveStatus,
-} from '@/lib/use-attendance-queries'
-import { useOfficialHolidays } from '@/lib/use-official-holidays-query'
-import type { AttendanceRecord } from '@/lib/types'
+} from "@/lib/use-attendance-queries";
+import { useOfficialHolidays } from "@/lib/use-official-holidays-query";
+import type { AttendanceRecord } from "@/lib/types";
 
 type LocationState = {
-  lat: number
-  lng: number
-  accuracy: number
-  error?: string
-}
+  lat: number;
+  lng: number;
+  accuracy: number;
+  error?: string;
+};
 
 // --- Sub-components ---
 
 // Isolated — 1s interval only re-renders this widget, not the whole page
 const LiveClock = memo(function LiveClock() {
-  const [time, setTime] = useState<Date | null>(null)
+  const [time, setTime] = useState<Date | null>(null);
 
   useEffect(() => {
-    setTime(new Date())
-    const id = window.setInterval(() => setTime(new Date()), 1000)
-    return () => window.clearInterval(id)
-  }, [])
+    setTime(new Date());
+    const id = window.setInterval(() => setTime(new Date()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
 
   return (
     <Card className="bg-primary text-primary-foreground">
@@ -82,16 +73,16 @@ const LiveClock = memo(function LiveClock() {
         <div className="text-center">
           <p className="text-sm opacity-80">ເວລາປະຈຸບັນ</p>
           <p className="mt-1 text-4xl font-bold">
-            {time ? format(time, 'HH:mm:ss') : '--:--:--'}
+            {time ? format(time, "HH:mm:ss") : "--:--:--"}
           </p>
           <p className="mt-2 text-sm opacity-80">
-            {time ? formatDayDateLao(time) : ''}
+            {time ? formatDayDateLao(time) : ""}
           </p>
         </div>
       </CardContent>
     </Card>
-  )
-})
+  );
+});
 
 const LocationCard = memo(function LocationCard({
   location,
@@ -101,12 +92,12 @@ const LocationCard = memo(function LocationCard({
   officeDistance,
   onRefresh,
 }: {
-  location: LocationState | null
-  isLoadingLocation: boolean
-  isWithinOffice: boolean
-  geoFenceStatus: string
-  officeDistance: number | null
-  onRefresh: () => void
+  location: LocationState | null;
+  isLoadingLocation: boolean;
+  isWithinOffice: boolean;
+  geoFenceStatus: string;
+  officeDistance: number | null;
+  onRefresh: () => void;
 }) {
   return (
     <Card>
@@ -118,17 +109,33 @@ const LocationCard = memo(function LocationCard({
       </CardHeader>
       <CardContent>
         <div className="flex items-center justify-between">
-          <Button variant="outline" size="sm" onClick={onRefresh} disabled={isLoadingLocation}>
-            {isLoadingLocation ? <Spinner className="mr-2" /> : <Navigation className="mr-2 h-4 w-4" />}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onRefresh}
+            disabled={isLoadingLocation}
+          >
+            {isLoadingLocation ? (
+              <Spinner className="mr-2" />
+            ) : (
+              <Navigation className="mr-2 h-4 w-4" />
+            )}
             ດຶງຂໍ້ມູນຕຳແໜ່ງໃໝ່
           </Button>
 
           {location && !location.error && (
-            <Badge variant={isWithinOffice ? 'default' : 'destructive'} className="flex items-center gap-1">
+            <Badge
+              variant={isWithinOffice ? "default" : "destructive"}
+              className="flex items-center gap-1"
+            >
               {isWithinOffice ? (
-                <><Shield className="h-3 w-3" /> ຢູ່ໃນພື້ນທີ່ຫ້ອງການ</>
+                <>
+                  <Shield className="h-3 w-3" /> ຢູ່ໃນພື້ນທີ່ຫ້ອງການ
+                </>
               ) : (
-                <><ShieldX className="h-3 w-3" /> ຢູ່ນອກພື້ນທີ່ຫ້ອງການ</>
+                <>
+                  <ShieldX className="h-3 w-3" /> ຢູ່ນອກພື້ນທີ່ຫ້ອງການ
+                </>
               )}
             </Badge>
           )}
@@ -136,44 +143,54 @@ const LocationCard = memo(function LocationCard({
 
         {location && !location.error && (
           <div className="mt-3 space-y-2">
-            {geoFenceStatus === 'loading' && (
-              <p className="text-xs text-muted-foreground">ກຳລັງໂຫຼດຂໍ້ມູນສະຖານທີ່ຫ້ອງການ...</p>
+            {geoFenceStatus === "loading" && (
+              <p className="text-muted-foreground text-xs">
+                ກຳລັງໂຫຼດຂໍ້ມູນສະຖານທີ່ຫ້ອງການ...
+              </p>
             )}
-            {geoFenceStatus === 'no_coordinates' && (
-              <p className="text-xs text-amber-600">ຫ້ອງການຍັງບໍ່ໄດ້ຕັ້ງຄ່າພິກັດ GPS — ການກວດສອບໄລຍະຖືກຂ້າມ</p>
+            {geoFenceStatus === "no_coordinates" && (
+              <p className="text-xs text-amber-600">
+                ຫ້ອງການຍັງບໍ່ໄດ້ຕັ້ງຄ່າພິກັດ GPS — ການກວດສອບໄລຍະຖືກຂ້າມ
+              </p>
             )}
-            {geoFenceStatus === 'not_found' && (
-              <p className="text-xs text-destructive">ບໍ່ພົບຂໍ້ມູນສະຖານທີ່ຫ້ອງການ</p>
+            {geoFenceStatus === "not_found" && (
+              <p className="text-destructive text-xs">
+                ບໍ່ພົບຂໍ້ມູນສະຖານທີ່ຫ້ອງການ
+              </p>
             )}
-            {geoFenceStatus === 'found' && officeDistance !== null && (
+            {geoFenceStatus === "found" && officeDistance !== null && (
               <>
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-muted-foreground">ໄກຈາກຫ້ອງການ</span>
-                  <span className={`font-semibold tabular-nums ${officeDistance > 50 ? 'text-destructive' : 'text-emerald-600'}`}>
+                  <span
+                    className={`font-semibold tabular-nums ${officeDistance > 50 ? "text-destructive" : "text-emerald-600"}`}
+                  >
                     {officeDistance} / 50 ແມັດ
                   </span>
                 </div>
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                <div className="bg-muted h-1.5 w-full overflow-hidden rounded-full">
                   <div
-                    className={`h-full rounded-full transition-all duration-500 ${officeDistance > 50 ? 'bg-destructive' : 'bg-emerald-500'}`}
-                    style={{ width: `${Math.max(Math.min((officeDistance / 50) * 100, 100), 4)}%` }}
+                    className={`h-full rounded-full transition-all duration-500 ${officeDistance > 50 ? "bg-destructive" : "bg-emerald-500"}`}
+                    style={{
+                      width: `${Math.max(Math.min((officeDistance / 50) * 100, 100), 4)}%`,
+                    }}
                   />
                 </div>
               </>
             )}
-            <p className="text-xs text-muted-foreground">
+            <p className="text-muted-foreground text-xs">
               ຄວາມແມ່ນຍໍາ GPS: {Math.round(location.accuracy)} ແມັດ
             </p>
           </div>
         )}
 
         {location?.error && (
-          <p className="mt-2 text-xs text-destructive">{location.error}</p>
+          <p className="text-destructive mt-2 text-xs">{location.error}</p>
         )}
       </CardContent>
     </Card>
-  )
-})
+  );
+});
 
 const DailySummaryCard = memo(function DailySummaryCard({
   todayAttendance,
@@ -181,10 +198,10 @@ const DailySummaryCard = memo(function DailySummaryCard({
   isOffsite,
   onIsOffsiteChange,
 }: {
-  todayAttendance: AttendanceRecord | undefined | null
-  isLoadingHistory: boolean
-  isOffsite: boolean
-  onIsOffsiteChange: (v: boolean) => void
+  todayAttendance: AttendanceRecord | undefined | null;
+  isLoadingHistory: boolean;
+  isOffsite: boolean;
+  onIsOffsiteChange: (v: boolean) => void;
 }) {
   return (
     <Card>
@@ -193,20 +210,24 @@ const DailySummaryCard = memo(function DailySummaryCard({
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
-          <div className="rounded-lg bg-muted/50 p-4 text-center">
-            <p className="mb-1 text-xs text-muted-foreground">ເຂົ້າວຽກ</p>
+          <div className="bg-muted/50 rounded-lg p-4 text-center">
+            <p className="text-muted-foreground mb-1 text-xs">ເຂົ້າວຽກ</p>
             {isLoadingHistory ? (
-              <Skeleton className="h-7 w-16 mx-auto mt-1" />
+              <Skeleton className="mx-auto mt-1 h-7 w-16" />
             ) : (
-              <p className="text-xl font-bold text-foreground">{todayAttendance?.checkIn || '--:--'}</p>
+              <p className="text-foreground text-xl font-bold">
+                {todayAttendance?.checkIn || "--:--"}
+              </p>
             )}
           </div>
-          <div className="rounded-lg bg-muted/50 p-4 text-center">
-            <p className="mb-1 text-xs text-muted-foreground">ອອກວຽກ</p>
+          <div className="bg-muted/50 rounded-lg p-4 text-center">
+            <p className="text-muted-foreground mb-1 text-xs">ອອກວຽກ</p>
             {isLoadingHistory ? (
-              <Skeleton className="h-7 w-16 mx-auto mt-1" />
+              <Skeleton className="mx-auto mt-1 h-7 w-16" />
             ) : (
-              <p className="text-xl font-bold text-foreground">{todayAttendance?.checkOut || '--:--'}</p>
+              <p className="text-foreground text-xl font-bold">
+                {todayAttendance?.checkOut || "--:--"}
+              </p>
             )}
           </div>
         </div>
@@ -217,21 +238,35 @@ const DailySummaryCard = memo(function DailySummaryCard({
           ) : (
             <Badge
               variant={
-                todayAttendance?.status === 'present' ? 'default'
-                  : todayAttendance?.status === 'late' ? 'secondary'
-                  : todayAttendance?.status === 'not_check_in' ? 'destructive'
-                  : 'outline'
+                todayAttendance?.status === "present"
+                  ? "default"
+                  : todayAttendance?.status === "late"
+                    ? "secondary"
+                    : todayAttendance?.status === "not_check_in"
+                      ? "destructive"
+                      : "outline"
               }
               className="px-4 py-1 text-sm"
             >
               {todayAttendance?.checkOut ? (
-                <><CheckCircle className="mr-2 h-4 w-4" /> ກັບແລ້ວ</>
-              ) : todayAttendance?.status === 'not_check_in' ? (
-                <><AlertTriangle className="mr-2 h-4 w-4" /> ລືມກົດເຂົ້າວຽກ</>
+                <>
+                  <CheckCircle className="mr-2 h-4 w-4" /> ກັບແລ້ວ
+                </>
+              ) : todayAttendance?.status === "not_check_in" ? (
+                <>
+                  <AlertTriangle className="mr-2 h-4 w-4" /> ລືມກົດເຂົ້າວຽກ
+                </>
               ) : todayAttendance?.checkIn ? (
-                <><Clock className="mr-2 h-4 w-4" /> {todayAttendance.status === 'late' ? 'ເຂົ້າວຽກ (ຊ້າ)' : 'ເຂົ້າວຽກ'}</>
+                <>
+                  <Clock className="mr-2 h-4 w-4" />{" "}
+                  {todayAttendance.status === "late"
+                    ? "ເຂົ້າວຽກ (ຊ້າ)"
+                    : "ເຂົ້າວຽກ"}
+                </>
               ) : (
-                <><AlertTriangle className="mr-2 h-4 w-4" /> ຍັງບໍ່ເຂົ້າວຽກ</>
+                <>
+                  <AlertTriangle className="mr-2 h-4 w-4" /> ຍັງບໍ່ເຂົ້າວຽກ
+                </>
               )}
             </Badge>
           )}
@@ -243,27 +278,32 @@ const DailySummaryCard = memo(function DailySummaryCard({
             checked={isOffsite}
             onCheckedChange={(v) => onIsOffsiteChange(v === true)}
           />
-          <Label htmlFor="offsite-mode" className="flex items-center gap-1.5 cursor-pointer text-sm select-none">
-            <MapPinOff className="h-3.5 w-3.5 text-muted-foreground" />
+          <Label
+            htmlFor="offsite-mode"
+            className="flex cursor-pointer items-center gap-1.5 text-sm select-none"
+          >
+            <MapPinOff className="text-muted-foreground h-3.5 w-3.5" />
             ອອກວຽກນອກ
           </Label>
           {isOffsite && (
-            <span className="ml-auto text-[10px] text-amber-600 font-medium">ບໍ່ກວດໄລຍະ · ຕ້ອງຖ່າຍຮູບ</span>
+            <span className="ml-auto text-[10px] font-medium text-amber-600">
+              ບໍ່ກວດໄລຍະ · ຕ້ອງຖ່າຍຮູບ
+            </span>
           )}
         </div>
       </CardContent>
     </Card>
-  )
-})
+  );
+});
 
 const WeeklyHistoryCard = memo(function WeeklyHistoryCard({
   weeklyHistory,
   isLoadingHistory,
   onSelectOffsiteDetail,
 }: {
-  weeklyHistory: AttendanceRecord[]
-  isLoadingHistory: boolean
-  onSelectOffsiteDetail: (record: AttendanceRecord) => void
+  weeklyHistory: AttendanceRecord[];
+  isLoadingHistory: boolean;
+  onSelectOffsiteDetail: (record: AttendanceRecord) => void;
 }) {
   return (
     <Card>
@@ -275,7 +315,10 @@ const WeeklyHistoryCard = memo(function WeeklyHistoryCard({
         {isLoadingHistory ? (
           <div className="space-y-2">
             {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="flex items-center justify-between rounded-lg bg-muted/50 p-3">
+              <div
+                key={i}
+                className="bg-muted/50 flex items-center justify-between rounded-lg p-3"
+              >
                 <div className="space-y-1.5">
                   <Skeleton className="h-4 w-28" />
                   <Skeleton className="h-3 w-24" />
@@ -290,31 +333,45 @@ const WeeklyHistoryCard = memo(function WeeklyHistoryCard({
               <div
                 key={record.id}
                 className={[
-                  'flex items-center justify-between rounded-lg bg-muted/50 p-3',
-                  record.isOffsite ? 'cursor-pointer hover:bg-muted/80 transition-colors' : '',
-                ].join(' ')}
-                onClick={() => record.isOffsite && onSelectOffsiteDetail(record)}
+                  "bg-muted/50 flex items-center justify-between rounded-lg p-3",
+                  record.isOffsite
+                    ? "hover:bg-muted/80 cursor-pointer transition-colors"
+                    : "",
+                ].join(" ")}
+                onClick={() =>
+                  record.isOffsite && onSelectOffsiteDetail(record)
+                }
               >
                 <div>
-                  <p className="text-sm font-medium">{formatDateLao(new Date(`${record.date}T00:00:00`))}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {record.checkIn || '--:--'} - {record.checkOut || '--:--'}
+                  <p className="text-sm font-medium">
+                    {formatDateLao(new Date(`${record.date}T00:00:00`))}
+                  </p>
+                  <p className="text-muted-foreground text-xs">
+                    {record.checkIn || "--:--"} - {record.checkOut || "--:--"}
                   </p>
                 </div>
                 <Badge
                   variant={
-                    record.status === 'present' ? 'default'
-                      : record.status === 'late' ? 'secondary'
-                      : record.status === 'leave' ? 'outline'
-                      : 'destructive'
+                    record.status === "present"
+                      ? "default"
+                      : record.status === "late"
+                        ? "secondary"
+                        : record.status === "leave"
+                          ? "outline"
+                          : "destructive"
                   }
                 >
-                  {record.isOffsite && record.status === 'present' ? 'ອອກວຽກນອກ'
-                    : record.isOffsite && record.status === 'late' ? 'ອອກວຽກນອກ (ຊ້າ)'
-                    : record.status === 'present' ? 'ມາວຽກ'
-                    : record.status === 'late' ? 'ມາວຽກ (ຊ້າ)'
-                    : record.status === 'leave' ? 'ພັກ'
-                    : 'ບໍ່ມາວຽກ'}
+                  {record.isOffsite && record.status === "present"
+                    ? "ອອກວຽກນອກ"
+                    : record.isOffsite && record.status === "late"
+                      ? "ອອກວຽກນອກ (ຊ້າ)"
+                      : record.status === "present"
+                        ? "ມາວຽກ"
+                        : record.status === "late"
+                          ? "ມາວຽກ (ຊ້າ)"
+                          : record.status === "leave"
+                            ? "ພັກ"
+                            : "ບໍ່ມາວຽກ"}
                 </Badge>
               </div>
             ))}
@@ -322,18 +379,23 @@ const WeeklyHistoryCard = memo(function WeeklyHistoryCard({
         )}
       </CardContent>
     </Card>
-  )
-})
+  );
+});
 
 const OffsiteDetailDialog = memo(function OffsiteDetailDialog({
   detail,
   onClose,
 }: {
-  detail: AttendanceRecord | null
-  onClose: () => void
+  detail: AttendanceRecord | null;
+  onClose: () => void;
 }) {
   return (
-    <Dialog open={!!detail} onOpenChange={(open) => { if (!open) onClose() }}>
+    <Dialog
+      open={!!detail}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>ລາຍລະອຽດອອກວຽກນອກ</DialogTitle>
@@ -341,92 +403,123 @@ const OffsiteDetailDialog = memo(function OffsiteDetailDialog({
         {detail && (
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">ເຂົ້າວຽກ</p>
-              <p className="text-sm font-semibold">{detail.checkIn || '--:--'}</p>
+              <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+                ເຂົ້າວຽກ
+              </p>
+              <p className="text-sm font-semibold">
+                {detail.checkIn || "--:--"}
+              </p>
               {detail.checkInImageURL ? (
-                <img src={detail.checkInImageURL} alt="ຮູບເຂົ້າວຽກ" className="w-full rounded-lg object-cover max-h-48 bg-muted" />
+                <img
+                  src={detail.checkInImageURL}
+                  alt="ຮູບເຂົ້າວຽກ"
+                  className="bg-muted max-h-48 w-full rounded-lg object-cover"
+                />
               ) : (
-                <div className="flex h-24 items-center justify-center rounded-lg bg-muted text-xs text-muted-foreground">ບໍ່ມີຮູບ</div>
+                <div className="bg-muted text-muted-foreground flex h-24 items-center justify-center rounded-lg text-xs">
+                  ບໍ່ມີຮູບ
+                </div>
               )}
             </div>
 
             <div className="border-t" />
 
             <div className="space-y-1.5">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">ອອກວຽກ</p>
-              <p className="text-sm font-semibold">{detail.checkOut || '--:--'}</p>
+              <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+                ອອກວຽກ
+              </p>
+              <p className="text-sm font-semibold">
+                {detail.checkOut || "--:--"}
+              </p>
               {detail.checkOutImageURL ? (
-                <img src={detail.checkOutImageURL} alt="ຮູບອອກວຽກ" className="w-full rounded-lg object-cover max-h-48 bg-muted" />
+                <img
+                  src={detail.checkOutImageURL}
+                  alt="ຮູບອອກວຽກ"
+                  className="bg-muted max-h-48 w-full rounded-lg object-cover"
+                />
               ) : (
-                <div className="flex h-24 items-center justify-center rounded-lg bg-muted text-xs text-muted-foreground">ບໍ່ມີຮູບ</div>
+                <div className="bg-muted text-muted-foreground flex h-24 items-center justify-center rounded-lg text-xs">
+                  ບໍ່ມີຮູບ
+                </div>
               )}
             </div>
           </div>
         )}
       </DialogContent>
     </Dialog>
-  )
-})
+  );
+});
 
 // --- Main page ---
 
 export default function AttendancePage() {
-  const { user } = useAuth()
-  const { distanceToOffice, geoFenceStatus } = useHRM()
+  const { user } = useAuth();
+  const { distanceToOffice, geoFenceStatus } = useHRM();
 
   // Recomputed each render to detect midnight boundary (intentional — cheap string)
-  const todayIso = format(new Date(), 'yyyy-MM-dd')
+  const todayIso = format(new Date(), "yyyy-MM-dd");
 
-  const { data: todayAttendance, isLoading: isLoadingHistory } = useTodayAttendance(user?.uuid)
-  const { data: attendanceHistory = [] } = useAttendanceHistory(user?.uuid)
-  const { data: holidays = [] } = useOfficialHolidays()
-  const { data: todayLeaveStatus = 'none' } = useTodayLeaveStatus(user?.uuid, todayIso)
-  const checkInMutation = useCheckIn()
-  const checkOutMutation = useCheckOut()
+  const { data: todayAttendance, isLoading: isLoadingHistory } =
+    useTodayAttendance(user?.uuid);
+  const { data: attendanceHistory = [] } = useAttendanceHistory(user?.uuid);
+  const { data: holidays = [] } = useOfficialHolidays();
+  const { data: todayLeaveStatus = "none" } = useTodayLeaveStatus(
+    user?.uuid,
+    todayIso,
+  );
+  const checkInMutation = useCheckIn();
+  const checkOutMutation = useCheckOut();
 
-  const [location, setLocation] = useState<LocationState | null>(null)
-  const [isLoadingLocation, setIsLoadingLocation] = useState(false)
-  const [isOffsite, setIsOffsite] = useState(false)
-  const [offsiteDetail, setOffsiteDetail] = useState<AttendanceRecord | null>(null)
+  const [location, setLocation] = useState<LocationState | null>(null);
+  const [isLoadingLocation, setIsLoadingLocation] = useState(false);
+  const [isOffsite, setIsOffsite] = useState(false);
+  const [offsiteDetail, setOffsiteDetail] = useState<AttendanceRecord | null>(
+    null,
+  );
 
-  const [cameraOpen, setCameraOpen] = useState(false)
-  const [cameraType, setCameraType] = useState<'checkIn' | 'checkOut'>('checkIn')
-  const pendingResolveRef = useRef<((file: File | null) => void) | null>(null)
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraType, setCameraType] = useState<"checkIn" | "checkOut">(
+    "checkIn",
+  );
+  const pendingResolveRef = useRef<((file: File | null) => void) | null>(null);
 
   // Refs keep handleAttendance stable across mutation isPending state changes
-  const checkInMutRef = useRef(checkInMutation)
-  checkInMutRef.current = checkInMutation
-  const checkOutMutRef = useRef(checkOutMutation)
-  checkOutMutRef.current = checkOutMutation
+  const checkInMutRef = useRef(checkInMutation);
+  checkInMutRef.current = checkInMutation;
+  const checkOutMutRef = useRef(checkOutMutation);
+  checkOutMutRef.current = checkOutMutation;
 
-  const captureImage = useCallback((type: 'checkIn' | 'checkOut'): Promise<File | null> => {
-    return new Promise((resolve) => {
-      pendingResolveRef.current = resolve
-      setCameraType(type)
-      setCameraOpen(true)
-    })
-  }, [])
+  const captureImage = useCallback(
+    (type: "checkIn" | "checkOut"): Promise<File | null> => {
+      return new Promise((resolve) => {
+        pendingResolveRef.current = resolve;
+        setCameraType(type);
+        setCameraOpen(true);
+      });
+    },
+    [],
+  );
 
   const handleCameraCapture = useCallback((file: File) => {
-    pendingResolveRef.current?.(file)
-    pendingResolveRef.current = null
-  }, [])
+    pendingResolveRef.current?.(file);
+    pendingResolveRef.current = null;
+  }, []);
 
   const handleCameraClose = useCallback((open: boolean) => {
-    setCameraOpen(open)
+    setCameraOpen(open);
     if (!open) {
-      pendingResolveRef.current?.(null)
-      pendingResolveRef.current = null
+      pendingResolveRef.current?.(null);
+      pendingResolveRef.current = null;
     }
-  }, [])
+  }, []);
 
   const getLocation = useCallback(async (): Promise<LocationState | null> => {
-    setIsLoadingLocation(true)
+    setIsLoadingLocation(true);
     return new Promise((resolve) => {
       if (!navigator.geolocation) {
-        setIsLoadingLocation(false)
-        resolve(null)
-        return
+        setIsLoadingLocation(false);
+        resolve(null);
+        return;
       }
       navigator.geolocation.getCurrentPosition(
         (position) => {
@@ -434,122 +527,174 @@ export default function AttendancePage() {
             lat: position.coords.latitude,
             lng: position.coords.longitude,
             accuracy: position.coords.accuracy,
-          }
-          setLocation(loc)
-          setIsLoadingLocation(false)
-          resolve(loc)
+          };
+          setLocation(loc);
+          setIsLoadingLocation(false);
+          resolve(loc);
         },
         (error) => {
-          setLocation({ lat: 0, lng: 0, accuracy: 0, error: error.message })
-          setIsLoadingLocation(false)
-          resolve(null)
+          setLocation({ lat: 0, lng: 0, accuracy: 0, error: error.message });
+          setIsLoadingLocation(false);
+          resolve(null);
         },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-      )
-    })
-  }, [])
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+      );
+    });
+  }, []);
 
-  const getValidatedLocation = useCallback(async (): Promise<LocationState | null> => {
-    // Reuse cached GPS if already fetched — avoids double-fetch that causes false GPS failures on check-in/out
-    const loc = (location && !location.error) ? location : await getLocation()
-    if (!loc || loc.error) {
-      toast.error('ບໍ່ສາມາດຮັບຂໍ້ມູນສະຖານທີ່. ກະລຸນາກົດ "ດຶງຂໍ້ມູນຕຳແໜ່ງໃໝ່" ກ່ອນ.')
-      return null
-    }
-    if (geoFenceStatus === 'no_coordinates') return loc
-    const dist = distanceToOffice(loc.lat, loc.lng)
-    if (dist === null) {
-      toast.error('ບໍ່ສາມາດໂຫຼດຂໍ້ມູນສະຖານທີ່ຫ້ອງການໄດ້. ກະລຸນາລອງໃໝ່.')
-      return null
-    }
-    if (dist > 50) {
-      toast.error(`ທ່ານຢູ່ຫ່າງຈາກຫ້ອງການ ${dist} ແມັດ. ຕ້ອງຢູ່ພາຍໃນ 50 ແມັດ.`)
-      return null
-    }
-    return loc
-  }, [location, getLocation, distanceToOffice, geoFenceStatus])
+  const getValidatedLocation =
+    useCallback(async (): Promise<LocationState | null> => {
+      // Reuse cached GPS if already fetched — avoids double-fetch that causes false GPS failures on check-in/out
+      const loc = location && !location.error ? location : await getLocation();
+      if (!loc || loc.error) {
+        toast.error(
+          'ບໍ່ສາມາດຮັບຂໍ້ມູນສະຖານທີ່. ກະລຸນາກົດ "ດຶງຂໍ້ມູນຕຳແໜ່ງໃໝ່" ກ່ອນ.',
+        );
+        return null;
+      }
+      if (geoFenceStatus === "no_coordinates") return loc;
+      const dist = distanceToOffice(loc.lat, loc.lng);
+      if (dist === null) {
+        toast.error("ບໍ່ສາມາດໂຫຼດຂໍ້ມູນສະຖານທີ່ຫ້ອງການໄດ້. ກະລຸນາລອງໃໝ່.");
+        return null;
+      }
+      if (dist > 50) {
+        toast.error(
+          `ທ່ານຢູ່ຫ່າງຈາກຫ້ອງການ ${dist} ແມັດ. ຕ້ອງຢູ່ພາຍໃນ 50 ແມັດ.`,
+        );
+        return null;
+      }
+      return loc;
+    }, [location, getLocation, distanceToOffice, geoFenceStatus]);
 
   const isBlockedDay = useMemo(() => {
-    const day = new Date().getDay()
-    if (day === 0 || day === 6) return { blocked: true, reason: 'ວັນນີ້ເປັນວັນພັກທ້າຍອາທິດ ບໍ່ສາມາດ Check-In ໄດ້' }
-    const holiday = holidays.find((h) => h.date === todayIso)
-    if (holiday) return { blocked: true, reason: `ວັນນີ້ເປັນວັນພັກ: ${holiday.name}` }
-    if (todayLeaveStatus === 'blocked') return { blocked: true, reason: 'ທ່ານມີວັນລາພັກທີ່ໄດ້ຮັບອະນຸມັດໃນວັນນີ້ ບໍ່ສາມາດ Check-In ໄດ້' }
-    return { blocked: false, reason: '' }
-  }, [holidays, todayIso, todayLeaveStatus])
+    const day = new Date().getDay();
+    if (day === 0 || day === 6)
+      return {
+        blocked: true,
+        reason: "ວັນນີ້ເປັນວັນພັກທ້າຍອາທິດ ບໍ່ສາມາດ Check-In ໄດ້",
+      };
+    const holiday = holidays.find((h) => h.date === todayIso);
+    if (holiday)
+      return { blocked: true, reason: `ວັນນີ້ເປັນວັນພັກ: ${holiday.name}` };
+    if (todayLeaveStatus === "blocked")
+      return {
+        blocked: true,
+        reason: "ທ່ານມີວັນລາພັກທີ່ໄດ້ຮັບອະນຸມັດໃນວັນນີ້ ບໍ່ສາມາດ Check-In ໄດ້",
+      };
+    return { blocked: false, reason: "" };
+  }, [holidays, todayIso, todayLeaveStatus]);
 
-  const handleAttendance = useCallback(async (type: 'checkIn' | 'checkOut') => {
-    if (!user) { toast.error('ບໍ່ເຫັນຂໍ້ມູນຜູ້ໃຊ້. ກະລຸນາເຂົ້າລະບົບອີກຄັ້ງ.'); return }
-    if (type === 'checkIn' && isBlockedDay.blocked) { toast.error(isBlockedDay.reason); return }
-
-    const mutation = type === 'checkIn' ? checkInMutRef.current : checkOutMutRef.current
-    const successMsg = isOffsite
-      ? (type === 'checkIn' ? 'ເຂົ້າວຽກນອກສຳເລັດ' : 'ອອກວຽກນອກສຳເລັດ')
-      : (type === 'checkIn' ? 'ເຂົ້າການສຳເລັດແລ້ວ' : 'ອອກຈາກການສຳເລັດແລ້ວ')
-
-    try {
-      if (isOffsite) {
-        const imageFile = await captureImage(type)
-        if (!imageFile) { toast.error('ກະລຸນາຖ່າຍຮູບກ່ອນ.'); return }
-        const loc = await getLocation()
-        await mutation.mutateAsync({
-          user,
-          location: loc ? { lat: loc.lat, lng: loc.lng } : undefined,
-          imageFile,
-          isOffsite: true,
-        })
-      } else {
-        const loc = await getValidatedLocation()
-        if (!loc) return
-        await mutation.mutateAsync({ user, location: { lat: loc.lat, lng: loc.lng } })
+  const handleAttendance = useCallback(
+    async (type: "checkIn" | "checkOut") => {
+      if (!user) {
+        toast.error("ບໍ່ເຫັນຂໍ້ມູນຜູ້ໃຊ້. ກະລຸນາເຂົ້າລະບົບອີກຄັ້ງ.");
+        return;
       }
-      toast.success(successMsg)
-    } catch (error) {
-      const code = (error as { code?: string }).code ?? ''
-      let msg: string
-      if (code === 'functions/internal' || code === 'functions/unknown') {
-        msg = 'ເກີດຂໍ້ຜິດພາດ. ກະລຸນາລອງໃໝ່.'
-      } else if (code === 'functions/unavailable') {
-        msg = 'ບໍ່ສາມາດເຊື່ອມຕໍ່ server. ກະລຸນາກວດ internet.'
-      } else if (code === 'functions/unauthenticated') {
-        msg = 'ກະລຸນາເຂົ້າລະບົບໃໝ່.'
-      } else {
-        msg = error instanceof Error ? error.message : 'ເກີດຂໍ້ຜິດພາດ. ກະລຸນາລອງໃໝ່.'
+      if (type === "checkIn" && isBlockedDay.blocked) {
+        toast.error(isBlockedDay.reason);
+        return;
       }
-      toast.error(msg)
-    }
-  }, [user, isOffsite, isBlockedDay, getLocation, getValidatedLocation, captureImage])
 
-  const officeDistance = useMemo(() => {
-    if (!location || location.error) return null
-    return distanceToOffice(location.lat, location.lng)
-  }, [distanceToOffice, location])
+      const mutation =
+        type === "checkIn" ? checkInMutRef.current : checkOutMutRef.current;
+      const successMsg = isOffsite
+        ? type === "checkIn"
+          ? "ເຂົ້າວຽກນອກສຳເລັດ"
+          : "ອອກວຽກນອກສຳເລັດ"
+        : type === "checkIn"
+          ? "ເຂົ້າການສຳເລັດແລ້ວ"
+          : "ອອກຈາກການສຳເລັດແລ້ວ";
 
-  const isWithinOffice = useMemo(() => {
-    if (!location || !!location.error) return true
-    if (geoFenceStatus === 'no_coordinates') return true
-    return officeDistance !== null && officeDistance <= 50
-  }, [location, officeDistance, geoFenceStatus])
+      try {
+        if (isOffsite) {
+          const imageFile = await captureImage(type);
+          if (!imageFile) {
+            toast.error("ກະລຸນາຖ່າຍຮູບກ່ອນ.");
+            return;
+          }
+          const loc = await getLocation();
+          await mutation.mutateAsync({
+            user,
+            location: loc ? { lat: loc.lat, lng: loc.lng } : undefined,
+            imageFile,
+            isOffsite: true,
+          });
+        } else {
+          const loc = await getValidatedLocation();
+          if (!loc) return;
+          await mutation.mutateAsync({
+            user,
+            location: { lat: loc.lat, lng: loc.lng },
+          });
+        }
+        toast.success(successMsg);
+      } catch (error) {
+        const code = (error as { code?: string }).code ?? "";
+        let msg: string;
+        if (code === "functions/internal" || code === "functions/unknown") {
+          msg = "ເກີດຂໍ້ຜິດພາດ. ກະລຸນາລອງໃໝ່.";
+        } else if (code === "functions/unavailable") {
+          msg = "ບໍ່ສາມາດເຊື່ອມຕໍ່ server. ກະລຸນາກວດ internet.";
+        } else if (code === "functions/unauthenticated") {
+          msg = "ກະລຸນາເຂົ້າລະບົບໃໝ່.";
+        } else {
+          msg =
+            error instanceof Error
+              ? error.message
+              : "ເກີດຂໍ້ຜິດພາດ. ກະລຸນາລອງໃໝ່.";
+        }
+        toast.error(msg);
+      }
+    },
+    [
+      user,
+      isOffsite,
+      isBlockedDay,
+      getLocation,
+      getValidatedLocation,
+      captureImage,
+    ],
+  );
+
+  const { officeDistance, isWithinOffice } = useMemo(() => {
+    if (!location || location.error)
+      return { officeDistance: null, isWithinOffice: true };
+    const dist = distanceToOffice(location.lat, location.lng);
+    if (geoFenceStatus === "no_coordinates")
+      return { officeDistance: dist, isWithinOffice: true };
+    return {
+      officeDistance: dist,
+      isWithinOffice: dist !== null && dist <= 50,
+    };
+  }, [location, distanceToOffice, geoFenceStatus]);
 
   const weeklyHistory = useMemo(() => {
-    const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 })
-    const weekStartIso = format(weekStart, 'yyyy-MM-dd')
-    const weekEndIso = format(addDays(weekStart, 6), 'yyyy-MM-dd')
+    const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
+    const weekStartIso = format(weekStart, "yyyy-MM-dd");
+    const weekEndIso = format(addDays(weekStart, 6), "yyyy-MM-dd");
     return attendanceHistory
       .filter((r) => {
-        const d = r.date.slice(0, 10)
-        return d >= weekStartIso && d <= weekEndIso
+        const d = r.date.slice(0, 10);
+        return d >= weekStartIso && d <= weekEndIso;
       })
-      .sort((a, b) => b.date.localeCompare(a.date))
-  }, [attendanceHistory, todayIso])
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [attendanceHistory]);
 
-  const handleCloseOffsiteDetail = useCallback(() => setOffsiteDetail(null), [])
+  const handleCloseOffsiteDetail = useCallback(
+    () => setOffsiteDetail(null),
+    [],
+  );
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-foreground">Check-In / Check-Out</h1>
-        <p className="text-muted-foreground">ບັນທຶກການເຂົ້າຮ່ວມຂອງທ່ານດ້ວຍການຢັ້ງຢືນ GPS</p>
+        <h1 className="text-foreground text-2xl font-bold">
+          Check-In / Check-Out
+        </h1>
+        <p className="text-muted-foreground">
+          ບັນທຶກການເຂົ້າຮ່ວມຂອງທ່ານດ້ວຍການຢັ້ງຢືນ GPS
+        </p>
       </div>
 
       <LiveClock />
@@ -574,25 +719,33 @@ export default function AttendancePage() {
         open={cameraOpen}
         onOpenChange={handleCameraClose}
         onCapture={handleCameraCapture}
-        title={cameraType === 'checkIn' ? 'ຖ່າຍຮູບເຂົ້າວຽກ' : 'ຖ່າຍຮູບອອກວຽກ'}
+        title={cameraType === "checkIn" ? "ຖ່າຍຮູບເຂົ້າວຽກ" : "ຖ່າຍຮູບອອກວຽກ"}
       />
 
-      {/* Leave status banner */}
-      {todayLeaveStatus === 'blocked' && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 flex items-start gap-2">
-          <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+      {todayLeaveStatus === "blocked" && (
+        <div className="border-destructive/30 bg-destructive/5 flex items-start gap-2 rounded-lg border p-3">
+          <AlertTriangle className="text-destructive mt-0.5 h-4 w-4 shrink-0" />
           <div>
-            <p className="text-sm font-medium text-destructive">ລາພັກທີ່ໄດ້ຮັບອະນຸມັດ</p>
-            <p className="text-xs text-destructive/80 mt-0.5">ທ່ານມີວັນລາພັກທີ່ຄົບທັງໝົດໃນວັນນີ້ — ບໍ່ສາມາດ Check-In ໄດ້</p>
+            <p className="text-destructive text-sm font-medium">
+              ລາພັກທີ່ໄດ້ຮັບອະນຸມັດ
+            </p>
+            <p className="text-destructive/80 mt-0.5 text-xs">
+              ທ່ານມີວັນລາພັກທີ່ຄົບທັງໝົດໃນວັນນີ້ — ບໍ່ສາມາດ Check-In ໄດ້
+            </p>
           </div>
         </div>
       )}
-      {todayLeaveStatus === 'morning_leave' && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-900 p-3 flex items-start gap-2">
-          <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+      {todayLeaveStatus === "morning_leave" && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/20">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
           <div>
-            <p className="text-sm font-medium text-amber-800 dark:text-amber-400">ລາພັກເຄິ່ງເຊົ້າ</p>
-            <p className="text-xs text-amber-700 dark:text-amber-500 mt-0.5">ທ່ານລາພັກໃນຕອນເຊົ້າ — ສາມາດ Check-In ໄດ້ຮອດ 14:00 · ທັນ ≤ 12:30 · ຊ້າ 12:31–14:00</p>
+            <p className="text-sm font-medium text-amber-800 dark:text-amber-400">
+              ລາພັກເຄິ່ງເຊົ້າ
+            </p>
+            <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-500">
+              ທ່ານລາພັກໃນຕອນເຊົ້າ — ສາມາດ Check-In ໄດ້ຮອດ 14:00 · ທັນ ≤ 12:30 ·
+              ຊ້າ 12:31–14:00
+            </p>
           </div>
         </div>
       )}
@@ -608,10 +761,19 @@ export default function AttendancePage() {
             <Button
               size="lg"
               className="h-16 text-lg"
-              onClick={() => handleAttendance('checkIn')}
-              disabled={isBlockedDay.blocked || checkInMutation.isPending || !!todayAttendance?.checkIn || (!isOffsite && !isWithinOffice)}
+              onClick={() => handleAttendance("checkIn")}
+              disabled={
+                isBlockedDay.blocked ||
+                checkInMutation.isPending ||
+                !!todayAttendance?.checkIn ||
+                (!isOffsite && !isWithinOffice)
+              }
             >
-              {checkInMutation.isPending ? <Spinner className="mr-2" /> : <LogIn className="mr-2 h-5 w-5" />}
+              {checkInMutation.isPending ? (
+                <Spinner className="mr-2" />
+              ) : (
+                <LogIn className="mr-2 h-5 w-5" />
+              )}
               Check In
             </Button>
 
@@ -619,15 +781,26 @@ export default function AttendancePage() {
               size="lg"
               variant="outline"
               className="h-16 text-lg"
-              onClick={() => handleAttendance('checkOut')}
-              disabled={checkOutMutation.isPending || !todayAttendance?.checkIn || !!todayAttendance?.checkOut || (!isOffsite && !isWithinOffice)}
+              onClick={() => handleAttendance("checkOut")}
+              disabled={
+                checkOutMutation.isPending ||
+                !todayAttendance?.checkIn ||
+                !!todayAttendance?.checkOut ||
+                (!isOffsite && !isWithinOffice)
+              }
             >
-              {checkOutMutation.isPending ? <Spinner className="mr-2" /> : <LogOut className="mr-2 h-5 w-5" />}
+              {checkOutMutation.isPending ? (
+                <Spinner className="mr-2" />
+              ) : (
+                <LogOut className="mr-2 h-5 w-5" />
+              )}
               Check Out
             </Button>
           </div>
           {isBlockedDay.blocked && isBlockedDay.reason && (
-            <p className="text-center text-xs text-muted-foreground">{isBlockedDay.reason}</p>
+            <p className="text-muted-foreground text-center text-xs">
+              {isBlockedDay.reason}
+            </p>
           )}
         </div>
       )}
@@ -643,5 +816,5 @@ export default function AttendancePage() {
         onClose={handleCloseOffsiteDetail}
       />
     </div>
-  )
+  );
 }

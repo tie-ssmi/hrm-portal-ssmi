@@ -1,9 +1,6 @@
 "use client";
 
-// ** core
-import { useState, useEffect, useMemo, useCallback } from "react";
-
-// ** assets / icons
+import { useState, useMemo, useCallback } from "react";
 import {
   Plus,
   Palmtree,
@@ -12,8 +9,6 @@ import {
   FileWarning,
   BriefcaseBusiness,
 } from "lucide-react";
-
-// ** shared components
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -31,16 +26,10 @@ import LeaveRequestForm from "@/components/dashboard/leave-request-form";
 import { OffsiteListFilterBar } from "@/components/offsite/OffsiteListFilterBar";
 import { OffsiteRequestList } from "@/components/offsite/OffsiteRequestList";
 import { CreateRequestDialog } from "@/components/offsite/CreateRequestDialog";
-import FormsSkeleton from "@/components/skeletons/formsSkeleton";
-
-// ** third party
 import { useQueryClient } from "@tanstack/react-query";
 import { doc, updateDoc } from "firebase/firestore";
 import { toast } from "sonner";
-
-// ** config / utils / types / hooks
 import { useAuth } from "@/lib/auth-context";
-import { useHRM } from "@/lib/hrm-context";
 import { db } from "@/lib/firebase";
 import {
   useUpcomingLeaves,
@@ -60,25 +49,47 @@ const DEFAULT_FILTERS: OffsiteFilters = {
   search: "",
 };
 
+function StatCard({
+  icon,
+  label,
+  value,
+  cardClass,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: React.ReactNode;
+  cardClass: string;
+}) {
+  return (
+    <Card className={cardClass}>
+      <CardContent className="pt-4 pb-4">
+        <div className="mb-1 flex items-center gap-1.5">
+          {icon}
+          <p className="text-muted-foreground text-xs">{label}</p>
+        </div>
+        <p className="text-foreground text-lg leading-tight font-bold">
+          {value}
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function FormsPage() {
-  const { user, isLoading } = useAuth();
-  const { leaveBalance } = useHRM();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
 
-  // ── persistent tab ──
-  const [activeTab, setActiveTab] = useState("leave");
-
-  useEffect(() => {
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window === "undefined") return "leave";
     const saved = localStorage.getItem("request-tab");
-    if (saved === "leave" || saved === "offsite") setActiveTab(saved);
-  }, []);
+    return saved === "leave" || saved === "offsite" ? saved : "leave";
+  });
 
   const handleTabChange = useCallback((value: string) => {
     setActiveTab(value);
     localStorage.setItem("request-tab", value);
   }, []);
 
-  // ── offsite state ──
   const [filters, setFilters] = useState<OffsiteFilters>(DEFAULT_FILTERS);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<OffsiteRequestDoc | undefined>();
@@ -96,10 +107,7 @@ export default function FormsPage() {
     availableMonths,
   } = useMyOffsiteRequests(filters);
 
-  const userUuid = useMemo(
-    () => user?.uuid ?? user?.uid ?? "",
-    [user?.uuid, user?.uid],
-  );
+  const userUuid = user?.uuid ?? user?.uid ?? "";
   const { data: upcomingLeaves = [] } = useUpcomingLeaves(userUuid);
   const { data: pendingDocLeaves = [] } = usePendingDocLeaves(userUuid);
 
@@ -137,12 +145,11 @@ export default function FormsPage() {
     if (!cancelTarget || !user) return;
     setIsCancelling(true);
     try {
-      const now = new Date().toISOString();
       const fullName =
         `${user.firstNameEn ?? user.firstName ?? ""} ${user.lastNameEn ?? user.lastName ?? ""}`.trim();
       await updateDoc(doc(db, "workOutside", cancelTarget.id), {
         status: "cancelled",
-        updatedAt: now,
+        updatedAt: new Date().toISOString(),
         updatedBy: fullName,
       });
       toast.success(`ຍົກເລີກຄຳຂໍ ${cancelTarget.requestNo} ສຳເລັດ`);
@@ -170,11 +177,9 @@ export default function FormsPage() {
     if (!open) setCancelTarget(null);
   }, []);
 
-  if (isLoading) return <FormsSkeleton />;
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div>
         <h1 className="text-foreground text-2xl font-bold">Request Forms</h1>
         <p className="text-muted-foreground">
@@ -182,43 +187,39 @@ export default function FormsPage() {
         </p>
       </div>
 
-      {/* Leave Balance Summary */}
       <div className="grid grid-cols-3 gap-3">
-        <Card className="border-amber-200/40 bg-amber-50/50 dark:border-amber-800/30 dark:bg-amber-950/20">
-          <CardContent className="pt-4 pb-4">
-            <div className="mb-1 flex items-center gap-1.5">
-              <Clock className="h-3.5 w-3.5 text-amber-500" />
-              <p className="text-muted-foreground text-xs">ລາພັກລໍຖ້າ</p>
-            </div>
-            <p className="text-foreground text-lg font-bold">
+        <StatCard
+          icon={<Clock className="h-3.5 w-3.5 text-amber-500" />}
+          label="ລາພັກລໍຖ້າ"
+          cardClass="border-amber-200/40 bg-amber-50/50 dark:border-amber-800/30 dark:bg-amber-950/20"
+          value={
+            <>
               {pendingLeaveCount}
               {pendingLeaveCount > 0 && (
                 <span className="ml-1.5 inline-flex h-2 w-2 items-center justify-center rounded-full bg-amber-400" />
               )}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="border-blue-200/40 bg-blue-50/50 dark:border-blue-800/30 dark:bg-blue-950/20">
-          <CardContent className="pt-4 pb-4">
-            <div className="mb-1 flex items-center gap-1.5">
-              <FileWarning className="h-3.5 w-3.5 text-blue-500" />
-              <p className="text-muted-foreground text-xs">ລໍຖ້າເອກະສານ</p>
-            </div>
-            <p className="text-foreground text-lg font-bold">
+            </>
+          }
+        />
+        <StatCard
+          icon={<FileWarning className="h-3.5 w-3.5 text-blue-500" />}
+          label="ລໍຖ້າເອກະສານ"
+          cardClass="border-blue-200/40 bg-blue-50/50 dark:border-blue-800/30 dark:bg-blue-950/20"
+          value={
+            <>
               {pendingDocLeaves.length}
               {pendingDocLeaves.length > 0 && (
                 <span className="ml-1.5 inline-flex h-2 w-2 items-center justify-center rounded-full bg-blue-400" />
               )}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="border-emerald-200/40 bg-emerald-50/50 dark:border-emerald-800/30 dark:bg-emerald-950/20">
-          <CardContent className="pt-4 pb-4">
-            <div className="mb-1 flex items-center gap-1.5">
-              <BriefcaseBusiness className="h-3.5 w-3.5 text-emerald-500" />
-              <p className="text-muted-foreground text-xs">ອອກວຽກນອກ</p>
-            </div>
-            <p className="text-foreground text-lg leading-tight font-bold">
+            </>
+          }
+        />
+        <StatCard
+          icon={<BriefcaseBusiness className="h-3.5 w-3.5 text-emerald-500" />}
+          label="ອອກວຽກນອກ"
+          cardClass="border-emerald-200/40 bg-emerald-50/50 dark:border-emerald-800/30 dark:bg-emerald-950/20"
+          value={
+            <>
               {approvedOffsiteCount}{" "}
               <span className="text-muted-foreground text-xs font-normal">
                 ຄັ້ງ
@@ -228,12 +229,11 @@ export default function FormsPage() {
               <span className="text-muted-foreground text-xs font-normal">
                 ວັນ
               </span>
-            </p>
-          </CardContent>
-        </Card>
+            </>
+          }
+        />
       </div>
 
-      {/* Tabs */}
       <Tabs
         value={activeTab}
         onValueChange={handleTabChange}
@@ -250,12 +250,10 @@ export default function FormsPage() {
           </TabsTrigger>
         </TabsList>
 
-        {/* Leave Tab */}
         <TabsContent value="leave" className="mt-4">
           <LeaveRequestForm />
         </TabsContent>
 
-        {/* Offsite Tab — list view */}
         <TabsContent value="offsite" className="mt-4 space-y-4">
           <div className="flex items-center justify-between gap-4">
             <div>
@@ -293,7 +291,6 @@ export default function FormsPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Create / Edit Dialog */}
       <CreateRequestDialog
         open={dialogOpen}
         onOpenChange={handleDialogOpenChange}
@@ -301,11 +298,7 @@ export default function FormsPage() {
         initialData={editTarget}
       />
 
-      {/* Cancel confirmation */}
-      <AlertDialog
-        open={!!cancelTarget}
-        onOpenChange={handleAlertOpenChange}
-      >
+      <AlertDialog open={!!cancelTarget} onOpenChange={handleAlertOpenChange}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>ຍົກເລີກຄຳຂໍນີ້?</AlertDialogTitle>
