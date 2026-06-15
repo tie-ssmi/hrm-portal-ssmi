@@ -1,0 +1,294 @@
+rules_version = '2';
+// v 0.1.0 — merged from v0.0.1.2 + security fixes
+//
+// BUGS FIXED from v0.0.1.2:
+//   [1] leaves   — isApprover (missing `()`) → function ref, not a call → any signed-in user could update any leave
+//   [2] workOutside block 2 — isisHeadOfDep (typo) → runtime error
+//   [3] /users/  — appeared 3 times (duplicate match blocks)
+//   [4] /workOutside/ — appeared twice with conflicting rules
+//   [5] officialHoliday — allow write: if isSignedIn() → any employee could edit public holidays
+//
+// ADDED:
+//   - isLeaveApprover() helper  (separate from isApprover which is offsite-only)
+//   - attendance: read = own records + admin/headOfDep (was: any signed-in user)
+//   - leavePolicies and workLocations (plural aliases used in some service files)
+//   - news, pushSubscriptions collections
+//
+// KEPT (intentional, see comments):
+//   - employees read: if true   — registration page needs unauthenticated duplicate check
+//   - employees create: if true — employee registration flow
+//   ⚠️  Consider moving these to a Cloud Function when registration flow allows it
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ==========================================================
+    // Helper functions
+    // ==========================================================
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      let emp = get(/databases/$(database)/documents/employees/$(request.auth.uid)).data;
+      let rolesUid = emp.get('rolesUid', null);
+      return request.auth != null
+        && rolesUid != null
+        && get(/databases/$(database)/documents/roles/$(rolesUid)).data.role.loginAdmin == true;
+    }
+
+    function isHeadOfDep() {
+      let emp = get(/databases/$(database)/documents/employees/$(request.auth.uid)).data;
+      let rolesUid = emp.get('rolesUid', null);
+      return request.auth != null
+        && rolesUid != null
+        && get(/databases/$(database)/documents/roles/$(rolesUid)).data.role.approveDepartment == true;
+    }
+
+    // Approver for workOutside/offsite requests
+    function isApprover() {
+      let emp = get(/databases/$(database)/documents/employees/$(request.auth.uid)).data;
+      let rolesUid = emp.get('rolesUid', null);
+      return isSignedIn()
+        && rolesUid != null
+        && (
+          get(/databases/$(database)/documents/roles/$(rolesUid)).data.role.manageOffsite == true
+          || get(/databases/$(database)/documents/roles/$(rolesUid)).data.role.highManageOffsite == true
+          || get(/databases/$(database)/documents/roles/$(rolesUid)).data.role.approveDepartment == true
+        );
+    }
+
+    // Approver for leave requests — separate permission set from offsite
+    function isLeaveApprover() {
+      let emp = get(/databases/$(database)/documents/employees/$(request.auth.uid)).data;
+      let rolesUid = emp.get('rolesUid', null);
+      return isSignedIn()
+        && rolesUid != null
+        && (
+          get(/databases/$(database)/documents/roles/$(rolesUid)).data.role.manageLeave == true
+          || get(/databases/$(database)/documents/roles/$(rolesUid)).data.role.highManageLeave == true
+          || get(/databases/$(database)/documents/roles/$(rolesUid)).data.role.approveDepartment == true
+        );
+    }
+
+    // workOutside helpers — operate on the current document (resource)
+    function isWorkOutsideOwner() {
+      return resource.data.createdByUid == request.auth.uid;
+    }
+
+    function isWorkOutsideParticipant() {
+      return request.auth.uid in resource.data.participantIds;
+    }
+
+    // ==========================================================
+    // employees
+    // ⚠️ read/create open — required for registration duplicate-check flow
+    // ==========================================================
+    match /employees/{docId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if isSignedIn()
+        && (resource.data.uid == request.auth.uid || isAdmin());
+      allow delete: if false;
+    }
+
+    // ==========================================================
+    // users  (deduplicated — was 3 identical blocks)
+    // ==========================================================
+    match /users/{docId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.auth.uid == docId;
+      allow update: if isSignedIn() && request.auth.uid == docId;
+      allow delete: if false;
+    }
+
+    // ==========================================================
+    // vehicles
+    // ==========================================================
+    match /vehicles/{docId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (docId == request.auth.uid || isAdmin());
+      allow delete: if false;
+    }
+
+    // ==========================================================
+    // roles
+    // ==========================================================
+    match /roles/{roleId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ==========================================================
+    // department
+    // ==========================================================
+    match /department/{docId} {
+      allow read, create, update: if isSignedIn();
+      allow delete: if false;
+    }
+
+    // ==========================================================
+    // workLocation (singular) — old collection name
+    // workLocations (plural)  — used in some service files
+    // Both kept until collection name is unified
+    // ==========================================================
+    match /workLocation/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /workLocations/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ==========================================================
+    // policies (old name) / leavePolicies (new name)
+    // Both kept until collection name is unified
+    // ==========================================================
+    match /policies/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /leavePolicies/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ==========================================================
+    // attendance
+    // Tightened: read = own records OR admin/headOfDep (was: any signed-in user)
+    // ==========================================================
+    match /attendance/{docId} {
+      allow read: if isSignedIn()
+        && (
+          resource.data.userUuid == request.auth.uid
+          || resource.data.uid == request.auth.uid
+          || isAdmin()
+          || isHeadOfDep()
+        );
+
+      allow create: if isSignedIn()
+        && request.resource.data.uid == request.auth.uid;
+
+      allow update: if isSignedIn()
+        && (resource.data.uid == request.auth.uid || isAdmin());
+
+      allow delete: if false;
+    }
+
+    // ==========================================================
+    // officialHoliday
+    // Tightened: write = admin only (was: any signed-in user — BUG)
+    // ==========================================================
+    match /officialHoliday/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ==========================================================
+    // leaves
+    // Bug fixed: old rule had `isApprover` without () on line with update
+    //            → was a function reference (always truthy) meaning any
+    //              signed-in user could update any leave record
+    // ==========================================================
+    match /leaves/{docId} {
+      // All signed-in users can read — approval workflow requires dept-wide visibility
+      allow read: if isSignedIn();
+
+      // Employees submit their own leave request
+      allow create: if isSignedIn()
+        && request.resource.data.leaveUserUuid == request.auth.uid;
+
+      // Update:
+      //   - Own leave (attach document, cancel before approval, etc.)
+      //   - Admin, head of department, or leave approver (change status)
+      allow update: if isSignedIn()
+        && (
+          resource.data.leaveUserUuid == request.auth.uid
+          || resource.data.createdByUid == request.auth.uid
+          || isAdmin()
+          || isHeadOfDep()
+          || isLeaveApprover()
+        );
+
+      allow delete: if isAdmin();
+    }
+
+    // ==========================================================
+    // workOutside  (consolidated — was 2 conflicting match blocks)
+    // Bug fixed: isisHeadOfDep (typo) → isHeadOfDep()
+    // ==========================================================
+    match /workOutside/{docId} {
+      allow read: if isSignedIn()
+        && (
+          isWorkOutsideOwner()
+          || isWorkOutsideParticipant()
+          || isApprover()
+          || isAdmin()
+        );
+
+      allow create: if isSignedIn()
+        && request.resource.data.createdByUid == request.auth.uid
+        && request.resource.data.requester.uid == request.auth.uid
+        && request.auth.uid in request.resource.data.participantIds
+        && request.resource.data.status == 'pending';
+
+      allow update: if isSignedIn()
+        && (
+          (isWorkOutsideOwner() && resource.data.status == 'pending')
+          || isApprover()
+          || isAdmin()
+        );
+
+      // Use status = 'cancelled' instead of delete; admin can hard-delete if needed
+      allow delete: if isAdmin();
+
+      // Sub-collections (comments, attachments, etc.)
+      match /{subCollection}/{subDocId} {
+        allow create: if isSignedIn();
+
+        allow get, list: if isSignedIn()
+          && (
+            get(/databases/$(database)/documents/workOutside/$(docId)).data.createdByUid == request.auth.uid
+            || isAdmin()
+          );
+
+        allow update: if isSignedIn()
+          && (
+            get(/databases/$(database)/documents/workOutside/$(docId)).data.createdByUid == request.auth.uid
+            || isApprover()
+            || isAdmin()
+          );
+
+        allow delete: if isAdmin();
+      }
+    }
+
+    // ==========================================================
+    // news  (NEW)
+    // ==========================================================
+    match /news/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ==========================================================
+    // pushSubscriptions  (NEW)
+    // ==========================================================
+    match /pushSubscriptions/{docId} {
+      allow read: if isSignedIn() && docId == request.auth.uid;
+      allow write: if isSignedIn() && docId == request.auth.uid;
+    }
+
+    // ==========================================================
+    // Deny everything not explicitly matched above
+    // ==========================================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

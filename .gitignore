@@ -12,3 +12,7 @@ node_modules/
 *.log
 dist/
 .firebase/logs/
+
+# Cloud Functions secrets — never commit to version control
+functions/.env
+functions/.env.*

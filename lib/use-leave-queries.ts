@@ -11,12 +11,13 @@ import {
   fetchPendingDocLeavesByUserUuid,
   fetchTodayLeavesByWorkLocation,
 } from '@/services/leaves'
+import { fetchPoliciesForGender } from '@/services/policies'
 import {
   buildInitialLeaveApprovals,
   getRequiredLeaveApprovers,
   resolveLeaveRequestStatus,
 } from '@/services/leave-approval'
-import type { LeaveRequest } from '@/lib/types'
+import type { LeaveBalance, LeaveRequest } from '@/lib/types'
 
 // ── Key factory ────────────────────────────────────────────────────────────────
 export const leaveKeys = {
@@ -32,6 +33,65 @@ export const leaveKeys = {
   today: (workLocationUuid: string) =>
     [...leaveKeys.all, 'today', workLocationUuid] as const,
   todayAll: () => [...leaveKeys.all, 'today', '__all__'] as const,
+  balance: (userUuid: string, gender: string) =>
+    [...leaveKeys.all, 'balance', userUuid, gender] as const,
+}
+
+function countLeaveDays(leave: LeaveRequest): number {
+  if (typeof leave.duration === 'number' && leave.duration > 0) return leave.duration
+  const start = new Date(leave.startDate)
+  const end = new Date(leave.endDate)
+  const totalDays = Math.round((end.getTime() - start.getTime()) / 86400000) + 1
+  const startDeduct = leave.startPeriod === 'afternoon' ? 0.5 : 0
+  const endDeduct = leave.endPeriod === 'morning' ? 0.5 : 0
+  return Math.max(0, totalDays - startDeduct - endDeduct)
+}
+
+const EMPTY_BALANCE: LeaveBalance = {
+  annual: 0, annualUsed: 0,
+  sick: 0, sickUsed: 0,
+  personal: 0, personalUsed: 0,
+}
+
+export function useLeaveBalance(params: {
+  userUuid: string | null | undefined
+  gender?: string | null
+}) {
+  const { userUuid, gender } = params
+  return useQuery({
+    queryKey: leaveKeys.balance(userUuid ?? '', gender ?? ''),
+    queryFn: async (): Promise<LeaveBalance> => {
+      const year = new Date().getFullYear().toString()
+
+      const [allLeaves, policies] = await Promise.all([
+        fetchAllLeavesByUserUuid(userUuid!),
+        fetchPoliciesForGender(gender),
+      ])
+
+      const approvedThisYear = allLeaves.filter(
+        (l) => l.status === 'approved' && (l.startDate ?? '').startsWith(year),
+      )
+
+      const annualUsed = approvedThisYear
+        .filter((l) => l.type === 'annual')
+        .reduce((sum, l) => sum + countLeaveDays(l), 0)
+      const sickUsed = approvedThisYear
+        .filter((l) => l.type === 'sick')
+        .reduce((sum, l) => sum + countLeaveDays(l), 0)
+      const personalUsed = approvedThisYear
+        .filter((l) => l.type === 'personal')
+        .reduce((sum, l) => sum + countLeaveDays(l), 0)
+
+      const annual = policies.find((p) => p.requestType === 'annual')?.leavePolicy.annual ?? 0
+      const sick = policies.find((p) => p.requestType === 'sick')?.leavePolicy.sick ?? 0
+      const personal = policies.find((p) => p.requestType === 'personal')?.leavePolicy.personal ?? 0
+
+      return { annual, annualUsed, sick, sickUsed, personal, personalUsed }
+    },
+    enabled: !!userUuid,
+    staleTime: 1000 * 60 * 10,
+    placeholderData: EMPTY_BALANCE,
+  })
 }
 
 // ── Read hooks ─────────────────────────────────────────────────────────────────

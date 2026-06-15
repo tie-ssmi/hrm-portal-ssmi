@@ -16,7 +16,6 @@ import type {
   LeaveRequest,
   OffsiteRequest,
   ProfileUpdateRequest,
-  LeaveBalance,
   LeaveApproverRole,
   GeoFence,
   LeaveApprovalStep,
@@ -36,7 +35,7 @@ import { fetchWorkLocationGeoFence, type WorkLocationFenceResult } from '@/servi
 import { useAuth } from './auth-context'
 import { useAttendanceHistory } from './use-attendance-queries'
 import { attendanceKeys } from './use-attendance-queries'
-import { leaveKeys } from './use-leave-queries'
+import { leaveKeys, useLeaveBalance } from './use-leave-queries'
 
 const HRMContext = createContext<HRMContextType | undefined>(undefined)
 
@@ -108,11 +107,10 @@ export function HRMProvider({ children }: { children: ReactNode }) {
     return attendanceHistory.find((r) => r.date === today) ?? null
   }, [attendanceHistory])
 
-  // ── Static balance placeholder (replace with real query when API ready) ───
-  const [leaveBalance] = useState<LeaveBalance>({
-    annual: 0, annualUsed: 0,
-    sick: 0, sickUsed: 0,
-    personal: 0, personalUsed: 0,
+  // ── Leave balance from Firestore (policies × approved leaves this year) ──────
+  const { data: leaveBalance = { annual: 0, annualUsed: 0, sick: 0, sickUsed: 0, personal: 0, personalUsed: 0 } } = useLeaveBalance({
+    userUuid: user?.uuid,
+    gender: user?.gender,
   })
 
   // ── Geo-fence ─────────────────────────────────────────────────────────────
@@ -154,9 +152,14 @@ export function HRMProvider({ children }: { children: ReactNode }) {
   )
 
   const isWithinGeofence = useCallback(
-    (lat: number, lng: number) =>
-      !geoFence || calculateDistance(lat, lng, geoFence.lat, geoFence.lng) <= geoFence.radius,
-    [geoFence],
+    (lat: number, lng: number) => {
+      // Fail-closed while geofence is loading — deny until we know the boundary
+      if (geoFenceStatus === 'loading') return false
+      // Work location has no geofence configured — no restriction applies
+      if (geoFenceStatus === 'not_found' || !geoFence) return true
+      return calculateDistance(lat, lng, geoFence.lat, geoFence.lng) <= geoFence.radius
+    },
+    [geoFence, geoFenceStatus],
   )
 
   // ── Check-in / Check-out ──────────────────────────────────────────────────
