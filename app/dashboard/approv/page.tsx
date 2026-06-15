@@ -33,6 +33,7 @@ import {
   query,
   updateDoc,
   where,
+  type DocumentData,
 } from "firebase/firestore";
 import { toast } from "sonner";
 
@@ -314,7 +315,7 @@ export default function ApprovePage() {
         payload.status = decision;
       }
 
-      await updateDoc(doc(db, "workOutside", pendingOffsiteItem.id), payload);
+      await updateDoc(doc(db, "workOutside", pendingOffsiteItem.id), payload as DocumentData);
       await queryClient.invalidateQueries({ queryKey: offsiteQueryKey });
       toast.success(
         offsiteAction === "approve" ? "ອະນຸມັດສຳເລັດ" : "ປະຕິເສດສຳເລັດ",

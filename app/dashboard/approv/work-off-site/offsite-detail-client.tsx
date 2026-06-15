@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { doc, getDoc, updateDoc } from 'firebase/firestore'
+import { doc, getDoc, updateDoc, type DocumentData } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { useAuth } from '@/lib/auth-context'
 import { Button } from '@/components/ui/button'
@@ -125,7 +125,7 @@ export default function OffsiteDetailClient() {
         payload.approvals = updatedApprovals
       }
 
-      await updateDoc(doc(db, 'workOutside', record.id), payload)
+      await updateDoc(doc(db, 'workOutside', record.id), payload as DocumentData)
       await queryClient.invalidateQueries({ queryKey: ['workOutside', id] })
       toast.success(action === 'approve' ? 'ອະນຸມັດສຳເລັດ' : 'ປະຕິເສດສຳເລັດ')
       setAction(null)

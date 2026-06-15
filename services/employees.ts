@@ -1,5 +1,5 @@
 // api.ts
-import { collection, doc, getDoc, getDocs, updateDoc } from "firebase/firestore"
+import { collection, doc, getDoc, getDocs, query, where, updateDoc, type Query, type DocumentData } from "firebase/firestore"
 import { db } from "../lib/firebase"
 import type{ Employee } from "../types/employee"
 
@@ -10,29 +10,30 @@ type GetEmployeesFilters = {
 }
 
 export const getEmployees = async (filters?: GetEmployeesFilters): Promise<Employee[]> => {
-  const snapshot = await getDocs(collection(db, "employees"))
-  const employees = snapshot.docs.map(doc => ({
-    id: doc.id,
-    ...doc.data() as Employee
+  // Build server-side constraints to avoid fetching the entire collection
+  let q: Query<DocumentData> = collection(db, "employees")
+
+  if (filters?.departmentUuid) {
+    // Works when department is stored as object with uuid field
+    q = query(q, where("department.uuid", "==", filters.departmentUuid))
+  }
+
+  if (filters?.workLocationUuid) {
+    q = query(q, where("workLocation.uuid", "==", filters.workLocationUuid))
+  }
+
+  const snapshot = await getDocs(q)
+  const employees = snapshot.docs.map(d => ({
+    id: d.id,
+    ...d.data() as Employee
   }))
 
+  // status and excludeUid are kept client-side:
+  // - "delete" filter: active employees often have no status field, so Firestore != won't catch them
+  // - excludeUid: Firestore doesn't support != on the same field efficiently
   return employees.filter((employee) => {
-    if (employee.status === "delete") {
-      return false
-    }
-
-    if (filters?.excludeUid && employee.uid === filters.excludeUid) {
-      return false
-    }
-
-    if (filters?.departmentUuid && employee.department?.uuid !== filters.departmentUuid) {
-      return false
-    }
-
-    if (filters?.workLocationUuid && employee.workLocation?.uuid !== filters.workLocationUuid) {
-      return false
-    }
-
+    if (employee.status === "delete") return false
+    if (filters?.excludeUid && employee.uid === filters.excludeUid) return false
     return true
   })
 }

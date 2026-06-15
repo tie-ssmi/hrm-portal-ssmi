@@ -8,9 +8,6 @@ const nextConfig = {
   turbopack: {
     root: workspaceRoot,
   },
-  typescript: {
-    ignoreBuildErrors: true,
-  },
   images: {
     unoptimized: true,
   },

@@ -1,4 +1,4 @@
-import { collection, getDocs, query, where } from 'firebase/firestore'
+import { collection, getDocs, query, where, type QueryDocumentSnapshot, type DocumentData } from 'firebase/firestore'
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import app, { db, storage } from '@/lib/firebase'
@@ -453,7 +453,7 @@ export async function fetchLateRankingForMonth(monthKey: string): Promise<LateRa
 
   // Try indexed query first (requires composite index on status + dateKey in Firestore console).
   // If index missing or records pre-date the dateKey field, fall back to full status scan + JS filter.
-  let snapDocs: ReturnType<typeof snap.docs>[number][] = []
+  let snapDocs: QueryDocumentSnapshot<DocumentData>[] = []
   try {
     const snap = await getDocs(
       query(
