@@ -16,3 +16,7 @@ dist/
 # Cloud Functions secrets — never commit to version control
 functions/.env
 functions/.env.*
+
+# Firebase environment configs — contain API keys, never commit
+.env.development
+.env.production
