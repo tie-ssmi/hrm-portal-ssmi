@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "deploy": "node scripts/build.js prod && firebase deploy --only hosting:hrm-portal-ssmi",
-    "deploy_dev": "node scripts/build.js staging && firebase deploy --only hosting:ssmi-hrm-demo",
+    "deploy_dev": "node scripts/build.js staging && node -e \"try{require('fs').unlinkSync('.firebase/hosting.b3V0.cache')}catch(e){}\" && firebase --project hrm-dev-24dff deploy --only hosting:hrm-dev-24dff",
     "lint": "eslint ."
   },
   "dependencies": {

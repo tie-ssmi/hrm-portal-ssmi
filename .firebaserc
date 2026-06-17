@@ -1,12 +1,20 @@
 {
   "projects": {
-    "default": "hrm-ssmi"
+    "default": "hrm-ssmi",
+    "staging": "hrm-dev-24dff"
   },
   "targets": {
     "hrm-ssmi": {
       "hosting": {
         "portal": [
           "hrm-portal-ssmi"
+        ]
+      }
+    },
+    "hrm-dev-24dff": {
+      "hosting": {
+        "dev": [
+          "hrm-dev-24dff"
         ]
       }
     }
