@@ -1,7 +1,7 @@
 "use client";
 
 // ** core
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
 
 // ** assets / icons
 import {
@@ -65,13 +65,12 @@ export default function FormsPage() {
   const { leaveBalance } = useHRM();
   const queryClient = useQueryClient();
 
-  // ── persistent tab ──
-  const [activeTab, setActiveTab] = useState("leave");
-
-  useEffect(() => {
+  // ── persistent tab — lazy init avoids useEffect flash ──
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    if (typeof window === "undefined") return "leave";
     const saved = localStorage.getItem("request-tab");
-    if (saved === "leave" || saved === "offsite") setActiveTab(saved);
-  }, []);
+    return saved === "leave" || saved === "offsite" ? saved : "leave";
+  });
 
   function handleTabChange(value: string) {
     setActiveTab(value);
@@ -99,15 +98,19 @@ export default function FormsPage() {
   const userUuid = user?.uuid ?? user?.uid ?? "";
   const { data: upcomingLeaves = [] } = useUpcomingLeaves(userUuid);
   const { data: pendingDocLeaves = [] } = usePendingDocLeaves(userUuid);
-  const pendingLeaveCount = upcomingLeaves.filter(
-    (l) => l.status === "pending",
-  ).length;
-  const approvedOffsite = allDocs.filter((d) => d.status === "approved");
-  const approvedOffsiteCount = approvedOffsite.length;
-  const approvedOffsiteDays = approvedOffsite.reduce(
-    (sum, d) => sum + (d.durationDays ?? 0),
-    0,
+
+  const pendingLeaveCount = useMemo(
+    () => upcomingLeaves.filter((l) => l.status === "pending").length,
+    [upcomingLeaves],
   );
+
+  const { approvedOffsiteCount, approvedOffsiteDays } = useMemo(() => {
+    const approved = allDocs.filter((d) => d.status === "approved");
+    return {
+      approvedOffsiteCount: approved.length,
+      approvedOffsiteDays: approved.reduce((sum, d) => sum + (d.durationDays ?? 0), 0),
+    };
+  }, [allDocs]);
 
   function handleCreateNew() {
     setEditTarget(undefined);

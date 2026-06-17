@@ -306,28 +306,41 @@ export function HRMProvider({ children }: { children: ReactNode }) {
     [],
   )
 
+  const contextValue = useMemo(() => ({
+    todayAttendance,
+    attendanceHistory,
+    checkIn,
+    checkOut,
+    leaveBalance,
+    leaveRequests: [] as never[],
+    submitLeaveRequest,
+    reviewLeaveRequest,
+    offsiteRequests: [] as never[],
+    submitOffsiteRequest,
+    profileUpdateRequests: [] as never[],
+    submitProfileUpdate,
+    lateRecords: [] as never[],
+    totalFines: 0,
+    isWithinGeofence,
+    distanceToOffice,
+    geoFenceStatus,
+  }), [
+    todayAttendance,
+    attendanceHistory,
+    checkIn,
+    checkOut,
+    leaveBalance,
+    submitLeaveRequest,
+    reviewLeaveRequest,
+    submitOffsiteRequest,
+    submitProfileUpdate,
+    isWithinGeofence,
+    distanceToOffice,
+    geoFenceStatus,
+  ])
+
   return (
-    <HRMContext.Provider
-      value={{
-        todayAttendance,
-        attendanceHistory,
-        checkIn,
-        checkOut,
-        leaveBalance,
-        leaveRequests: [],       // deprecated — use useUserLeaves() hook in pages
-        submitLeaveRequest,
-        reviewLeaveRequest,
-        offsiteRequests: [],     // deprecated — use query in pages
-        submitOffsiteRequest,
-        profileUpdateRequests: [],
-        submitProfileUpdate,
-        lateRecords: [],         // deprecated — no service yet
-        totalFines: 0,
-        isWithinGeofence,
-        distanceToOffice,
-        geoFenceStatus,
-      }}
-    >
+    <HRMContext.Provider value={contextValue}>
       {children}
     </HRMContext.Provider>
   )

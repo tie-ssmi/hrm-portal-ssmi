@@ -44,6 +44,7 @@ import { PWAInstallButton } from "../pwa-install-button";
 
 // ** config / utils / types / hooks
 import { useAuth } from "@/lib/auth-context";
+import { useNavProgress } from "@/lib/navigation-context";
 import { cn } from "@/lib/utils";
 import { isNavItemActive } from "@/lib/nav-utils";
 import { version } from "@/package.json";
@@ -82,12 +83,15 @@ export function MobileNav() {
   const router = useRouter();
   const { user, logout } = useAuth();
   const { notifications } = useNotifications();
+  const { startNavigation } = useNavProgress();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [showNav, setShowNav] = useState(true);
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   const lastScrollYRef = useRef(0);
 
   const activeHref = pendingHref ?? pathname;
+  const pathnameRef = useRef(pathname);
+  pathnameRef.current = pathname;
 
   useEffect(() => {
     setPendingHref(null);
@@ -109,16 +113,21 @@ export function MobileNav() {
 
   const handleNavClick = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
     const href = e.currentTarget.dataset.href!;
+    if (isNavItemActive(pathnameRef.current, href)) return;
     setPendingHref(href);
+    startNavigation();
     router.push(href);
-  }, [router]);
+  }, [router, startNavigation]);
 
   const handleMenuClick = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
     const href = e.currentTarget.dataset.href!;
-    setPendingHref(href);
-    router.push(href);
+    if (!isNavItemActive(pathnameRef.current, href)) {
+      setPendingHref(href);
+      startNavigation();
+      router.push(href);
+    }
     setSheetOpen(false);
-  }, [router]);
+  }, [router, startNavigation]);
 
   const allNavItems = useMemo<NavItem[]>(
     () =>

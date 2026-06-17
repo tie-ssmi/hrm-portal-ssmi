@@ -1,7 +1,7 @@
 "use client";
 
 // ** core
-import { useState, type ElementType } from "react";
+import { useState, useMemo, type ElementType } from "react";
 
 // ** assets / icons
 import {
@@ -214,10 +214,12 @@ export default function ProfilePage() {
   );
   const [isImageDialogOpen, setIsImageDialogOpen] = useState(false);
 
-  const { data: employeeData, isLoading: isEmployeeLoading } = useQuery({
+  const { data: employeeData } = useQuery({
     queryKey: ["employee", firebaseUser?.uid],
     queryFn: () => fetchEmployeeByUid(firebaseUser!.uid),
     enabled: !!firebaseUser?.uid,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
   });
 
   const profileUser: Employee | null = user
@@ -281,51 +283,28 @@ export default function ProfilePage() {
     }
   };
 
-  // Employment fields — list style with separators and edit buttons
-  const employmentFields: InfoField[] = [
-    {
-      label: "ລະຫັດພະນັກງານ",
-      value: toStr(profileUser?.employeeId),
-      icon: User,
-    },
+  const employmentFields = useMemo<InfoField[]>(() => [
+    { label: "ລະຫັດພະນັກງານ", value: toStr(profileUser?.employeeId), icon: User },
     { label: "ອີເມວ", value: toStr(profileUser?.email), icon: Mail },
-    {
-      label: "ເບີໂທ",
-      value: toStr(profileUser?.tel || profileUser?.phone),
-      icon: Phone,
-    },
-    {
-      label: "ຕຳແໜ່ງວຽກ",
-      value: toStr(profileUser?.jobTitle || profileUser?.position),
-      icon: Briefcase,
-    },
-    {
-      label: "ພະແນກ",
-      value: formatDepartment(profileUser?.department),
-      icon: Layers,
-    },
-    {
-      label: "ສະຖານທີ່ທຳວຽກ",
-      value: toStr(profileUser?.workLocation),
-      icon: Building,
-    },
-    {
-      label: "ປະເພດພະນັກງານ",
-      value: toStr(profileUser?.employeeType),
-      icon: IdCard,
-    },
+    { label: "ເບີໂທ", value: toStr(profileUser?.tel || profileUser?.phone), icon: Phone },
+    { label: "ຕຳແໜ່ງວຽກ", value: toStr(profileUser?.jobTitle || profileUser?.position), icon: Briefcase },
+    { label: "ພະແນກ", value: formatDepartment(profileUser?.department), icon: Layers },
+    { label: "ສະຖານທີ່ທຳວຽກ", value: toStr(profileUser?.workLocation), icon: Building },
+    { label: "ປະເພດພະນັກງານ", value: toStr(profileUser?.employeeType), icon: IdCard },
     {
       label: "ເງິນເດືອນ",
-      value: toStr(NumberFormatter.NoZero(profileUser?.salary || 0)) + " ກີບ",
+      value: profileUser?.salary
+        ? toStr(NumberFormatter.NoZero(profileUser.salary)) + " ກີບ"
+        : "-",
       icon: DollarSign,
       masked: true,
       revealed: showSalary,
       onToggle: () => setShowSalary((v) => !v),
     },
-    // { label: 'ວັນເຂົ້າຮ່ວມ', value: profileUser?.joinDate ? format(new Date(profileUser.joinDate), 'MMM d, yyyy') : '-', icon: Calendar },
-    // {NumberFormatter.NoZero(employee?.salary || 0)} ກີບ
-  ];
-  const personalFields: InfoField[] = [
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [profileUser, showSalary]);
+
+  const personalFields = useMemo<InfoField[]>(() => [
     {
       label: "ຊື່ (ພາສາອັງກິດ)",
       value: `${profileUser?.firstNameEn || profileUser?.firstName} ${profileUser?.lastNameEn || profileUser?.lastName}`,
@@ -333,61 +312,34 @@ export default function ProfilePage() {
     },
     {
       label: "ຊື່ (ພາສາລາວ)",
-      value:
-        profileUser?.firstNameLo && profileUser?.lastNameLo
-          ? `${profileUser.firstNameLo} ${profileUser.lastNameLo}`
-          : "-",
+      value: profileUser?.firstNameLo && profileUser?.lastNameLo
+        ? `${profileUser.firstNameLo} ${profileUser.lastNameLo}`
+        : "-",
       icon: User,
     },
     {
       label: "ວັນເກີດ",
-      value: profileUser?.dateOfBirth
-        ? formatDateLao(new Date(profileUser.dateOfBirth))
-        : "-",
+      value: profileUser?.dateOfBirth ? formatDateLao(new Date(profileUser.dateOfBirth)) : "-",
       icon: Calendar,
     },
     { label: "ເພດ", value: toStr(profileUser?.gender), icon: User },
     { label: "ກຸ່ມເລືອດ", value: toStr(profileUser?.bloodType), icon: Heart },
-    {
-      label: "ສະຖານະ",
-      value: toStr(profileUser?.maritalStatus),
-      icon: Users,
-    },
+    { label: "ສະຖານະ", value: toStr(profileUser?.maritalStatus), icon: Users },
     { label: "ສາສະໜາ", value: toStr(profileUser?.religion), icon: User },
     { label: "ຊາດ", value: toStr(profileUser?.ethnicity), icon: User },
-  ];
+  ], [profileUser]);
 
-  const originFields: InfoField[] = [
-    {
-      label: "ແຂວງເກີດ",
-      value: toStr(profileUser?.provinceOfBirth),
-      icon: MapPin,
-    },
-    {
-      label: "ເມືອງເກີດ",
-      value: toStr(profileUser?.cityOfBirth),
-      icon: MapPin,
-    },
-    {
-      label: "ສະຖານທີ່ເກີດ",
-      value: toStr(profileUser?.placeOfBirth),
-      icon: MapPin,
-    },
-    {
-      label: "ຈຳນວນສະມາຊິກຄອບຄົວ",
-      value: toStr(profileUser?.numberOfFamilyMembers),
-      icon: Users,
-    },
-    {
-      label: "ຕິດຕໍ່ສຸກເສີນ",
-      value: toStr(profileUser?.emergencyContactNumber),
-      icon: Phone,
-    },
-  ];
+  const originFields = useMemo<InfoField[]>(() => [
+    { label: "ແຂວງເກີດ", value: toStr(profileUser?.provinceOfBirth), icon: MapPin },
+    { label: "ເມືອງເກີດ", value: toStr(profileUser?.cityOfBirth), icon: MapPin },
+    { label: "ສະຖານທີ່ເກີດ", value: toStr(profileUser?.placeOfBirth), icon: MapPin },
+    { label: "ຈຳນວນສະມາຊິກຄອບຄົວ", value: toStr(profileUser?.numberOfFamilyMembers), icon: Users },
+    { label: "ຕິດຕໍ່ສຸກເສີນ", value: toStr(profileUser?.emergencyContactNumber), icon: Phone },
+  ], [profileUser]);
 
-  const educationFields = buildEducationFields(profileUser);
+  const educationFields = useMemo(() => buildEducationFields(profileUser), [profileUser]);
 
-  if (!profileUser || isEmployeeLoading) {
+  if (!profileUser) {
     return <ProfileSkeleton />;
   }
 

@@ -2,7 +2,7 @@
 
 // ** core
 import { usePathname, useRouter } from "next/navigation";
-import { useMemo, useState, useEffect, useCallback } from "react";
+import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 
 // ** assets / icons
 import {
@@ -35,6 +35,7 @@ import { PWAInstallButton } from "@/components/pwa-install-button";
 
 // ** config / utils / types / hooks
 import { useAuth } from "@/lib/auth-context";
+import { useNavProgress } from "@/lib/navigation-context";
 import { cn } from "@/lib/utils";
 import { isNavItemActive } from "@/lib/nav-utils";
 import { version } from "@/package.json";
@@ -73,6 +74,7 @@ export function DashboardNav() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout } = useAuth();
+  const { startNavigation } = useNavProgress();
   const { notifications } = useNotifications();
 
   const canApprove = useMemo(
@@ -123,6 +125,8 @@ export function DashboardNav() {
 
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   const activeHref = pendingHref ?? pathname;
+  const pathnameRef = useRef(pathname);
+  pathnameRef.current = pathname;
 
   useEffect(() => {
     setPendingHref(null);
@@ -135,9 +139,11 @@ export function DashboardNav() {
 
   const handleNavClick = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
     const href = e.currentTarget.dataset.href!;
+    if (isNavItemActive(pathnameRef.current, href)) return;
     setPendingHref(href);
+    startNavigation();
     router.push(href);
-  }, [router]);
+  }, [router, startNavigation]);
 
   const navItems = useMemo(
     () =>
@@ -220,7 +226,7 @@ export function DashboardNav() {
                 <span>{item.label}</span>
               </div>
               {badgeCount > 0 && (
-                <span className="bg-red-500 text-white font-bold text-[11px] min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center shadow-sm">
+                <span className="bg-red-500 text-white font-bold text-[11px] min-w-5 h-5 px-1.5 rounded-full flex items-center justify-center shadow-sm">
                   {badgeCount > 99 ? "99+" : badgeCount}
                 </span>
               )}
