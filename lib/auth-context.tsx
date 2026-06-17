@@ -4,6 +4,7 @@ import { createContext, useContext, useState, useCallback, useEffect, useRef, ty
 import {
   EmailAuthProvider,
   signInWithEmailAndPassword,
+  sendPasswordResetEmail,
   signOut,
   linkWithCredential,
   onAuthStateChanged,
@@ -319,6 +320,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const resetPassword = useCallback(async (email: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      await sendPasswordResetEmail(auth, email)
+      return { success: true }
+    } catch (error: any) {
+      if (error?.code === 'auth/user-not-found' || error?.code === 'auth/invalid-email') {
+        return { success: false, error: 'ບໍ່ພົບອີເມວນີ້ໃນລະບົບ' }
+      }
+      return { success: false, error: 'ບໍ່ສາມາດສົ່ງອີເມວໄດ້ ກະລຸນາລອງໃໝ່' }
+    }
+  }, [])
+
   const logout = useCallback(async () => {
     try {
       clearPendingGoogleLink()
@@ -342,6 +355,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       loginWithGoogle,
       setupPasswordForCurrentUser,
+      resetPassword,
       logout,
       updateProfile
     }}>

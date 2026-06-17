@@ -1,22 +1,14 @@
 import { initializeApp, getApps, getApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
 
-const isProd = process.env.NEXT_PUBLIC_DEPLOY_TARGET === 'production'
-
 const firebaseConfig = {
-  apiKey: "AIzaSyBOz7kNhNpXqPjezyPTP2olrDtSsxyxR6c",
-  authDomain: "hrm-ssmi.firebaseapp.com",
-  projectId: "hrm-ssmi",
-  storageBucket: "hrm-ssmi.firebasestorage.app",
-  messagingSenderId: "39051360088",
-  // deploy     → production
-  // deploy_dev → staging
-  appId: isProd
-    ? "1:39051360088:web:ccaec7f7b0e287f6f6572d"
-    : "1:39051360088:web:86b1af09f33f72daf6572d",
-  measurementId: isProd
-    ? "G-Z2HPQ9CPEV"
-    : "G-ZXD0LQ9QW4",
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 }
 
 // Lightweight auth-only module — does NOT import firebase/firestore or firebase/storage

@@ -259,6 +259,7 @@ export interface AuthContextType {
     email?: string
   }>
   setupPasswordForCurrentUser: (password: string) => Promise<{ success: boolean; error?: string }>
+  resetPassword: (email: string) => Promise<{ success: boolean; error?: string }>
   logout: () => void
   updateProfile: (updates: Partial<Employee>) => void
 }

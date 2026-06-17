@@ -10,15 +10,16 @@ import { FieldGroup, Field, FieldLabel } from '@/components/ui/field'
 import { Spinner } from '@/components/ui/spinner'
 import { Eye, EyeOff } from 'lucide-react'
 
-type AuthStep = 'idle' | 'setup-password' | 'link-google'
+type AuthStep = 'idle' | 'setup-password' | 'link-google' | 'forgot-password'
 
 export default function LoginForm() {
   const router = useRouter()
-  const { login, loginWithGoogle, setupPasswordForCurrentUser, isLoading, isAuthenticated } = useAuth()
+  const { login, loginWithGoogle, setupPasswordForCurrentUser, resetPassword, isLoading, isAuthenticated } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
+  const [successMsg, setSuccessMsg] = useState('')
   const [authStep, setAuthStep] = useState<AuthStep>('idle')
 
   useEffect(() => {
@@ -106,15 +107,35 @@ export default function LoginForm() {
     setError(result.error ?? 'Unable to set password for this account.')
   }
 
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    setSuccessMsg('')
+
+    if (!email) {
+      setError('ກະລຸນາປ້ອນອີເມວຂອງທ່ານ')
+      return
+    }
+
+    const result = await resetPassword(email)
+    if (result.success) {
+      setSuccessMsg('ສົ່ງລິ້ງຕັ້ງລະຫັດຜ່ານໃໝ່ໄປຫາ ' + email + ' ແລ້ວ. ກະລຸນາກວດກ່ອງຈົດໝາຍ.')
+    } else {
+      setError(result.error ?? 'ບໍ່ສາມາດສົ່ງອີເມວໄດ້')
+    }
+  }
+
   const resetAuthStep = () => {
     setAuthStep('idle')
     setError('')
+    setSuccessMsg('')
     setPassword('')
     setShowPassword(false)
   }
 
   const isSetupPasswordStep = authStep === 'setup-password'
   const isLinkGoogleStep = authStep === 'link-google'
+  const isForgotPasswordStep = authStep === 'forgot-password'
 
   return (
     <main className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -139,75 +160,107 @@ export default function LoginForm() {
               </div>
             )}
 
-            <form
-              onSubmit={isSetupPasswordStep ? handlePasswordSetup : isLinkGoogleStep ? handleGoogleLogin : handleEmailLogin}
-              className="space-y-4"
-            >
-              <FieldGroup>
-                <Field>
-                  <FieldLabel>ອີເມວ</FieldLabel>
-                  <Input
-                    type="email"
-                    placeholder="ປ້ອນອີເມວຂອງທ່ານ"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    disabled={isSetupPasswordStep || isLinkGoogleStep}
-                  />
-                </Field>
-                <Field>
-                  <div className="flex items-center justify-between">
-                    <FieldLabel>{isSetupPasswordStep ? 'ສ້າງລະຫັດຜ່ານ' : 'ລະຫັດຜ່ານ'}</FieldLabel>
-                    {!isSetupPasswordStep && !isLinkGoogleStep && (
-                      <button
-                        type="button"
-                        className="text-sm text-primary hover:underline min-h-[48px] min-w-[48px] flex items-center justify-end"
-                        onClick={() => {}}
-                      >
-                        ລືມລະຫັດຜ່ານ?
-                      </button>
-                    )}
-                  </div>
-                  <div className="relative">
+            {isForgotPasswordStep ? (
+              <form onSubmit={handleForgotPassword} className="space-y-4">
+                <FieldGroup>
+                  <Field>
+                    <FieldLabel>ອີເມວ</FieldLabel>
                     <Input
-                      type={showPassword ? 'text' : 'password'}
-                      placeholder="ປ້ອນລະຫັດຜ່ານ"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="pr-10"
+                      type="email"
+                      placeholder="ປ້ອນອີເມວຂອງທ່ານ"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      autoFocus
                     />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center w-10 h-10 text-muted-foreground hover:text-foreground transition-colors"
-                      aria-label={showPassword ? 'Hide password' : 'Show password'}
-                    >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </Field>
-              </FieldGroup>
+                  </Field>
+                </FieldGroup>
 
-              {error && (
-                <p className="text-sm text-destructive text-center">
-                  ຕັ້ງລະຫັດຜ່ານເພື່ອເປີດໃຊ້ Google sign-in + email/password
-                </p>
-              )}
+                {error && <p className="text-sm text-destructive text-center">{error}</p>}
+                {successMsg && <p className="text-sm text-green-600 text-center">{successMsg}</p>}
 
-              <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? <Spinner className="mr-2" /> : null}
-                {isSetupPasswordStep ? 'ປ່ຽນລະຫັດຜ່ານ' : isLinkGoogleStep ? 'Link Google Account' : 'Sign In'}
-              </Button>
-
-              {(isSetupPasswordStep || isLinkGoogleStep) && (
+                {!successMsg && (
+                  <Button type="submit" className="w-full" disabled={isLoading}>
+                    {isLoading ? <Spinner className="mr-2" /> : null}
+                    ສົ່ງລິ້ງຕັ້ງລະຫັດຜ່ານໃໝ່
+                  </Button>
+                )}
                 <button
                   type="button"
                   onClick={resetAuthStep}
                   className="w-full text-sm text-muted-foreground hover:text-foreground min-h-[48px]"
                 >
-                  Back to sign in
+                  ກັບຄືນ
                 </button>
-              )}
-            </form>
+              </form>
+            ) : (
+              <form
+                onSubmit={isSetupPasswordStep ? handlePasswordSetup : isLinkGoogleStep ? handleGoogleLogin : handleEmailLogin}
+                className="space-y-4"
+              >
+                <FieldGroup>
+                  <Field>
+                    <FieldLabel>ອີເມວ</FieldLabel>
+                    <Input
+                      type="email"
+                      placeholder="ປ້ອນອີເມວຂອງທ່ານ"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      disabled={isSetupPasswordStep || isLinkGoogleStep}
+                    />
+                  </Field>
+                  <Field>
+                    <div className="flex items-center justify-between">
+                      <FieldLabel>{isSetupPasswordStep ? 'ສ້າງລະຫັດຜ່ານ' : 'ລະຫັດຜ່ານ'}</FieldLabel>
+                      {!isSetupPasswordStep && !isLinkGoogleStep && (
+                        <button
+                          type="button"
+                          className="text-sm text-primary hover:underline min-h-[48px] min-w-[48px] flex items-center justify-end"
+                          onClick={() => { setAuthStep('forgot-password'); setError(''); setSuccessMsg('') }}
+                        >
+                          ລືມລະຫັດຜ່ານ?
+                        </button>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <Input
+                        type={showPassword ? 'text' : 'password'}
+                        placeholder="ປ້ອນລະຫັດຜ່ານ"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center w-10 h-10 text-muted-foreground hover:text-foreground transition-colors"
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </Field>
+                </FieldGroup>
+
+                {error && (
+                  <p className="text-sm text-destructive text-center">{error}</p>
+                )}
+
+                <Button type="submit" className="w-full" disabled={isLoading}>
+                  {isLoading ? <Spinner className="mr-2" /> : null}
+                  {isSetupPasswordStep ? 'ປ່ຽນລະຫັດຜ່ານ' : isLinkGoogleStep ? 'Link Google Account' : 'Sign In'}
+                </Button>
+
+                {(isSetupPasswordStep || isLinkGoogleStep) && (
+                  <button
+                    type="button"
+                    onClick={resetAuthStep}
+                    className="w-full text-sm text-muted-foreground hover:text-foreground min-h-[48px]"
+                  >
+                    Back to sign in
+                  </button>
+                )}
+              </form>
+            )}
 
             {!isSetupPasswordStep && !isLinkGoogleStep && (
               <>
