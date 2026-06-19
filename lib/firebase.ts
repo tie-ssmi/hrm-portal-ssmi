@@ -1,9 +1,10 @@
-import { initializeApp, getApps, getApp } from 'firebase/app'
+import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
 import {
+  getFirestore,
   initializeFirestore,
   persistentLocalCache,
-  persistentMultipleTabManager,
+  persistentSingleTabManager,
 } from 'firebase/firestore'
 import { getStorage } from 'firebase/storage'
 
@@ -20,13 +21,21 @@ const firebaseConfig = {
 // Initialize Firebase (prevent re-initialization in development)
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp()
 
+function createFirestore(firebaseApp: FirebaseApp) {
+  try {
+    return initializeFirestore(firebaseApp, {
+      localCache: persistentLocalCache({
+        tabManager: persistentSingleTabManager({ forceOwnership: true }),
+      }),
+    })
+  } catch {
+    return getFirestore(firebaseApp)
+  }
+}
+
 // Firebase services
 export const auth = getAuth(app)
-export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({
-    tabManager: persistentMultipleTabManager(),
-  }),
-})
+export const db = createFirestore(app)
 export const storage = getStorage(app)
 
 // Keep analytics disabled by default to reduce initial JS and third-party script loading.
