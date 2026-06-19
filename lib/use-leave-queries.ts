@@ -130,19 +130,38 @@ export function useMyMaternityThisYear(userUuid: string | null | undefined) {
 
 export function useUpcomingLeaves(userUuid: string | null | undefined) {
   return useQuery({
-    queryKey: leaveKeys.upcoming(userUuid ?? ''),
-    queryFn: () => fetchLeavesByUserUuidFromToday(userUuid!),
+    queryKey: leaveKeys.byUser(userUuid ?? ''),
+    queryFn: () => fetchAllLeavesByUserUuid(userUuid!),
     enabled: !!userUuid,
     staleTime: 1000 * 60 * 5,
+    select: (allLeaves) => {
+      const now = new Date()
+      const monthPrefix = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`
+      return allLeaves
+        .filter((row) =>
+          row.status === 'pending' ||
+          (typeof row.startDate === 'string' && row.startDate.startsWith(monthPrefix)) ||
+          (typeof row.endDate === 'string' && row.endDate.startsWith(monthPrefix))
+        )
+        .sort((a, b) => {
+          if (a.status === 'pending' && b.status !== 'pending') return -1
+          if (a.status !== 'pending' && b.status === 'pending') return 1
+          return (b.startDate ?? '').localeCompare(a.startDate ?? '')
+        })
+    },
   })
 }
 
 export function usePendingDocLeaves(userUuid: string | null | undefined) {
   return useQuery({
-    queryKey: leaveKeys.pendingDoc(userUuid ?? ''),
-    queryFn: () => fetchPendingDocLeavesByUserUuid(userUuid!),
+    queryKey: leaveKeys.byUser(userUuid ?? ''),
+    queryFn: () => fetchAllLeavesByUserUuid(userUuid!),
     enabled: !!userUuid,
     staleTime: 1000 * 60 * 5,
+    select: (allLeaves) =>
+      allLeaves
+        .filter((row) => row.status !== 'rejected' && row.docStatus === 'later')
+        .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? '')),
   })
 }
 

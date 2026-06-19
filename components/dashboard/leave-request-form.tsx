@@ -60,12 +60,11 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useAuth } from "@/lib/auth-context";
 import { useHRM } from "@/lib/hrm-context";
 import { storage } from "@/lib/firebase";
-import { usePendingDocLeaves } from "@/lib/use-leave-queries";
+import { usePendingDocLeaves, useUpcomingLeaves } from "@/lib/use-leave-queries";
 import { cn } from "@/lib/utils";
 
 // ** services
 import { getLeaveApproverRuleText } from "@/services/leave-approval";
-import { fetchLeavesByUserUuidFromToday } from "@/services/leaves";
 import { fetchOfficialHolidays } from "@/services/officialHolidays";
 import { fetchPoliciesForGender } from "@/services/policies";
 import { getEmployees } from "@/services/employees";
@@ -261,11 +260,7 @@ export default function LeaveRequestForm() {
     data: myCurrentLeaveRequests = [],
     refetch: refetchMyCurrentLeaves,
     error: myCurrentLeavesError,
-  } = useQuery({
-    queryKey: ["leaves", "my-current", loggedInUserUuid],
-    queryFn: () => fetchLeavesByUserUuidFromToday(loggedInUserUuid),
-    enabled: !!loggedInUserUuid,
-  });
+  } = useUpcomingLeaves(loggedInUserUuid);
 
   const { data: pendingDocLeaves = [] } = usePendingDocLeaves(loggedInUserUuid);
 
