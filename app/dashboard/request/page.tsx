@@ -2,6 +2,7 @@
 
 // ** core
 import { useState, useMemo } from "react";
+import dynamic from "next/dynamic";
 
 // ** assets / icons
 import {
@@ -27,11 +28,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import LeaveRequestForm from "@/components/dashboard/leave-request-form";
 import { OffsiteListFilterBar } from "@/components/offsite/OffsiteListFilterBar";
 import { OffsiteRequestList } from "@/components/offsite/OffsiteRequestList";
 import { CreateRequestDialog } from "@/components/offsite/CreateRequestDialog";
 import FormsSkeleton from "@/components/skeletons/formsSkeleton";
+
+const LeaveRequestForm = dynamic(
+  () => import("@/components/dashboard/leave-request-form"),
+  { loading: () => <FormsSkeleton /> },
+);
 
 // ** third party
 import { useQueryClient } from "@tanstack/react-query";
@@ -40,7 +45,6 @@ import { toast } from "sonner";
 
 // ** config / utils / types / hooks
 import { useAuth } from "@/lib/auth-context";
-import { useHRM } from "@/lib/hrm-context";
 import { db } from "@/lib/firebase";
 import {
   useUpcomingLeaves,
@@ -62,7 +66,6 @@ const DEFAULT_FILTERS: OffsiteFilters = {
 
 export default function FormsPage() {
   const { user, isLoading } = useAuth();
-  const { leaveBalance } = useHRM();
   const queryClient = useQueryClient();
 
   // ── persistent tab — lazy init avoids useEffect flash ──

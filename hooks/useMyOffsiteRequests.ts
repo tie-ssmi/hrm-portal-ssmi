@@ -1,5 +1,6 @@
 'use client'
 
+import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { collection, query, where, getDocs } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
@@ -34,27 +35,31 @@ export function useMyOffsiteRequests(filters: OffsiteFilters) {
     enabled: !!uid,
   })
 
-  const filtered = allDocs.filter((doc) => {
-    if (filters.status && doc.status !== filters.status) return false
-    if (filters.activityCode && doc.activityType.code !== filters.activityCode) return false
-    if (filters.monthKey && doc.monthKey !== filters.monthKey) return false
-    if (filters.search) {
-      const q = filters.search.toLowerCase()
-      const hit =
-        doc.subject.toLowerCase().includes(q) ||
-        doc.customerName.toLowerCase().includes(q) ||
-        doc.requestNo.toLowerCase().includes(q)
-      if (!hit) return false
-    }
-    return true
-  })
+  const filtered = useMemo(() =>
+    allDocs.filter((doc) => {
+      if (filters.status && doc.status !== filters.status) return false
+      if (filters.activityCode && doc.activityType.code !== filters.activityCode) return false
+      if (filters.monthKey && doc.monthKey !== filters.monthKey) return false
+      if (filters.search) {
+        const q = filters.search.toLowerCase()
+        const hit =
+          doc.subject.toLowerCase().includes(q) ||
+          doc.customerName.toLowerCase().includes(q) ||
+          doc.requestNo.toLowerCase().includes(q)
+        if (!hit) return false
+      }
+      return true
+    }),
+  [allDocs, filters.status, filters.activityCode, filters.monthKey, filters.search])
 
-  const availableMonths = Array.from(new Set(allDocs.map((d) => d.monthKey))).sort((a, b) => {
-    const [am, ay] = a.split('-').map(Number)
-    const [bm, by] = b.split('-').map(Number)
-    if (ay !== by) return by - ay
-    return bm - am
-  })
+  const availableMonths = useMemo(() =>
+    Array.from(new Set(allDocs.map((d) => d.monthKey))).sort((a, b) => {
+      const [am, ay] = a.split('-').map(Number)
+      const [bm, by] = b.split('-').map(Number)
+      if (ay !== by) return by - ay
+      return bm - am
+    }),
+  [allDocs])
 
   return { filtered, allDocs, isLoading, error: error as Error | null, refetch, availableMonths }
 }
