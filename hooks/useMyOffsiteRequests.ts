@@ -16,7 +16,7 @@ export interface OffsiteFilters {
 
 export const OFFSITE_QUERY_KEY = 'my-offsite-requests'
 
-export function useMyOffsiteRequests(filters: OffsiteFilters) {
+export function useMyOffsiteRequests(filters: OffsiteFilters, enabled = true) {
   const { user } = useAuth()
   const uid = user?.uid ?? ''
 
@@ -32,7 +32,8 @@ export function useMyOffsiteRequests(filters: OffsiteFilters) {
       const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as OffsiteRequestDoc))
       return docs.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     },
-    enabled: !!uid,
+    enabled: !!uid && enabled,
+    staleTime: 1000 * 60 * 5,
   })
 
   const filtered = useMemo(() =>

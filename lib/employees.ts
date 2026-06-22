@@ -4,8 +4,24 @@ import type { Employee, RolePermissions } from './types'
 
 export async function fetchEmployeeByUid(uid: string): Promise<Partial<Employee> | null> {
   try {
-    const employeesRef = collection(db, 'employees')
-    const q = query(employeesRef, where('uid', '==', uid))
+    // direct doc read ໄວກວ່າ where query (O(1) vs collection scan)
+    const directSnap = await getDoc(doc(db, 'employees', uid))
+    if (directSnap.exists()) {
+      const data = directSnap.data()
+      if (data.createdAt && typeof data.createdAt.toDate === 'function') {
+        data.createdAt = data.createdAt.toDate().toISOString()
+      }
+      return {
+        ...data,
+        uid: data.uid || uid,
+        uuid: data.uuid || directSnap.id,
+        employeeId: data.employeeId || directSnap.id,
+        joinDate: data.joinDate || (data.createdAt ? String(data.createdAt).split('T')[0] : undefined),
+      } as Partial<Employee>
+    }
+
+    // fallback: doc ID ບໍ່ແມ່ນ uid — query by field
+    const q = query(collection(db, 'employees'), where('uid', '==', uid))
     const querySnapshot = await getDocs(q)
 
     if (querySnapshot.empty) {

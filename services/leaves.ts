@@ -114,6 +114,24 @@ export async function fetchAllLeavesByUserUuid(userUuid: string): Promise<LeaveR
     .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
 }
 
+export async function fetchLeavesByUserThisYear(userUuid: string): Promise<LeaveRequest[]> {
+  if (!userUuid) return []
+
+  const yearStart = `${new Date().getFullYear()}-01-01`
+
+  const snapshot = await getDocs(
+    query(collection(db, 'leaves'), where('leaveUserUuid', '==', userUuid))
+  )
+
+  return snapshot.docs
+    .map((d) => ({ id: d.id, ...(d.data() as Omit<LeaveRequest, 'id'>) }))
+    .filter((row) =>
+      row.status === 'pending' ||
+      (typeof row.startDate === 'string' && row.startDate >= yearStart)
+    )
+    .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
+}
+
 export async function attachLeaveDocument(params: {
   leaveId: string
   docLink: string

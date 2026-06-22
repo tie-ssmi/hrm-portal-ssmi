@@ -2,7 +2,6 @@
 
 // ** core
 import { useState, useMemo } from "react";
-import dynamic from "next/dynamic";
 
 // ** assets / icons
 import {
@@ -32,11 +31,7 @@ import { OffsiteListFilterBar } from "@/components/offsite/OffsiteListFilterBar"
 import { OffsiteRequestList } from "@/components/offsite/OffsiteRequestList";
 import { CreateRequestDialog } from "@/components/offsite/CreateRequestDialog";
 import FormsSkeleton from "@/components/skeletons/formsSkeleton";
-
-const LeaveRequestForm = dynamic(
-  () => import("@/components/dashboard/leave-request-form"),
-  { loading: () => <FormsSkeleton /> },
-);
+import LeaveRequestForm from "@/components/dashboard/leave-request-form";
 
 // ** third party
 import { useQueryClient } from "@tanstack/react-query";
@@ -89,6 +84,8 @@ export default function FormsPage() {
   );
   const [isCancelling, setIsCancelling] = useState(false);
 
+  const isOffsiteTab = activeTab === "offsite";
+
   const {
     filtered,
     allDocs,
@@ -96,11 +93,12 @@ export default function FormsPage() {
     error,
     refetch,
     availableMonths,
-  } = useMyOffsiteRequests(filters);
+  } = useMyOffsiteRequests(filters, isOffsiteTab);
 
   const userUuid = user?.uuid ?? user?.uid ?? "";
-  const { data: upcomingLeaves = [] } = useUpcomingLeaves(userUuid);
-  const { data: pendingDocLeaves = [] } = usePendingDocLeaves(userUuid);
+  const { data: upcomingLeaves = [], isLoading: leavesLoading } = useUpcomingLeaves(userUuid);
+  const { data: pendingDocLeaves = [], isLoading: docLeavesLoading } = usePendingDocLeaves(userUuid);
+  const statsLoading = leavesLoading || docLeavesLoading;
 
   const pendingLeaveCount = useMemo(
     () => upcomingLeaves.filter((l) => l.status === "pending").length,
@@ -165,52 +163,60 @@ export default function FormsPage() {
       </div>
 
       {/* Leave Balance Summary */}
-      <div className="grid grid-cols-3 gap-3">
-        <Card className="border-amber-200/40 bg-amber-50/50 dark:border-amber-800/30 dark:bg-amber-950/20">
-          <CardContent className="pt-4 pb-4">
-            <div className="mb-1 flex items-center gap-1.5">
-              <Clock className="h-3.5 w-3.5 text-amber-500" />
-              <p className="text-muted-foreground text-xs">ລາພັກລໍຖ້າ</p>
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        <Card className="min-w-0 flex-1 border-amber-200/40 bg-amber-50/50 dark:border-amber-800/30 dark:bg-amber-950/20">
+          <CardContent className="px-3 pt-3 pb-3">
+            <div className="mb-1 flex items-center gap-1">
+              <Clock className="h-3 w-3 shrink-0 text-amber-500" />
+              <p className="text-muted-foreground truncate text-[11px]">ລາພັກລໍຖ້າ</p>
             </div>
-            <p className="text-foreground text-lg font-bold">
-              {pendingLeaveCount}
-              {pendingLeaveCount > 0 && (
-                <span className="ml-1.5 inline-flex h-2 w-2 items-center justify-center rounded-full bg-amber-400" />
-              )}
-            </p>
+            {statsLoading ? (
+              <div className="bg-muted h-5 w-6 animate-pulse rounded" />
+            ) : (
+              <p className="text-foreground text-base font-bold">
+                {pendingLeaveCount}
+                {pendingLeaveCount > 0 && (
+                  <span className="ml-1 inline-flex h-1.5 w-1.5 rounded-full bg-amber-400" />
+                )}
+              </p>
+            )}
           </CardContent>
         </Card>
-        <Card className="border-blue-200/40 bg-blue-50/50 dark:border-blue-800/30 dark:bg-blue-950/20">
-          <CardContent className="pt-4 pb-4">
-            <div className="mb-1 flex items-center gap-1.5">
-              <FileWarning className="h-3.5 w-3.5 text-blue-500" />
-              <p className="text-muted-foreground text-xs">ລໍຖ້າເອກະສານ</p>
+        <Card className="min-w-0 flex-1 border-blue-200/40 bg-blue-50/50 dark:border-blue-800/30 dark:bg-blue-950/20">
+          <CardContent className="px-3 pt-3 pb-3">
+            <div className="mb-1 flex items-center gap-1">
+              <FileWarning className="h-3 w-3 shrink-0 text-blue-500" />
+              <p className="text-muted-foreground truncate text-[11px]">ລໍຖ້າເອກະສານ</p>
             </div>
-            <p className="text-foreground text-lg font-bold">
-              {pendingDocLeaves.length}
-              {pendingDocLeaves.length > 0 && (
-                <span className="ml-1.5 inline-flex h-2 w-2 items-center justify-center rounded-full bg-blue-400" />
-              )}
-            </p>
+            {statsLoading ? (
+              <div className="bg-muted h-5 w-6 animate-pulse rounded" />
+            ) : (
+              <p className="text-foreground text-base font-bold">
+                {pendingDocLeaves.length}
+                {pendingDocLeaves.length > 0 && (
+                  <span className="ml-1 inline-flex h-1.5 w-1.5 rounded-full bg-blue-400" />
+                )}
+              </p>
+            )}
           </CardContent>
         </Card>
-        <Card className="border-emerald-200/40 bg-emerald-50/50 dark:border-emerald-800/30 dark:bg-emerald-950/20">
-          <CardContent className="pt-4 pb-4">
-            <div className="mb-1 flex items-center gap-1.5">
-              <BriefcaseBusiness className="h-3.5 w-3.5 text-emerald-500" />
-              <p className="text-muted-foreground text-xs">ອອກວຽກນອກ</p>
+        <Card className="min-w-0 flex-1 border-emerald-200/40 bg-emerald-50/50 dark:border-emerald-800/30 dark:bg-emerald-950/20">
+          <CardContent className="px-3 pt-3 pb-3">
+            <div className="mb-1 flex items-center gap-1">
+              <BriefcaseBusiness className="h-3 w-3 shrink-0 text-emerald-500" />
+              <p className="text-muted-foreground truncate text-[11px]">ອອກວຽກນອກ</p>
             </div>
-            <p className="text-foreground text-lg leading-tight font-bold">
-              {approvedOffsiteCount}{" "}
-              <span className="text-muted-foreground text-xs font-normal">
-                ຄັ້ງ
-              </span>
-              <span className="text-muted-foreground/40 mx-1">/</span>
-              {approvedOffsiteDays}{" "}
-              <span className="text-muted-foreground text-xs font-normal">
-                ວັນ
-              </span>
-            </p>
+            {statsLoading ? (
+              <div className="bg-muted h-5 w-6 animate-pulse rounded" />
+            ) : (
+              <p className="text-foreground text-base leading-tight font-bold">
+                {approvedOffsiteCount}
+                <span className="text-muted-foreground text-[10px] font-normal"> ຄັ້ງ</span>
+                <span className="text-muted-foreground/40 mx-0.5">/</span>
+                {approvedOffsiteDays}
+                <span className="text-muted-foreground text-[10px] font-normal"> ວັນ</span>
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>

@@ -1,10 +1,12 @@
 'use client'
 
+import { useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   attachLeaveDocument,
   createLeaveRequest,
   fetchAllLeavesByUserUuid,
+  fetchLeavesByUserThisYear,
   fetchAllTodayLeaves,
   fetchLeavesForApproval,
   fetchLeavesByUserUuidFromToday,
@@ -128,41 +130,47 @@ export function useMyMaternityThisYear(userUuid: string | null | undefined) {
   })
 }
 
-export function useUpcomingLeaves(userUuid: string | null | undefined) {
+function useLeavesByThisYear(userUuid: string | null | undefined) {
   return useQuery({
-    queryKey: leaveKeys.byUser(userUuid ?? ''),
-    queryFn: () => fetchAllLeavesByUserUuid(userUuid!),
+    queryKey: leaveKeys.upcoming(userUuid ?? ''),
+    queryFn: () => fetchLeavesByUserThisYear(userUuid!),
     enabled: !!userUuid,
     staleTime: 1000 * 60 * 5,
-    select: (allLeaves) => {
-      const now = new Date()
-      const monthPrefix = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`
-      return allLeaves
-        .filter((row) =>
-          row.status === 'pending' ||
-          (typeof row.startDate === 'string' && row.startDate.startsWith(monthPrefix)) ||
-          (typeof row.endDate === 'string' && row.endDate.startsWith(monthPrefix))
-        )
-        .sort((a, b) => {
-          if (a.status === 'pending' && b.status !== 'pending') return -1
-          if (a.status !== 'pending' && b.status === 'pending') return 1
-          return (b.startDate ?? '').localeCompare(a.startDate ?? '')
-        })
-    },
   })
 }
 
+export function useUpcomingLeaves(userUuid: string | null | undefined) {
+  const { data: allLeaves = [], ...rest } = useLeavesByThisYear(userUuid)
+
+  const filtered = useMemo(() => {
+    const now = new Date()
+    const monthPrefix = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`
+    return allLeaves
+      .filter((row) =>
+        row.status === 'pending' ||
+        (typeof row.startDate === 'string' && row.startDate.startsWith(monthPrefix)) ||
+        (typeof row.endDate === 'string' && row.endDate.startsWith(monthPrefix))
+      )
+      .sort((a, b) => {
+        if (a.status === 'pending' && b.status !== 'pending') return -1
+        if (a.status !== 'pending' && b.status === 'pending') return 1
+        return (b.startDate ?? '').localeCompare(a.startDate ?? '')
+      })
+  }, [allLeaves])
+
+  return { data: filtered, ...rest }
+}
+
 export function usePendingDocLeaves(userUuid: string | null | undefined) {
-  return useQuery({
-    queryKey: leaveKeys.byUser(userUuid ?? ''),
-    queryFn: () => fetchAllLeavesByUserUuid(userUuid!),
-    enabled: !!userUuid,
-    staleTime: 1000 * 60 * 5,
-    select: (allLeaves) =>
-      allLeaves
-        .filter((row) => row.status !== 'rejected' && row.docStatus === 'later')
-        .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? '')),
-  })
+  const { data: allLeaves = [], ...rest } = useLeavesByThisYear(userUuid)
+
+  const filtered = useMemo(() =>
+    allLeaves
+      .filter((row) => row.status !== 'rejected' && row.docStatus === 'later')
+      .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? '')),
+  [allLeaves])
+
+  return { data: filtered, ...rest }
 }
 
 export function useLeavesForApproval(params: {
