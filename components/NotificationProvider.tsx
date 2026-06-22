@@ -49,7 +49,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     }
   }, []);
 
-  const userUid = user?.uid || (user as any)?.id;
+  const userUid = user?.uid || user?.id;
 
   useEffect(() => {
     if (!userUid) return;
@@ -57,6 +57,9 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
     const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
     if (!vapidKey) return;
+
+    const uid = userUid;
+    const key = vapidKey;
 
     async function registerPush() {
       try {
@@ -69,13 +72,21 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         if (!subscription) {
           subscription = await reg.pushManager.subscribe({
             userVisibleOnly: true,
-            applicationServerKey: urlBase64ToUint8Array(vapidKey!),
+            applicationServerKey: urlBase64ToUint8Array(key),
           });
         }
 
-        await updateDoc(doc(db, "employees", userUid!), {
-          pushSubscription: JSON.parse(JSON.stringify(subscription)),
-        });
+        const serialized = JSON.parse(JSON.stringify(subscription));
+
+        const empRef = doc(db, "employees", uid);
+        const { getDoc } = await import("firebase/firestore");
+        const empSnap = await getDoc(empRef);
+        if (!empSnap.exists()) return;
+
+        const stored = empSnap.data()?.pushSubscription;
+        if (stored?.endpoint === serialized.endpoint) return;
+
+        await updateDoc(empRef, { pushSubscription: serialized });
       } catch (err) {
         console.error("[Push] subscription failed:", err);
       }
@@ -97,8 +108,10 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     return typeof loc === "string" ? loc : loc.uid || loc.uuid || loc.id;
   }, [user?.workLocation]);
 
+  const canApprove = !!user?.rolePermissions?.approveDepartment || !!user?.rolePermissions?.approveBranch;
+
   useEffect(() => {
-    if (!userUid || !userDepartmentId || !userWorkLocationId) {
+    if (!userUid || !userDepartmentId || !userWorkLocationId || !canApprove) {
       setLeaveNotifications([]);
       setWorkNotifications([]);
       isInitialLeaves.current = true;
@@ -170,27 +183,23 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     // =========================================================================
     // 🚗 2. ດັກຟັງໃບຂໍອອກນອກສະຖານທີ່ (workOutside)
     // =========================================================================
-    // Note: workOutside stores location UID in nested requester.workLocation (not top-level workLocationUid
-    // which stores a different format "0303"), so Firestore-level location filter is unreliable here.
-    // JS filtering is kept for this collection only.
-    const qWork = query(collection(db, "workOutside"), where("status", "==", "pending"));
+    // docs ໃໝ່ມີ departmentUid top-level ແລ້ວ — filter ຢູ່ Firestore level
+    // docs ເກົ່າທີ່ບໍ່ມີ field ນີ້ຈະບໍ່ match query (ຍອมຮັບໄດ້ ເພາະ docs ເກົ່າບໍ່ແມ່ນ pending ແລ້ວ)
+    const qWork = query(
+      collection(db, "workOutside"),
+      where("status", "==", "pending"),
+      where("departmentUid", "==", userDepartmentId),
+    );
 
-    // Fix: single matcher — was duplicated in both snapshot.docs loop and docChanges loop
     function isMatchingWork(data: Record<string, any>): boolean {
       const workLocationId =
+        data.requesterWorkLocationUid ||
         data.requester?.workLocation?.uid ||
         data.requester?.workLocation?.uuid ||
-        data.requester?.workLocation?.id ||
-        data.workLocationUid;
-      const deptId =
-        data.requester?.department?.uid ||
-        data.requester?.department?.uuid ||
-        data.requester?.department?.id ||
-        data.departmentUid;
+        data.requester?.workLocation?.id;
 
       return (
         workLocationId === userWorkLocationId &&
-        deptId === userDepartmentId &&
         data.createdByUid !== userUid &&
         Array.isArray(data.approvals) &&
         data.approvals.some(
@@ -234,7 +243,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       unsubscribeLeaves();
       unsubscribeWork();
     };
-  }, [userUid, userDepartmentId, userWorkLocationId, triggerNotification]);
+  }, [userUid, userDepartmentId, userWorkLocationId, canApprove, triggerNotification]);
 
   const notifications = useMemo(
     () => [...leaveNotifications, ...workNotifications],

@@ -29,7 +29,7 @@ pnpm build && npx cap sync ios && npx cap open ios
 
 **Stack:** Next.js (App Router, static export) + React 19 + TypeScript + Tailwind CSS v4 + Firebase + Capacitor
 
-The app is a multi-platform HRM portal (web PWA + Android/iOS). Next.js builds to static files in `out/` which are served via Firebase Hosting. Server-side logic lives entirely in Firebase Cloud Functions (`functions/`), not Next.js API routes (the only exception is the cron endpoint at `app/api/cron/attendance-remind/route.ts`).
+The app is a multi-platform HRM portal (web PWA + Android/iOS). Next.js builds to static files in `out/` which are served via Firebase Hosting. Server-side logic lives entirely in Firebase Cloud Functions (`functions/`), not Next.js API routes.
 
 ### Layer Structure
 
@@ -89,7 +89,6 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
 NEXT_PUBLIC_FIREBASE_APP_ID
 NEXT_PUBLIC_VAPID_PUBLIC_KEY    # Web push (client)
 VAPID_PRIVATE_KEY                # Web push (Cloud Functions only)
-CRON_SECRET                      # Validates attendance-remind cron requests
 ```
 
 `NEXT_PUBLIC_DEPLOY_TARGET` is set automatically by `scripts/build.js` during `pnpm deploy` / `pnpm deploy_dev`.

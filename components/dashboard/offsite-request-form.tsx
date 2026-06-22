@@ -510,6 +510,8 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
         customerName,
         location: locationDisplay,
         workLocationUid: districtId,
+        departmentUid: requesterDept.uuid || '',
+        requesterWorkLocationUid: requesterLoc.uuid || '',
         startDate: format(startDate!, 'yyyy-MM-dd'),
         endDate: format(endDate!, 'yyyy-MM-dd'),
         durationDays,

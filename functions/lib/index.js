@@ -173,21 +173,17 @@ exports.getServerTime = (0, https_1.onCall)({ region: 'asia-southeast1', cors: c
 // 🔔 2. ກວດສອບ + ສົ່ງ Push Notification ແຈ້ງເຕືອນ
 // =========================================================================
 const PUSH_BATCH_SIZE = 20;
-async function sendAttendanceReminder() {
+async function sendAttendanceReminder(tag) {
     const { isoDate } = getVientianeParts();
-    console.log(`[Cron Job]: checking not-checked-in for ${isoDate}`);
+    console.log(`[Cron ${tag}]: checking not-checked-in for ${isoDate}`);
     const db = admin.firestore();
-    // dailyAttendanceInit (admin project) ສ້າງ docs ລ່ວງໜ້າທຸກຄືນ 00:00 ດ້ວຍ:
-    //   status: 'not_checked_in'  ແລະ  dateKey: YYYY-MM-DD
-    // ເມື່ອ employee check-in, client ອັບເດດ status ເປັນ 'present' ຫຼື 'late'
-    // Query ດ້ວຍ dateKey + status ຈຶ່ງຮູ້ວ່າໃຜຍັງບໍ່ທັນ check-in
     const snapshot = await db
         .collection('attendance')
         .where('dateKey', '==', isoDate)
         .where('status', '==', 'not_checked_in')
         .get();
     if (snapshot.empty) {
-        console.log('[Cron Job]: all employees checked in today.');
+        console.log(`[Cron ${tag}]: all employees checked in today.`);
         return;
     }
     const payload = JSON.stringify({
@@ -197,48 +193,64 @@ async function sendAttendanceReminder() {
         badge: '/SSMI.svg',
         url: '/dashboard/attendance',
     });
-    // attendance.uid ເປັນ Firebase Auth UID — employees collection ໃຊ້ UID ນີ້ເປັນ key
     const userUids = [
         ...new Set(snapshot.docs
             .map(d => d.data().uid)
             .filter(Boolean)),
     ];
-    // getAll() ດຶງ employee docs ທັງໝົດໃນ round-trip ດຽວ
     const employeeRefs = userUids.map(uid => db.collection('employees').doc(uid));
     const employeeDocs = await db.getAll(...employeeRefs);
-    // ສົ່ງ push notification ເປັນ batch PUSH_BATCH_SIZE ຄັ້ງ — ກັນ rate-limit error
-    // Promise.all ທັງໝົດພ້ອມກັນ (100+ requests) ອາດຖືກ push server ຕີກັບ
+    // ກັ່ນກອງ employee ທີ່ແຈ້ງເຕືອນແລ້ວໃນ tag ນີ້ (ກັນແຈ້ງເຕືອນຊ້ຳ)
+    const notifiedField = `notified_${tag}`;
+    const eligibleDocs = employeeDocs.filter((empDoc) => {
+        if (!empDoc.exists)
+            return false;
+        const data = empDoc.data();
+        if (!(data === null || data === void 0 ? void 0 : data.pushSubscription))
+            return false;
+        if (data[notifiedField] === isoDate)
+            return false;
+        return true;
+    });
     const allResults = [];
-    for (let i = 0; i < employeeDocs.length; i += PUSH_BATCH_SIZE) {
-        const batchDocs = employeeDocs.slice(i, i + PUSH_BATCH_SIZE);
+    for (let i = 0; i < eligibleDocs.length; i += PUSH_BATCH_SIZE) {
+        const batchDocs = eligibleDocs.slice(i, i + PUSH_BATCH_SIZE);
         const batchResults = await Promise.all(batchDocs.map(async (empDoc) => {
             var _a;
-            if (!empDoc.exists)
-                return false;
             const subscription = (_a = empDoc.data()) === null || _a === void 0 ? void 0 : _a.pushSubscription;
-            if (!subscription)
-                return false;
             return web_push_1.default
                 .sendNotification(subscription, payload)
-                .then(() => true)
-                .catch((err) => {
-                console.error(`Failed to notify employee ${empDoc.id}:`, err);
+                .then(async () => {
+                await db.collection('employees').doc(empDoc.id)
+                    .update({ [notifiedField]: isoDate });
+                return true;
+            })
+                .catch(async (err) => {
+                // subscription ໝົດອາຍຸ ຫຼື ບໍ່ valid — ລ້າງອອກຈາກ Firestore
+                if (err.statusCode === 410 || err.statusCode === 404) {
+                    await db.collection('employees').doc(empDoc.id)
+                        .update({ pushSubscription: admin.firestore.FieldValue.delete() });
+                    console.warn(`[Cron ${tag}]: removed stale subscription for ${empDoc.id}`);
+                }
+                else {
+                    console.error(`[Cron ${tag}]: failed to notify ${empDoc.id}:`, err);
+                }
                 return false;
             });
         }));
         allResults.push(...batchResults);
     }
     const notified = allResults.filter(Boolean).length;
-    console.log(`[Cron Job]: Notified ${notified} / ${snapshot.size} users`);
+    console.log(`[Cron ${tag}]: Notified ${notified} / ${eligibleDocs.length} eligible (${snapshot.size} not checked in)`);
 }
 // =========================================================================
 // ⏰ 3. CRON JOB 08:00 (ຈັນ–ສຸກ)
 // =========================================================================
-exports.checkAttendanceAt800 = (0, scheduler_1.onSchedule)({ schedule: '0 8 * * 1-5', timeZone: TIMEZONE, region: 'asia-southeast1' }, async () => { await sendAttendanceReminder(); });
+exports.checkAttendanceAt800 = (0, scheduler_1.onSchedule)({ schedule: '0 8 * * 1-5', timeZone: TIMEZONE, region: 'asia-southeast1' }, async () => { await sendAttendanceReminder('0800'); });
 // =========================================================================
 // ⏰ 4. CRON JOB 08:14 (ຈັນ–ສຸກ)
 // =========================================================================
-exports.checkAttendanceAt814 = (0, scheduler_1.onSchedule)({ schedule: '14 8 * * 1-5', timeZone: TIMEZONE, region: 'asia-southeast1' }, async () => { await sendAttendanceReminder(); });
+exports.checkAttendanceAt814 = (0, scheduler_1.onSchedule)({ schedule: '14 8 * * 1-5', timeZone: TIMEZONE, region: 'asia-southeast1' }, async () => { await sendAttendanceReminder('0814'); });
 // =========================================================================
 // 📍 5. CHECK-IN ພ້ອມກວດສອບ Geofence ຢູ່ Server
 // =========================================================================

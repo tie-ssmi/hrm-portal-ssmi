@@ -125,14 +125,18 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       const targetUrl = event.notification.data?.url || '/dashboard/attendance';
-      
+
       for (let i = 0; i < clientList.length; i++) {
-        let client = clientList[i];
-        if (client.url.includes('/dashboard') && 'focus' in client) {
-          return client.focus();
+        const client = clientList[i];
+        if ('focus' in client) {
+          return client.focus().then((focused) => {
+            if (focused && 'navigate' in focused) {
+              return focused.navigate(targetUrl);
+            }
+          });
         }
       }
-      
+
       if (clients.openWindow) {
         return clients.openWindow(targetUrl);
       }
