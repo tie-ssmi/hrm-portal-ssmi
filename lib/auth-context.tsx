@@ -17,21 +17,24 @@ import { queryClient } from './query-client'
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+let employeesModule: typeof import('./employees') | null = null
+async function getEmployeesModule() {
+  if (!employeesModule) employeesModule = await import('./employees')
+  return employeesModule
+}
+
 async function resolveEmployeeForFirebaseUser(firebaseUser: FirebaseUser): Promise<Partial<Employee> | null> {
-  const { fetchEmployeeByEmail, fetchEmployeeByUid, fetchRoleByUid, updateEmployeeUidByEmail } = await import('./employees')
+  const { fetchEmployeeByEmail, fetchEmployeeByUid, fetchRoleByUid, updateEmployeeUidByEmail } = await getEmployeesModule()
   let employeeData = await fetchEmployeeByUid(firebaseUser.uid)
 
   if (!employeeData && firebaseUser.email) {
     employeeData = await fetchEmployeeByEmail(firebaseUser.email)
 
     if (employeeData) {
-      const storedUid = employeeData.uid
-      if (storedUid !== firebaseUser.uid) {
-        try {
-          await updateEmployeeUidByEmail(firebaseUser.email, firebaseUser.uid)
-        } catch (error) {
-          console.error('Error syncing employee uid:', error)
-        }
+      if (employeeData.uid !== firebaseUser.uid) {
+        updateEmployeeUidByEmail(firebaseUser.email, firebaseUser.uid).catch(
+          (error) => console.error('Error syncing employee uid:', error)
+        )
       }
 
       employeeData = {
@@ -42,7 +45,6 @@ async function resolveEmployeeForFirebaseUser(firebaseUser: FirebaseUser): Promi
     }
   }
 
-  // Fetch role permissions using rolesUid from employee doc
   if (employeeData?.rolesUid) {
     const rolePermissions = await fetchRoleByUid(employeeData.rolesUid)
     if (rolePermissions) {

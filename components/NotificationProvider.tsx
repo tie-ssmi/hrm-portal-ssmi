@@ -78,15 +78,9 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
         const serialized = JSON.parse(JSON.stringify(subscription));
 
-        const empRef = doc(db, "employees", uid);
-        const { getDoc } = await import("firebase/firestore");
-        const empSnap = await getDoc(empRef);
-        if (!empSnap.exists()) return;
-
-        const stored = empSnap.data()?.pushSubscription;
-        if (stored?.endpoint === serialized.endpoint) return;
-
-        await updateDoc(empRef, { pushSubscription: serialized });
+        await updateDoc(doc(db, "employees", uid), {
+          pushSubscription: serialized,
+        });
       } catch (err) {
         console.error("[Push] subscription failed:", err);
       }
