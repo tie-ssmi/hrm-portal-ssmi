@@ -1,7 +1,8 @@
 "use client";
 
 // ** core
-import { useState, useMemo, type ElementType } from "react";
+import { useState, useMemo } from "react";
+import type { ElementType } from "react";
 
 // ** assets / icons
 import {
@@ -11,7 +12,6 @@ import {
   Building,
   Briefcase,
   Calendar,
-  Edit3,
   MapPin,
   Heart,
   GraduationCap,
@@ -31,7 +31,6 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -47,13 +46,10 @@ import FileUpload from "@/components/cameraUpload";
 import { formatDateLao } from "@/components/laoDate";
 
 // ** third party
-import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 // ** config / utils / types / hooks
 import { useAuth } from "@/lib/auth-context";
-import { useHRM } from "@/lib/hrm-context";
-import { fetchEmployeeByUid } from "@/lib/employees";
 import type { EducationEntry, Employee } from "@/lib/types";
 // Firestore may store reference fields as objects { nameLo, uuid, code }
 function toStr(value: unknown): string {
@@ -203,39 +199,13 @@ function buildEducationFields(profileUser: Employee | null): InfoField[] {
 
 export default function ProfilePage() {
   const { user, firebaseUser } = useAuth();
-  const { profileUpdateRequests, submitProfileUpdate } = useHRM();
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editField, setEditField] = useState("");
-  const [editValue, setEditValue] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSalary, setShowSalary] = useState(false);
   const [uploadedAvatarUrl, setUploadedAvatarUrl] = useState<string | null>(
     null,
   );
   const [isImageDialogOpen, setIsImageDialogOpen] = useState(false);
 
-  const { data: employeeData } = useQuery({
-    queryKey: ["employee", firebaseUser?.uid],
-    queryFn: () => fetchEmployeeByUid(firebaseUser!.uid),
-    enabled: !!firebaseUser?.uid,
-    staleTime: 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
-  });
-
-  const profileUser: Employee | null = user
-    ? {
-        ...user,
-        ...(employeeData ?? {}),
-        firstName: employeeData?.firstNameEn || user.firstName,
-        lastName: employeeData?.lastNameEn || user.lastName,
-        phone: employeeData?.tel || user.phone,
-        position: employeeData?.jobTitle || user.position,
-        department:
-          employeeData?.department ||
-          employeeData?.workLocation ||
-          user.department,
-      }
-    : null;
+  const profileUser: Employee | null = user;
 
   const initials = profileUser
     ? `${(profileUser.firstNameEn || profileUser.firstName)[0] ?? ""}${(profileUser.lastNameEn || profileUser.lastName)[0] ?? ""}`.toUpperCase()
@@ -243,45 +213,12 @@ export default function ProfilePage() {
 
   const avatarSrc =
     uploadedAvatarUrl ||
-    resolveProfileImage(employeeData?.profileImage, firebaseUser?.uid) ||
-    employeeData?.photo3x4Url ||
+    resolveProfileImage(profileUser?.profileImage, firebaseUser?.uid) ||
+    profileUser?.photo3x4Url ||
     profileUser?.avatar ||
     (toStr(profileUser?.gender).toLowerCase() === "male"
       ? "/info/man.jpg"
       : "/info/woman.jpg");
-
-  const handleEditClick = (field: string, currentValue: string) => {
-    setEditField(field);
-    setEditValue(currentValue);
-    setIsDialogOpen(true);
-  };
-
-  const handleSubmitUpdate = async () => {
-    if (!editValue.trim()) {
-      toast.error("Please enter a value");
-      return;
-    }
-    setIsSubmitting(true);
-    try {
-      const currentValue =
-        editField === "phone"
-          ? profileUser?.phone || ""
-          : profileUser?.email || "";
-      await submitProfileUpdate({
-        field: editField,
-        oldValue: currentValue,
-        newValue: editValue,
-      });
-      toast.success("Update request submitted for approval");
-      setIsDialogOpen(false);
-      setEditField("");
-      setEditValue("");
-    } catch {
-      toast.error("Failed to submit update request");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
   const employmentFields = useMemo<InfoField[]>(() => [
     { label: "ລະຫັດພະນັກງານ", value: toStr(profileUser?.employeeId), icon: User },
@@ -471,15 +408,6 @@ export default function ProfilePage() {
                       </div>
                     </div>
                   </div>
-                  {f.editable && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleEditClick(f.field!, f.value)}
-                    >
-                      <Edit3 className="h-4 w-4" />
-                    </Button>
-                  )}
                 </div>
                 {i < employmentFields.length - 1 && <Separator />}
               </div>
