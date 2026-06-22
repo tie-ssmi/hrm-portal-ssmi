@@ -1,7 +1,7 @@
 "use client";
 
 // ** core
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback, memo, lazy, Suspense } from "react";
 import type { ElementType } from "react";
 
 // ** assets / icons
@@ -33,17 +33,34 @@ import {
 } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import ProfileSkeleton from "@/components/skeletons/profileSkeleton";
 import { NumberFormatter } from "@/components/formatNumber";
-import FileUpload from "@/components/cameraUpload";
 import { formatDateLao } from "@/components/laoDate";
+
+// ** lazy — Dialog + FileUpload ບໍ່ຕ້ອງ load ທັນທີ (1 chunk ແທນ 5)
+const FileUpload = lazy(() => import("@/components/cameraUpload"));
+const ImageDialog = lazy(() =>
+  import("@/components/ui/dialog").then((m) => {
+    function ImageDialogWrapper({ open, onOpenChange, trigger, src, alt }: {
+      open: boolean;
+      onOpenChange: (v: boolean) => void;
+      trigger: React.ReactNode;
+      src: string;
+      alt: string;
+    }) {
+      return (
+        <m.Dialog open={open} onOpenChange={onOpenChange}>
+          <m.DialogTrigger asChild>{trigger}</m.DialogTrigger>
+          <m.DialogContent className="max-h-[80vh] max-w-md p-2">
+            <m.DialogTitle className="sr-only">ຮູບໂປຣໄຟລ໌</m.DialogTitle>
+            <img src={src} alt={alt} className="h-auto w-full rounded-md object-contain" />
+          </m.DialogContent>
+        </m.Dialog>
+      );
+    }
+    return { default: ImageDialogWrapper };
+  }),
+);
 
 // ** third party
 import { toast } from "sonner";
@@ -51,7 +68,7 @@ import { toast } from "sonner";
 // ** config / utils / types / hooks
 import { useAuth } from "@/lib/auth-context";
 import type { EducationEntry, Employee } from "@/lib/types";
-// Firestore may store reference fields as objects { nameLo, uuid, code }
+
 function toStr(value: unknown): string {
   if (value === null || value === undefined) return "-";
   if (typeof value === "string") return value;
@@ -70,11 +87,6 @@ type InfoField = {
   label: string;
   value: string;
   icon: ElementType;
-  editable?: boolean;
-  field?: string;
-  masked?: boolean;
-  revealed?: boolean;
-  onToggle?: () => void;
 };
 
 function formatDepartment(value: unknown): string {
@@ -104,7 +116,7 @@ function resolveProfileImage(value: unknown, uid?: string): string {
   return "";
 }
 
-function InfoGrid({ fields }: { fields: InfoField[] }) {
+const InfoGrid = memo(function InfoGrid({ fields }: { fields: InfoField[] }) {
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
       {fields.map((f, i) => (
@@ -117,29 +129,15 @@ function InfoGrid({ fields }: { fields: InfoField[] }) {
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-muted-foreground text-xs">{f.label}</p>
-            <div className="flex items-center gap-2">
-              <p className="text-foreground truncate text-sm font-medium">
-                {f.masked && !f.revealed ? "••••••••" : f.value || "-"}
-              </p>
-              {f.masked && (
-                <button
-                  onClick={f.onToggle}
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {f.revealed ? (
-                    <EyeOff className="h-3.5 w-3.5" />
-                  ) : (
-                    <Eye className="h-3.5 w-3.5" />
-                  )}
-                </button>
-              )}
-            </div>
+            <p className="text-foreground truncate text-sm font-medium">
+              {f.value || "-"}
+            </p>
           </div>
         </div>
       ))}
     </div>
   );
-}
+});
 
 function buildEducationFields(profileUser: Employee | null): InfoField[] {
   const educations = Array.isArray(profileUser?.educations)
@@ -148,77 +146,68 @@ function buildEducationFields(profileUser: Employee | null): InfoField[] {
 
   if (educations.length === 0) {
     return [
-      {
-        label: "ລະດັບການສຶກສາ",
-        value: toStr(profileUser?.education),
-        icon: GraduationCap,
-      },
-      {
-        label: "ສະຖາບັນທີ່ຈົບການສຶກສາ",
-        value: toStr(profileUser?.graduatedFrom),
-        icon: GraduationCap,
-      },
-      {
-        label: "ສາຂາວິຊາ",
-        value: toStr(profileUser?.major),
-        icon: GraduationCap,
-      },
-      {
-        label: "ໃບຂັບຂີ່",
-        value: toStr(profileUser?.drivingLicenseType),
-        icon: IdCard,
-      },
+      { label: "ລະດັບການສຶກສາ", value: toStr(profileUser?.education), icon: GraduationCap },
+      { label: "ສະຖາບັນທີ່ຈົບການສຶກສາ", value: toStr(profileUser?.graduatedFrom), icon: GraduationCap },
+      { label: "ສາຂາວິຊາ", value: toStr(profileUser?.major), icon: GraduationCap },
+      { label: "ໃບຂັບຂີ່", value: toStr(profileUser?.drivingLicenseType), icon: IdCard },
     ];
   }
 
   const fields: InfoField[] = educations.flatMap((item, index) => [
-    {
-      label: `ລະດັບການສຶກສາ (${index + 1})`,
-      value: toStr(item.education),
-      icon: GraduationCap,
-    },
-    {
-      label: `ສະຖາບັນທີ່ຈົບການສຶກສາ (${index + 1})`,
-      value: toStr(item.graduatedFrom),
-      icon: GraduationCap,
-    },
-    {
-      label: `ສາຂາວິຊາ (${index + 1})`,
-      value: toStr(item.major),
-      icon: GraduationCap,
-    },
+    { label: `ລະດັບການສຶກສາ (${index + 1})`, value: toStr(item.education), icon: GraduationCap },
+    { label: `ສະຖາບັນທີ່ຈົບການສຶກສາ (${index + 1})`, value: toStr(item.graduatedFrom), icon: GraduationCap },
+    { label: `ສາຂາວິຊາ (${index + 1})`, value: toStr(item.major), icon: GraduationCap },
   ]);
 
-  fields.push({
-    label: "ໃບຂັບຂີ່",
-    value: toStr(profileUser?.drivingLicenseType),
-    icon: IdCard,
-  });
+  fields.push({ label: "ໃບຂັບຂີ່", value: toStr(profileUser?.drivingLicenseType), icon: IdCard });
   return fields;
 }
+
+const EmploymentRow = memo(function EmploymentRow({ field }: { field: InfoField }) {
+  return (
+    <div>
+      <div className="flex items-center gap-3 py-2">
+        <div className="bg-muted flex h-9 w-9 shrink-0 items-center justify-center rounded-lg">
+          <field.icon className="text-muted-foreground h-4 w-4" />
+        </div>
+        <div>
+          <p className="text-muted-foreground text-xs">{field.label}</p>
+          <p className="text-foreground text-sm font-medium">{field.value || "-"}</p>
+        </div>
+      </div>
+      <div className="border-border border-t" />
+    </div>
+  );
+});
 
 export default function ProfilePage() {
   const { user, firebaseUser } = useAuth();
   const [showSalary, setShowSalary] = useState(false);
-  const [uploadedAvatarUrl, setUploadedAvatarUrl] = useState<string | null>(
-    null,
-  );
+  const [uploadedAvatarUrl, setUploadedAvatarUrl] = useState<string | null>(null);
   const [isImageDialogOpen, setIsImageDialogOpen] = useState(false);
 
   const profileUser: Employee | null = user;
 
-  const initials = profileUser
-    ? `${(profileUser.firstNameEn || profileUser.firstName)[0] ?? ""}${(profileUser.lastNameEn || profileUser.lastName)[0] ?? ""}`.toUpperCase()
-    : "U";
+  const initials = useMemo(() =>
+    profileUser
+      ? `${(profileUser.firstNameEn || profileUser.firstName)[0] ?? ""}${(profileUser.lastNameEn || profileUser.lastName)[0] ?? ""}`.toUpperCase()
+      : "U",
+  [profileUser]);
 
-  const avatarSrc =
+  const avatarSrc = useMemo(() =>
     uploadedAvatarUrl ||
     resolveProfileImage(profileUser?.profileImage, firebaseUser?.uid) ||
     profileUser?.photo3x4Url ||
     profileUser?.avatar ||
-    (toStr(profileUser?.gender).toLowerCase() === "male"
-      ? "/info/man.jpg"
-      : "/info/woman.jpg");
+    (toStr(profileUser?.gender).toLowerCase() === "male" ? "/info/man.jpg" : "/info/woman.jpg"),
+  [uploadedAvatarUrl, profileUser, firebaseUser?.uid]);
+
+  const handleAvatarUploaded = useCallback((url: string) => {
+    setUploadedAvatarUrl(url);
+    toast.success("ຮູບໂປຣໄຟລ໌ຖືກອັບເດດແລ້ວ");
+  }, []);
+
+  const toggleSalary = useCallback(() => setShowSalary((v) => !v), []);
 
   const employmentFields = useMemo<InfoField[]>(() => [
     { label: "ລະຫັດພະນັກງານ", value: toStr(profileUser?.employeeId), icon: User },
@@ -228,37 +217,16 @@ export default function ProfilePage() {
     { label: "ພະແນກ", value: formatDepartment(profileUser?.department), icon: Layers },
     { label: "ສະຖານທີ່ທຳວຽກ", value: toStr(profileUser?.workLocation), icon: Building },
     { label: "ປະເພດພະນັກງານ", value: toStr(profileUser?.employeeType), icon: IdCard },
-    {
-      label: "ເງິນເດືອນ",
-      value: profileUser?.salary
-        ? toStr(NumberFormatter.NoZero(profileUser.salary)) + " ກີບ"
-        : "-",
-      icon: DollarSign,
-      masked: true,
-      revealed: showSalary,
-      onToggle: () => setShowSalary((v) => !v),
-    },
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [profileUser, showSalary]);
+  ], [profileUser]);
+
+  const salaryDisplay = useMemo(() =>
+    profileUser?.salary ? toStr(NumberFormatter.NoZero(profileUser.salary)) + " ກີບ" : "-",
+  [profileUser?.salary]);
 
   const personalFields = useMemo<InfoField[]>(() => [
-    {
-      label: "ຊື່ (ພາສາອັງກິດ)",
-      value: `${profileUser?.firstNameEn || profileUser?.firstName} ${profileUser?.lastNameEn || profileUser?.lastName}`,
-      icon: User,
-    },
-    {
-      label: "ຊື່ (ພາສາລາວ)",
-      value: profileUser?.firstNameLo && profileUser?.lastNameLo
-        ? `${profileUser.firstNameLo} ${profileUser.lastNameLo}`
-        : "-",
-      icon: User,
-    },
-    {
-      label: "ວັນເກີດ",
-      value: profileUser?.dateOfBirth ? formatDateLao(new Date(profileUser.dateOfBirth)) : "-",
-      icon: Calendar,
-    },
+    { label: "ຊື່ (ພາສາອັງກິດ)", value: `${profileUser?.firstNameEn || profileUser?.firstName} ${profileUser?.lastNameEn || profileUser?.lastName}`, icon: User },
+    { label: "ຊື່ (ພາສາລາວ)", value: profileUser?.firstNameLo && profileUser?.lastNameLo ? `${profileUser.firstNameLo} ${profileUser.lastNameLo}` : "-", icon: User },
+    { label: "ວັນເກີດ", value: profileUser?.dateOfBirth ? formatDateLao(new Date(profileUser.dateOfBirth)) : "-", icon: Calendar },
     { label: "ເພດ", value: toStr(profileUser?.gender), icon: User },
     { label: "ກຸ່ມເລືອດ", value: toStr(profileUser?.bloodType), icon: Heart },
     { label: "ສະຖານະ", value: toStr(profileUser?.maritalStatus), icon: Users },
@@ -280,13 +248,13 @@ export default function ProfilePage() {
     return <ProfileSkeleton />;
   }
 
+  const fullNameEn = `${profileUser.firstNameEn || profileUser.firstName} ${profileUser.lastNameEn || profileUser.lastName}`;
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-foreground text-2xl font-bold">ຂໍ້ມູນສ່ວນຕົວ</h1>
-        <p className="text-muted-foreground">
-          ເບິ່ງແລະຮ້ອງຂໍການອັບເດດຂໍ້ມູນສ່ວນຕົວຂອງທ່ານ
-        </p>
+        <p className="text-muted-foreground">ເບິ່ງແລະຮ້ອງຂໍການອັບເດດຂໍ້ມູນສ່ວນຕົວຂອງທ່ານ</p>
       </div>
 
       {/* Profile card */}
@@ -294,73 +262,58 @@ export default function ProfilePage() {
         <CardContent className="pt-6">
           <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-start">
             <div className="relative h-24 w-24">
-              <Dialog
-                open={isImageDialogOpen}
-                onOpenChange={setIsImageDialogOpen}
-              >
-                <DialogTrigger asChild>
-                  <button
-                    type="button"
-                    className="focus-visible:ring-ring rounded-full focus-visible:ring-2 focus-visible:outline-none"
-                    aria-label="View profile image"
-                  >
-                    <Avatar className="h-24 w-24 cursor-zoom-in">
-                      <AvatarImage
-                        src={avatarSrc}
-                        alt={`${profileUser?.firstNameEn || profileUser?.firstName} ${profileUser?.lastNameEn || profileUser?.lastName}`}
-                        className="object-cover"
-                      />
-                      <AvatarFallback className="bg-primary text-primary-foreground text-2xl">
-                        {initials}
-                      </AvatarFallback>
-                    </Avatar>
-                  </button>
-                </DialogTrigger>
-                <DialogContent className="max-h-[80vh] max-w-md p-2">
-                  <DialogTitle className="sr-only">ຮູບໂປຣໄຟລ໌</DialogTitle>
-                  <img
-                    src={avatarSrc}
-                    alt={`${profileUser?.firstNameEn || profileUser?.firstName} ${profileUser?.lastNameEn || profileUser?.lastName}`}
-                    className="h-auto w-full rounded-md object-contain"
-                  />
-                </DialogContent>
-              </Dialog>
-              <div className="absolute -right-1 -bottom-1 z-20">
-                <FileUpload
-                  uid={firebaseUser?.uid || profileUser.id || ""}
-                  className="border-background h-9 w-9 border-2 bg-black/70"
-                  onUploaded={(url) => {
-                    setUploadedAvatarUrl(url);
-                    toast.success("ຮູບໂປຣໄຟລ໌ຖືກອັບເດດແລ້ວ");
-                  }}
+              <Suspense fallback={
+                <Avatar className="h-24 w-24">
+                  <AvatarImage src={avatarSrc} alt={fullNameEn} className="object-cover" />
+                  <AvatarFallback className="bg-primary text-primary-foreground text-2xl">{initials}</AvatarFallback>
+                </Avatar>
+              }>
+                <ImageDialog
+                  open={isImageDialogOpen}
+                  onOpenChange={setIsImageDialogOpen}
+                  src={avatarSrc}
+                  alt={fullNameEn}
+                  trigger={
+                    <button
+                      type="button"
+                      className="focus-visible:ring-ring rounded-full focus-visible:ring-2 focus-visible:outline-none"
+                      aria-label="View profile image"
+                    >
+                      <Avatar className="h-24 w-24 cursor-zoom-in">
+                        <AvatarImage src={avatarSrc} alt={fullNameEn} className="object-cover" />
+                        <AvatarFallback className="bg-primary text-primary-foreground text-2xl">{initials}</AvatarFallback>
+                      </Avatar>
+                    </button>
+                  }
                 />
+              </Suspense>
+              <div className="absolute -right-1 -bottom-1 z-20">
+                <Suspense fallback={<div className="h-9 w-9" />}>
+                  <FileUpload
+                    uid={firebaseUser?.uid || profileUser.id || ""}
+                    className="border-background h-9 w-9 border-2 bg-black/70"
+                    onUploaded={handleAvatarUploaded}
+                  />
+                </Suspense>
               </div>
             </div>
             <div className="text-center sm:text-left">
-              <h2 className="text-foreground text-xl font-semibold">
-                {profileUser?.firstNameEn || profileUser?.firstName}{" "}
-                {profileUser?.lastNameEn || profileUser?.lastName}
-              </h2>
-              {profileUser?.firstNameLo && profileUser?.lastNameLo && (
+              <h2 className="text-foreground text-xl font-semibold">{fullNameEn}</h2>
+              {profileUser.firstNameLo && profileUser.lastNameLo && (
                 <p className="text-foreground/80 text-lg">
                   {profileUser.firstNameLo} {profileUser.lastNameLo}
                 </p>
               )}
               <p className="text-muted-foreground">
-                {toStr(profileUser?.jobTitle || profileUser?.position)}
+                {toStr(profileUser.jobTitle || profileUser.position)}
               </p>
               <p className="text-muted-foreground mt-1 text-sm">
-                {toStr(profileUser?.workLocation || profileUser?.department)}
+                {toStr(profileUser.workLocation || profileUser.department)}
               </p>
               <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
-                <Badge variant="secondary">
-                  {toStr(profileUser?.employeeId)}
-                </Badge>
-                {/* <Badge variant="outline">Active</Badge> */}
-                {profileUser?.employeeType && (
-                  <Badge variant="outline">
-                    {toStr(profileUser.employeeType)}
-                  </Badge>
+                <Badge variant="secondary">{toStr(profileUser.employeeId)}</Badge>
+                {profileUser.employeeType && (
+                  <Badge variant="outline">{toStr(profileUser.employeeType)}</Badge>
                 )}
               </div>
             </div>
@@ -372,46 +325,34 @@ export default function ProfilePage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">ຂໍ້ມູນການຈ້າງງານ</CardTitle>
-          <CardDescription>
-            ບາງຟິວລິດຈຳເປັນຕ້ອງຮັບການອະນຸມັດຈາກ HR ເພື່ອອັບເດດ
-          </CardDescription>
+          <CardDescription>ບາງຟິວລິດຈຳເປັນຕ້ອງຮັບການອະນຸມັດຈາກ HR ເພື່ອອັບເດດ</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-1">
             {employmentFields.map((f, i) => (
-              <div key={i}>
-                <div className="flex items-center justify-between py-2">
-                  <div className="flex items-center gap-3">
-                    <div className="bg-muted flex h-9 w-9 shrink-0 items-center justify-center rounded-lg">
-                      <f.icon className="text-muted-foreground h-4 w-4" />
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground text-xs">{f.label}</p>
-                      <div className="flex items-center gap-2">
-                        <p className="text-foreground text-sm font-medium">
-                          {f.masked && !f.revealed
-                            ? "••••••••"
-                            : f.value || "-"}
-                        </p>
-                        {f.masked && (
-                          <button
-                            onClick={f.onToggle}
-                            className="text-muted-foreground hover:text-foreground transition-colors"
-                          >
-                            {f.revealed ? (
-                              <EyeOff className="h-3.5 w-3.5" />
-                            ) : (
-                              <Eye className="h-3.5 w-3.5" />
-                            )}
-                          </button>
-                        )}
-                      </div>
-                    </div>
+              <EmploymentRow key={i} field={f} />
+            ))}
+            <div>
+              <div className="flex items-center gap-3 py-2">
+                <div className="bg-muted flex h-9 w-9 shrink-0 items-center justify-center rounded-lg">
+                  <DollarSign className="text-muted-foreground h-4 w-4" />
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-xs">ເງິນເດືອນ</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-foreground text-sm font-medium">
+                      {showSalary ? salaryDisplay : "••••••••"}
+                    </p>
+                    <button
+                      onClick={toggleSalary}
+                      className="text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {showSalary ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                    </button>
                   </div>
                 </div>
-                {i < employmentFields.length - 1 && <Separator />}
               </div>
-            ))}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -442,50 +383,12 @@ export default function ProfilePage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">ການສຶກສາ & ວິຊາການ</CardTitle>
-          <CardDescription>
-            ພາບພື້ນຖານການສຶກສາແລະໃບຮັບຮອງວິຊາການຂອງທ່ານ
-          </CardDescription>
+          <CardDescription>ພາບພື້ນຖານການສຶກສາແລະໃບຮັບຮອງວິຊາການຂອງທ່ານ</CardDescription>
         </CardHeader>
         <CardContent>
           <InfoGrid fields={educationFields} />
         </CardContent>
       </Card>
-
-      {/* Update requests */}
-      {/* <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Clock className="w-5 h-5" />
-            ຄໍາຮ້ອງຂໍອັບເດດ
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {profileUpdateRequests.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-6">ບໍ່ມີຄໍາຮ້ອງຂໍອັບເດດທີ່ກຳລັງລໍຖ້າ</p>
-          ) : (
-            <div className="space-y-3">
-              {profileUpdateRequests.map((request) => (
-                <div key={request.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium capitalize">{request.field} Update</p>
-                    <p className="text-xs text-muted-foreground">{request.oldValue} → {request.newValue}</p>
-                    <p className="text-xs text-muted-foreground mt-1">Submitted: {format(new Date(request.createdAt), 'MMM d, yyyy')}</p>
-                  </div>
-                  <Badge
-                    variant={request.status === 'approved' ? 'default' : request.status === 'rejected' ? 'destructive' : 'secondary'}
-                    className="flex items-center gap-1"
-                  >
-                    {request.status === 'approved' && <CheckCircle className="w-3 h-3" />}
-                    {request.status === 'rejected' && <XCircle className="w-3 h-3" />}
-                    {request.status === 'pending' && <Clock className="w-3 h-3" />}
-                    {request.status}
-                  </Badge>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card> */}
     </div>
   );
 }

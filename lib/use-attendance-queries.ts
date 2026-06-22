@@ -102,6 +102,7 @@ export function useAttendanceHistory(userUuid: string | null | undefined) {
       return fetchAttendanceByUserThisMonth(userUuid)
     },
     enabled: !!userUuid,
+    staleTime: 1000 * 60 * 5,
   })
 }
 

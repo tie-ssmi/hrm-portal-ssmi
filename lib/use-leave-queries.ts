@@ -63,15 +63,13 @@ export function useLeaveBalance(params: {
   return useQuery({
     queryKey: leaveKeys.balance(userUuid ?? '', gender ?? ''),
     queryFn: async (): Promise<LeaveBalance> => {
-      const year = new Date().getFullYear().toString()
-
       const [allLeaves, policies] = await Promise.all([
-        fetchAllLeavesByUserUuid(userUuid!),
+        fetchLeavesByUserThisYear(userUuid!),
         fetchPoliciesForGender(gender),
       ])
 
       const approvedThisYear = allLeaves.filter(
-        (l) => l.status === 'approved' && (l.startDate ?? '').startsWith(year),
+        (l) => l.status === 'approved',
       )
 
       const annualUsed = approvedThisYear
