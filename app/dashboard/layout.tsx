@@ -1,7 +1,6 @@
 import type { Metadata } from 'next'
 
 import { DashboardLayoutShell } from '@/components/dashboard/dashboard-layout-shell'
-import { NotificationProvider } from "@/components/NotificationProvider"
 
 export const metadata: Metadata = {
   robots: {
@@ -15,9 +14,5 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
-  return (
-    <NotificationProvider>
-      <DashboardLayoutShell>{children}</DashboardLayoutShell>
-    </NotificationProvider>
-  ) 
+  return <DashboardLayoutShell>{children}</DashboardLayoutShell>
 }

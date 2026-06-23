@@ -196,27 +196,20 @@ export async function getServerDateTimeInVientiane(): Promise<ServerDateTime> {
 // System-generated not_checked_in records may only have uid (no userUuid).
 // Pass sinceIsoDate (YYYY-MM-DD) to scope results and avoid full-history scans.
 async function fetchAttendanceDocs(userUuid: string, sinceIsoDate?: string) {
-  async function runQueries(withDateFilter: boolean) {
-    const dateFilter = (withDateFilter && sinceIsoDate) ? [where('dateKey', '>=', sinceIsoDate)] : []
-    const [byUserUuid, byUid] = await Promise.all([
-      getDocs(query(collection(db, 'attendance'), where('userUuid', '==', userUuid), ...dateFilter)),
-      getDocs(query(collection(db, 'attendance'), where('uid', '==', userUuid), ...dateFilter)),
-    ])
-    const seen = new Set<string>()
-    return [...byUserUuid.docs, ...byUid.docs].filter(d => {
-      if (seen.has(d.id)) return false
-      seen.add(d.id)
-      return true
-    })
+  const [byUserUuid, byUid] = await Promise.all([
+    getDocs(query(collection(db, 'attendance'), where('userUuid', '==', userUuid))),
+    getDocs(query(collection(db, 'attendance'), where('uid', '==', userUuid))),
+  ])
+  const seen = new Set<string>()
+  const docs = [...byUserUuid.docs, ...byUid.docs].filter(d => {
+    if (seen.has(d.id)) return false
+    seen.add(d.id)
+    return true
+  })
+  if (sinceIsoDate) {
+    return docs.filter(d => (d.data().dateKey ?? '') >= sinceIsoDate)
   }
-
-  try {
-    return await runQueries(true)
-  } catch {
-    // composite index (userUuid/uid + dateKey) ຍັງບໍ່ຖືກສ້າງໃນ Firestore Console
-    // fallback: query ແບບ unfiltered ແລ້ວໃຫ້ isSameMonth filter ທີ່ client ຈັດການ
-    return runQueries(false)
-  }
+  return docs
 }
 
 export async function fetchAttendanceByUserThisMonth(userUuid: string): Promise<AttendanceRecord[]> {

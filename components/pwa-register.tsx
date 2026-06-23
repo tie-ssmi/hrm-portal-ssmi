@@ -24,6 +24,19 @@ export function clearDeferredPrompt() {
 
 export function PWARegister() {
   useEffect(() => {
+    window.addEventListener('error', (e) => {
+      if (e.message?.includes('ChunkLoadError') || e.message?.includes('Failed to fetch dynamically imported module')) {
+        window.location.reload()
+      }
+    })
+    window.addEventListener('unhandledrejection', (e) => {
+      if (String(e.reason).includes('ChunkLoadError') || String(e.reason).includes('Failed to fetch dynamically imported module')) {
+        window.location.reload()
+      }
+    })
+  }, [])
+
+  useEffect(() => {
     if (!('serviceWorker' in navigator)) return
 
     navigator.serviceWorker

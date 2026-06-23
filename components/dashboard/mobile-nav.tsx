@@ -97,11 +97,6 @@ export function MobileNav() {
     setPendingHref(null);
   }, [pathname]);
 
-  useEffect(() => {
-    MOBILE_PREFETCH_HREFS.forEach((href) => router.prefetch(href));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const canApprove = useMemo(
     () =>
       (user?.rolePermissions?.approveBranch ?? false) ||
@@ -117,6 +112,11 @@ export function MobileNav() {
     setPendingHref(href);
     startNavigation();
     router.push(href);
+    setTimeout(() => {
+      if (!isNavItemActive(pathnameRef.current, href)) {
+        window.location.href = href;
+      }
+    }, 2000);
   }, [router, startNavigation]);
 
   const handleMenuClick = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {

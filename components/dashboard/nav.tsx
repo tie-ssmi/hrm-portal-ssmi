@@ -132,17 +132,17 @@ export function DashboardNav() {
     setPendingHref(null);
   }, [pathname]);
 
-  useEffect(() => {
-    PREFETCH_HREFS.forEach((href) => router.prefetch(href));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const handleNavClick = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
     const href = e.currentTarget.dataset.href!;
     if (isNavItemActive(pathnameRef.current, href)) return;
     setPendingHref(href);
     startNavigation();
     router.push(href);
+    setTimeout(() => {
+      if (!isNavItemActive(pathnameRef.current, href)) {
+        window.location.href = href;
+      }
+    }, 2000);
   }, [router, startNavigation]);
 
   const navItems = useMemo(

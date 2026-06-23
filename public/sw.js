@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'ssmi-hrm-v2'
+const CACHE_VERSION = 'ssmi-hrm-v4'
 const CACHE_NAME = CACHE_VERSION
 
 const STATIC_ASSETS = [
@@ -69,20 +69,7 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  // Network first — HTML pages
-  event.respondWith(
-    fetch(request)
-      .then((res) => {
-        if (!res || res.status !== 200 || res.type !== 'basic') return res;
-
-        // 🔒 FIX: Clone ທັນທີຫຼັງຈາກໄດ້ຮັບຄ່າຈາກ Network
-        const responseToCache = res.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(request, responseToCache));
-        
-        return res;
-      })
-      .catch(() => caches.match(request))
-  )
+  // Network only — HTML pages (ບໍ່ cache ເພື່ອໃຫ້ deploy ໃໝ່ມີຜົນທັນທີ)
 })
 
 // SW Update — notify clients when new SW is ready
