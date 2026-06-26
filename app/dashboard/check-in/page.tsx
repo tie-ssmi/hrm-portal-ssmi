@@ -1,7 +1,7 @@
 'use client'
 
 // ** core
-import { Fragment, Suspense, useMemo, useState } from 'react'
+import { Fragment, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 
 // ** assets / icons
@@ -105,11 +105,16 @@ function CheckInPageContent() {
 
   const userWorkLocation = getUserWorkLocationName(user?.workLocation)
 
-  // FIX Bug 3: default to __all__ when user has no workLocation to avoid silent no-op filter
-  const [workLocationFilter, setWorkLocationFilter] = useState<string>(
-    userWorkLocation ? '__user__' : '__all__'
-  )
+  const [workLocationFilter, setWorkLocationFilter] = useState<string>('__all__')
   const [search, setSearch] = useState('')
+  const hasInitedFilter = useRef(false)
+
+  useEffect(() => {
+    if (userWorkLocation && !hasInitedFilter.current) {
+      hasInitedFilter.current = true
+      setWorkLocationFilter('__user__')
+    }
+  }, [userWorkLocation])
 
   const workLocations = useMemo(() => {
     const set = new Set<string>()

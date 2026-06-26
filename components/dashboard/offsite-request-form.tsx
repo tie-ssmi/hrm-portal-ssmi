@@ -1,7 +1,13 @@
-'use client'
+"use client";
 
 // ** core
-import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
+import React, {
+  useState,
+  useMemo,
+  useEffect,
+  useCallback,
+  useRef,
+} from "react";
 
 // ** assets / icons
 import {
@@ -20,17 +26,27 @@ import {
   Pencil,
   Plus,
   Car,
-} from 'lucide-react'
+  Upload,
+} from "lucide-react";
 
 // ** shared components
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Field, FieldGroup, FieldLabel, FieldError } from '@/components/ui/field'
-import { Spinner } from '@/components/ui/spinner'
-import { Calendar } from '@/components/ui/calendar'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Field,
+  FieldGroup,
+  FieldLabel,
+  FieldError,
+} from "@/components/ui/field";
+import { Spinner } from "@/components/ui/spinner";
+import { Calendar } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Command,
   CommandEmpty,
@@ -38,33 +54,34 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from '@/components/ui/command'
+} from "@/components/ui/command";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select'
-import { Separator } from '@/components/ui/separator'
-import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar'
+} from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
 
 // ** third party
-import { useQuery } from '@tanstack/react-query'
-import { toast } from 'sonner'
-import { format, isWeekend, parseISO } from 'date-fns'
+import { useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { format, isWeekend, parseISO } from "date-fns";
 import {
   collection,
   getDocs,
   addDoc,
   doc,
   updateDoc,
-} from 'firebase/firestore'
+} from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 // ** config / utils / types / hooks
-import { useAuth } from '@/lib/auth-context'
-import { db } from '@/lib/firebase'
-import { cn } from '@/lib/utils'
+import { useAuth } from "@/lib/auth-context";
+import { db, storage } from "@/lib/firebase";
+import { cn } from "@/lib/utils";
 import type {
   ActivityCode,
   RoleInTrip,
@@ -73,98 +90,109 @@ import type {
   Department,
   WorkLocation,
   OffsiteRequestDoc,
-} from '@/types/workOutside'
-import { LAO_PROVINCES } from '@/public/data/laos-provinces'
+} from "@/types/workOutside";
+import { LAO_PROVINCES } from "@/public/data/laos-provinces";
 
 // ** services
-import { fetchOfficialHolidays } from '@/services/officialHolidays'
+import { fetchOfficialHolidays } from "@/services/officialHolidays";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const ACTIVITIES = [
   {
-    code: 'MEET_CLIENT' as ActivityCode,
+    code: "MEET_CLIENT" as ActivityCode,
     Icon: Handshake,
-    nameLo: 'ໂຄສະນາພາຍນອກ',
-    nameEn: 'Meet Client',
-    desc: 'ນຳສະເໜີ ຫຼື ປະສານງານກັບລູກຄ້າ',
+    nameLo: "ໂຄສະນາພາຍນອກ",
+    nameEn: "Meet Client",
+    desc: "ນຳສະເໜີ ຫຼື ປະສານງານກັບລູກຄ້າ",
   },
   {
-    code: 'MEETING' as ActivityCode,
+    code: "MEETING" as ActivityCode,
     Icon: Users,
-    nameLo: 'ປະຊຸມພາຍນອກ',
-    nameEn: 'External Meeting',
-    desc: 'ປະຊຸມນອກສຳນັກງານ',
+    nameLo: "ປະຊຸມພາຍນອກ",
+    nameEn: "External Meeting",
+    desc: "ປະຊຸມນອກສຳນັກງານ",
   },
   {
-    code: 'BOOTH' as ActivityCode,
+    code: "BOOTH" as ActivityCode,
     Icon: Store,
-    nameLo: 'ອອກບູດງານ',
-    nameEn: 'Booth Exhibition',
-    desc: 'ນຳສະເໜີຜະລິດຕະພັນໃນງານ',
+    nameLo: "ອອກບູດງານ",
+    nameEn: "Booth Exhibition",
+    desc: "ນຳສະເໜີຜະລິດຕະພັນໃນງານ",
   },
   {
-    code: 'PROMO' as ActivityCode,
+    code: "PROMO" as ActivityCode,
     Icon: Megaphone,
-    nameLo: 'ໂປຣໂມຊັນ',
-    nameEn: 'Promotion',
-    desc: 'ໂຄສະນາ ແລະ ການຕະຫຼາດ',
+    nameLo: "ໂປຣໂມຊັນ",
+    nameEn: "Promotion",
+    desc: "ໂຄສະນາ ແລະ ການຕະຫຼາດ",
   },
   {
-    code: 'TRAINING' as ActivityCode,
+    code: "TRAINING" as ActivityCode,
     Icon: BookOpen,
-    nameLo: 'ຝຶກອົບຮົມ',
-    nameEn: 'Training',
-    desc: 'ສຳມະນາ ແລະ ການອົບຮົມ',
+    nameLo: "ຝຶກອົບຮົມ",
+    nameEn: "Training",
+    desc: "ສຳມະນາ ແລະ ການອົບຮົມ",
   },
   {
-    code: 'OTHERS' as ActivityCode,
+    code: "OTHERS" as ActivityCode,
     Icon: Plus,
-    nameLo: 'ອື່ນໆ',
-    nameEn: 'Others',
-    desc: 'ກິດຈະກຳອື່ນໆ ທີ່ບໍ່ໄດ້ກໍານົດຂ້າງເທິງ',
+    nameLo: "ອື່ນໆ",
+    nameEn: "Others",
+    desc: "ກິດຈະກຳອື່ນໆ ທີ່ບໍ່ໄດ້ກໍານົດຂ້າງເທິງ",
   },
-] as const
+] as const;
 
-const ROLE_OPTIONS: RoleInTrip[] = ['Lead', 'Support', 'Presenter', 'Coordinator', 'Observer']
-const CUSTOMER_REQUIRED_TYPES: ActivityCode[] = ['MEET_CLIENT', 'MEETING', 'BOOTH']
+const ROLE_OPTIONS: RoleInTrip[] = [
+  "Lead",
+  "Support",
+  "Presenter",
+  "Coordinator",
+  "Observer",
+];
+const CUSTOMER_REQUIRED_TYPES: ActivityCode[] = [
+  "MEET_CLIENT",
+  "MEETING",
+  "BOOTH",
+];
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface Props {
-  onSuccess?: () => void
-  onDirtyChange?: (dirty: boolean) => void
-  initialData?: OffsiteRequestDoc
+  onSuccess?: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
+  initialData?: OffsiteRequestDoc;
 }
 
 // ─── Small helpers ────────────────────────────────────────────────────────────
 
-
 function StepIndicator({ current }: { current: number }) {
-  const steps = ['ປະເພດກິດຈະກຳ', 'ລາຍລະອຽດ', 'ທີມ & ກວດສອບ']
+  const steps = ["ປະເພດກິດຈະກຳ", "ລາຍລະອຽດ", "ທີມ & ກວດສອບ"];
   return (
     <div className="flex items-center gap-1 mb-6">
       {steps.map((label, i) => {
-        const s = i + 1
-        const done = s < current
-        const active = s === current
+        const s = i + 1;
+        const done = s < current;
+        const active = s === current;
         return (
           <React.Fragment key={s}>
             <div className="flex flex-col items-center gap-1">
               <div
                 className={cn(
-                  'w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-colors',
-                  active && 'bg-primary text-primary-foreground',
-                  done && 'bg-primary/20 text-primary',
-                  !active && !done && 'bg-muted text-muted-foreground',
+                  "w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-colors",
+                  active && "bg-primary text-primary-foreground",
+                  done && "bg-primary/20 text-primary",
+                  !active && !done && "bg-muted text-muted-foreground",
                 )}
               >
                 {done ? <Check className="w-4 h-4" /> : s}
               </div>
               <span
                 className={cn(
-                  'text-xs hidden sm:block whitespace-nowrap',
-                  active ? 'text-foreground font-medium' : 'text-muted-foreground',
+                  "text-xs hidden sm:block whitespace-nowrap",
+                  active
+                    ? "text-foreground font-medium"
+                    : "text-muted-foreground",
                 )}
               >
                 {label}
@@ -172,14 +200,17 @@ function StepIndicator({ current }: { current: number }) {
             </div>
             {s < 3 && (
               <div
-                className={cn('flex-1 h-0.5 mb-4', done ? 'bg-primary/50' : 'bg-muted')}
+                className={cn(
+                  "flex-1 h-0.5 mb-4",
+                  done ? "bg-primary/50" : "bg-muted",
+                )}
               />
             )}
           </React.Fragment>
-        )
+        );
       })}
     </div>
-  )
+  );
 }
 
 function DatePickerButton({
@@ -188,21 +219,24 @@ function DatePickerButton({
   placeholder,
   minDate,
 }: {
-  value: Date | undefined
-  onSelect: (d: Date | undefined) => void
-  placeholder: string
-  minDate?: Date
+  value: Date | undefined;
+  onSelect: (d: Date | undefined) => void;
+  placeholder: string;
+  minDate?: Date;
 }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(false);
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
-          className={cn('w-full justify-start text-left font-normal', !value && 'text-muted-foreground')}
+          className={cn(
+            "w-full justify-start text-left font-normal",
+            !value && "text-muted-foreground",
+          )}
         >
           <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
-          {value ? format(value, 'dd/MM/yyyy') : placeholder}
+          {value ? format(value, "dd/MM/yyyy") : placeholder}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0" align="start">
@@ -210,223 +244,267 @@ function DatePickerButton({
           mode="single"
           selected={value}
           onSelect={(d) => {
-            onSelect(d)
-            setOpen(false)
+            onSelect(d);
+            setOpen(false);
           }}
           disabled={minDate ? (d) => d < minDate : undefined}
           initialFocus
         />
       </PopoverContent>
     </Popover>
-  )
+  );
 }
 
 function formatThousands(val: string) {
-  const digits = val.replace(/\D/g, '')
-  return digits ? Number(digits).toLocaleString('en-US') : ''
+  const digits = val.replace(/\D/g, "");
+  return digits ? Number(digits).toLocaleString("en-US") : "";
 }
 
 // Firestore rejects undefined values — strip them via JSON round-trip
 function stripUndefined<T>(obj: T): T {
-  return JSON.parse(JSON.stringify(obj)) as T
+  return JSON.parse(JSON.stringify(obj)) as T;
 }
 
 // photoUrl can be stored as string, null, or { uid: { profileImage: url } } (legacy bug)
 function resolvePhotoUrl(raw: unknown): string | undefined {
-  if (!raw || typeof raw === 'boolean') return undefined
-  if (typeof raw === 'string') return raw
-  if (typeof raw === 'object') {
-    const values = Object.values(raw as Record<string, unknown>)
+  if (!raw || typeof raw === "boolean") return undefined;
+  if (typeof raw === "string") return raw;
+  if (typeof raw === "object") {
+    const values = Object.values(raw as Record<string, unknown>);
     for (const v of values) {
-      if (typeof v === 'string') return v
-      if (v && typeof v === 'object') {
-        const inner = (v as Record<string, unknown>).profileImage
-        if (typeof inner === 'string') return inner
+      if (typeof v === "string") return v;
+      if (v && typeof v === "object") {
+        const inner = (v as Record<string, unknown>).profileImage;
+        if (typeof inner === "string") return inner;
       }
     }
   }
-  return undefined
+  return undefined;
 }
 
 function generateRequestNo(): string {
-  const now = new Date()
-  const year = now.getFullYear()
+  const now = new Date();
+  const year = now.getFullYear();
   // base36 last-6 chars of epoch ms — unique per ms, no Firestore read needed
-  const suffix = now.getTime().toString(36).slice(-6).toUpperCase()
-  return `WO-${year}-${suffix}`
+  const suffix = now.getTime().toString(36).slice(-6).toUpperCase();
+  return `WO-${year}-${suffix}`;
 }
 
 type VehicleDoc = {
-  nameLocation: string
-  typeVehicle: string
-  vehicleName: string
-  workLocationUid: string
-}
+  nameLocation: string;
+  typeVehicle: string;
+  vehicleName: string;
+  workLocationUid: string;
+};
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialData }: Props) {
-  const { user } = useAuth()
-  const isEditMode = !!initialData
+export default function OffsiteRequestForm({
+  onSuccess,
+  onDirtyChange,
+  initialData,
+}: Props) {
+  const { user } = useAuth();
+  const isEditMode = !!initialData;
 
   // ── step ──
-  const [step, setStep] = useState(1)
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const containerRef = useRef<HTMLDivElement>(null)
+  const [step, setStep] = useState(1);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const scrollable = containerRef.current?.closest('[data-slot="dialog-content"]')
-    scrollable?.scrollTo({ top: 0, behavior: 'smooth' })
-  }, [step])
+    const scrollable = containerRef.current?.closest(
+      '[data-slot="dialog-content"]',
+    );
+    scrollable?.scrollTo({ top: 0, behavior: "smooth" });
+  }, [step]);
 
   // ── step 1 ──
   const [activityCode, setActivityCode] = useState<ActivityCode | null>(
     () => initialData?.activityType.code ?? null,
-  )
+  );
 
   // ── step 2 ──
-  const [subject, setSubject] = useState(() => initialData?.subject ?? '')
-  const [details, setDetails] = useState(() => initialData?.details ?? '')
-  const [customerName, setCustomerName] = useState(() => initialData?.customerName ?? '')
+  const [subject, setSubject] = useState(() => initialData?.subject ?? "");
+  const [details, setDetails] = useState(() => initialData?.details ?? "");
+  const [customerName, setCustomerName] = useState(
+    () => initialData?.customerName ?? "",
+  );
   const [provinceId, setProvinceId] = useState(() => {
-    if (!initialData?.workLocationUid) return ''
-    return LAO_PROVINCES.find((p) =>
-      p.districts.some((d) => d.id === initialData.workLocationUid),
-    )?.id ?? ''
-  })
-  const [districtId, setDistrictId] = useState(() => initialData?.workLocationUid ?? '')
-  const [startDate, setStartDate] = useState<Date | undefined>(
-    () => (initialData?.startDate ? parseISO(initialData.startDate) : undefined),
-  )
-  const [endDate, setEndDate] = useState<Date | undefined>(
-    () => (initialData?.endDate ? parseISO(initialData.endDate) : undefined),
-  )
-  const [costDisplay, setCostDisplay] = useState(
-    () => (initialData ? initialData.estimatedCost.toLocaleString('en-US') : '0'),
-  )
+    if (!initialData?.workLocationUid) return "";
+    return (
+      LAO_PROVINCES.find((p) =>
+        p.districts.some((d) => d.id === initialData.workLocationUid),
+      )?.id ?? ""
+    );
+  });
+  const [districtId, setDistrictId] = useState(
+    () => initialData?.workLocationUid ?? "",
+  );
+  const [startDate, setStartDate] = useState<Date | undefined>(() =>
+    initialData?.startDate ? parseISO(initialData.startDate) : undefined,
+  );
+  const [endDate, setEndDate] = useState<Date | undefined>(() =>
+    initialData?.endDate ? parseISO(initialData.endDate) : undefined,
+  );
+  const [costDisplay, setCostDisplay] = useState(() =>
+    initialData ? initialData.estimatedCost.toLocaleString("en-US") : "0",
+  );
 
   // ── step 3 ──
-  const [teammates, setTeammates] = useState<TeammateEntry[]>(() => initialData?.teammate ?? [])
-  const [teammateSearchOpen, setTeammateSearchOpen] = useState(false)
+  const [teammates, setTeammates] = useState<TeammateEntry[]>(
+    () => initialData?.teammate ?? [],
+  );
+  const [teammateSearchOpen, setTeammateSearchOpen] = useState(false);
+
+  // ── doc upload ──
+  const [docFile, setDocFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── validation errors ──
-  const [errors, setErrors] = useState<Partial<Record<string, string>>>({})
+  const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
 
   // ── dirty tracking ──
-  const markDirty = useCallback(() => onDirtyChange?.(true), [onDirtyChange])
+  const markDirty = useCallback(() => onDirtyChange?.(true), [onDirtyChange]);
   useEffect(() => {
-    if (activityCode !== null) markDirty()
-  }, [activityCode, markDirty])
+    if (activityCode !== null) markDirty();
+  }, [activityCode, markDirty]);
   useEffect(() => {
-    if (subject || details || customerName || districtId || startDate || endDate || costDisplay) markDirty()
-  }, [subject, details, customerName, districtId, startDate, endDate, costDisplay, markDirty])
+    if (
+      subject ||
+      details ||
+      customerName ||
+      districtId ||
+      startDate ||
+      endDate ||
+      costDisplay
+    )
+      markDirty();
+  }, [
+    subject,
+    details,
+    customerName,
+    districtId,
+    startDate,
+    endDate,
+    costDisplay,
+    markDirty,
+  ]);
 
   // ─── Firestore queries ──────────────────────────────────────────────────────
 
   // workLocation can be string (legacy uuid) or WorkLocationInfo object
   const workLocationUuid =
-    typeof user?.workLocation === 'object'
+    typeof user?.workLocation === "object"
       ? user.workLocation?.uuid
-      : user?.workLocation ?? undefined
+      : (user?.workLocation ?? undefined);
 
   const { data: employeesList = [] } = useQuery<EmployeeDoc[]>({
-    queryKey: ['employees-all', workLocationUuid],
+    queryKey: ["employees-all", workLocationUuid],
     queryFn: async () => {
-      const snap = await getDocs(collection(db, 'employees'))
+      const snap = await getDocs(collection(db, "employees"));
       return snap.docs
         .map((d) => d.data() as EmployeeDoc)
         .filter((e) => {
-          if (e.status === 'delete') return false
-          if (!workLocationUuid) return true
+          if (e.status === "delete") return false;
+          if (!workLocationUuid) return true;
           const empLocationUuid =
-            typeof e.workLocation === 'object'
+            typeof e.workLocation === "object"
               ? e.workLocation?.uuid
-              : e.workLocation ?? e.workLocationUid
-          return empLocationUuid === workLocationUuid
-        })
+              : (e.workLocation ?? e.workLocationUid);
+          return empLocationUuid === workLocationUuid;
+        });
     },
     enabled: !!user,
-  })
+  });
 
   const { data: vehiclesList = [] } = useQuery<VehicleDoc[]>({
-    queryKey: ['vehicles-all', workLocationUuid],
+    queryKey: ["vehicles-all", workLocationUuid],
     queryFn: async () => {
-      const snap = await getDocs(collection(db, 'vehicles'))
+      const snap = await getDocs(collection(db, "vehicles"));
       return snap.docs
         .map((d) => d.data() as VehicleDoc)
-        .filter((v) => v.workLocationUid === workLocationUuid)
+        .filter((v) => v.workLocationUid === workLocationUuid);
     },
     enabled: !!user,
-  })
+  });
 
   // ─── Derived ────────────────────────────────────────────────────────────────
 
-  const activityMeta = useMemo(() => ACTIVITIES.find((a) => a.code === activityCode), [activityCode])
+  const activityMeta = useMemo(
+    () => ACTIVITIES.find((a) => a.code === activityCode),
+    [activityCode],
+  );
 
   const { data: officialHolidays = [] } = useQuery({
-    queryKey: ['officialHolidays'],
+    queryKey: ["officialHolidays"],
     queryFn: fetchOfficialHolidays,
     staleTime: 24 * 60 * 60 * 1000,
-  })
+  });
 
   const holidaySet = useMemo(
     () => new Set(officialHolidays.map((h) => h.date)),
     [officialHolidays],
-  )
+  );
 
   const durationDays = useMemo(() => {
-    if (!startDate || !endDate) return 0
-    const start = new Date(startDate)
-    const end = new Date(endDate)
-    start.setHours(0, 0, 0, 0)
-    end.setHours(0, 0, 0, 0)
-    if (start > end) return 0
-    let count = 0
-    const cursor = new Date(start)
+    if (!startDate || !endDate) return 0;
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    start.setHours(0, 0, 0, 0);
+    end.setHours(0, 0, 0, 0);
+    if (start > end) return 0;
+    let count = 0;
+    const cursor = new Date(start);
     while (cursor <= end) {
-      const dateKey = format(cursor, 'yyyy-MM-dd')
-      if (!isWeekend(cursor) && !holidaySet.has(dateKey)) count++
-      cursor.setDate(cursor.getDate() + 1)
+      const dateKey = format(cursor, "yyyy-MM-dd");
+      if (!isWeekend(cursor) && !holidaySet.has(dateKey)) count++;
+      cursor.setDate(cursor.getDate() + 1);
     }
-    return count
-  }, [startDate, endDate, holidaySet])
+    return count;
+  }, [startDate, endDate, holidaySet]);
 
   const selectedProvince = useMemo(
     () => LAO_PROVINCES.find((p) => p.id === provinceId),
     [provinceId],
-  )
+  );
   const selectedDistrict = useMemo(
     () => selectedProvince?.districts.find((d) => d.id === districtId),
     [selectedProvince, districtId],
-  )
-  const locationDisplay = selectedProvince && selectedDistrict
-    ? `${selectedProvince.name} - ${selectedDistrict.name}`
-    : ''
+  );
+  const locationDisplay =
+    selectedProvince && selectedDistrict
+      ? `${selectedProvince.name} - ${selectedDistrict.name}`
+      : "";
 
-  const needsCustomer = activityCode ? CUSTOMER_REQUIRED_TYPES.includes(activityCode) : false
+  const needsCustomer = activityCode
+    ? CUSTOMER_REQUIRED_TYPES.includes(activityCode)
+    : false;
 
   // ─── Validation ─────────────────────────────────────────────────────────────
 
   function validateStep2() {
-    const e: Partial<Record<string, string>> = {}
-    if (!subject.trim()) e.subject = 'ກະລຸນາໃສ່ຫົວຂໍ້'
-    if (!details.trim()) e.details = 'ກະລຸນາໃສ່ລາຍລະອຽດ'
-    if (needsCustomer && !customerName.trim()) e.customerName = 'ກະລຸນາເລືອກລົດ'
-    if (!provinceId) e.provinceId = 'ກະລຸນາເລືອກແຂວງ'
-    if (!districtId) e.districtId = 'ກະລຸນາເລືອກເມືອງ'
-    if (!startDate) e.startDate = 'ກະລຸນາເລືອກວັນທີເລີ່ມ'
-    if (!endDate) e.endDate = 'ກະລຸນາເລືອກວັນທີສິ້ນສຸດ'
-    if (startDate && endDate && endDate < startDate) e.endDate = 'ວັນທີສິ້ນສຸດຕ້ອງຫຼັງວັນທີເລີ່ມ'
-    if (!costDisplay) e.estimatedCost = 'ກະລຸນາໃສ່ຄ່າໃຊ້ຈ່າຍ'
-    setErrors(e)
-    return Object.keys(e).length === 0
+    const e: Partial<Record<string, string>> = {};
+    if (!subject.trim()) e.subject = "ກະລຸນາໃສ່ຫົວຂໍ້";
+    if (!details.trim()) e.details = "ກະລຸນາໃສ່ລາຍລະອຽດ";
+    if (needsCustomer && !customerName.trim())
+      e.customerName = "ກະລຸນາເລືອກລົດ";
+    if (!provinceId) e.provinceId = "ກະລຸນາເລືອກແຂວງ";
+    if (!districtId) e.districtId = "ກະລຸນາເລືອກເມືອງ";
+    if (!startDate) e.startDate = "ກະລຸນາເລືອກວັນທີເລີ່ມ";
+    if (!endDate) e.endDate = "ກະລຸນາເລືອກວັນທີສິ້ນສຸດ";
+    if (startDate && endDate && endDate < startDate)
+      e.endDate = "ວັນທີສິ້ນສຸດຕ້ອງຫຼັງວັນທີເລີ່ມ";
+    if (!costDisplay) e.estimatedCost = "ກະລຸນາໃສ່ຄ່າໃຊ້ຈ່າຍ";
+    setErrors(e);
+    return Object.keys(e).length === 0;
   }
 
   // ─── Teammate helpers ────────────────────────────────────────────────────────
 
   function addTeammate(emp: EmployeeDoc) {
-    if (teammates.some((t) => t.uid === emp.uid)) return
-    markDirty()
+    if (teammates.some((t) => t.uid === emp.uid)) return;
+    markDirty();
     setTeammates((prev) => [
       ...prev,
       {
@@ -436,63 +514,86 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
         email: emp.email,
         jobTitle: emp.jobTitle,
         department: emp.department,
-        roleInTrip: 'Support',
-        photoUrl: resolvePhotoUrl(emp.profileImage) ?? resolvePhotoUrl(emp.photo3x4Url),
+        roleInTrip: "Support",
+        photoUrl:
+          resolvePhotoUrl(emp.profileImage) ?? resolvePhotoUrl(emp.photo3x4Url),
       },
-    ])
-    setTeammateSearchOpen(false)
+    ]);
+    setTeammateSearchOpen(false);
   }
 
   function removeTeammate(uid: string) {
-    setTeammates((prev) => prev.filter((t) => t.uid !== uid))
+    setTeammates((prev) => prev.filter((t) => t.uid !== uid));
   }
 
   function updateRole(uid: string, role: RoleInTrip) {
-    setTeammates((prev) => prev.map((t) => (t.uid === uid ? { ...t, roleInTrip: role } : t)))
+    setTeammates((prev) =>
+      prev.map((t) => (t.uid === uid ? { ...t, roleInTrip: role } : t)),
+    );
   }
 
   // ─── Submit ──────────────────────────────────────────────────────────────────
 
   function resetForm() {
-    setStep(1)
-    setActivityCode(null)
-    setSubject('')
-    setDetails('')
-    setCustomerName('')
-    setProvinceId('')
-    setDistrictId('')
-    setStartDate(undefined)
-    setEndDate(undefined)
-    setCostDisplay('0')
-    setTeammates([])
-    setErrors({})
-    onDirtyChange?.(false)
+    setStep(1);
+    setActivityCode(null);
+    setSubject("");
+    setDetails("");
+    setCustomerName("");
+    setProvinceId("");
+    setDistrictId("");
+    setStartDate(undefined);
+    setEndDate(undefined);
+    setCostDisplay("0");
+    setTeammates([]);
+    setDocFile(null);
+    setErrors({});
+    onDirtyChange?.(false);
   }
 
   async function handleSubmit() {
-    if (!user) return
-    setIsSubmitting(true)
+    if (!user) return;
+    setIsSubmitting(true);
     try {
-      const activity = activityMeta!
-      const now = new Date().toISOString()
-      const monthKey = format(startDate!, 'MM-yyyy')
-      const estimatedCost = Number(costDisplay.replace(/,/g, ''))
+      const activity = activityMeta!;
+      const now = new Date().toISOString();
+      const monthKey = format(startDate!, "MM-yyyy");
+      const estimatedCost = Number(costDisplay.replace(/,/g, ""));
 
       const requesterDept: Department =
-        typeof user.department === 'object' && user.department !== null
+        typeof user.department === "object" && user.department !== null
           ? (user.department as Department)
-          : { uuid: '', title: String(user.department ?? ''), department: String(user.department ?? '') }
+          : {
+              uuid: "",
+              title: String(user.department ?? ""),
+              department: String(user.department ?? ""),
+            };
 
       const requesterLoc: WorkLocation =
-        typeof user.workLocation === 'object' && user.workLocation !== null
+        typeof user.workLocation === "object" && user.workLocation !== null
           ? (user.workLocation as WorkLocation)
-          : { uuid: '', code: '', nameLo: String(user.workLocation ?? '') }
+          : { uuid: "", code: "", nameLo: String(user.workLocation ?? "") };
 
-      const fullNameEn = `${user.firstNameEn ?? user.firstName ?? ''} ${user.lastNameEn ?? user.lastName ?? ''}`.trim()
-      const fullNameLo = `${user.firstNameLo ?? ''} ${user.lastNameLo ?? ''}`.trim()
-      const userImage = user.profileImage || user.photo3x4Url
+      const fullNameEn =
+        `${user.firstNameEn ?? user.firstName ?? ""} ${user.lastNameEn ?? user.lastName ?? ""}`.trim();
+      const fullNameLo =
+        `${user.firstNameLo ?? ""} ${user.lastNameLo ?? ""}`.trim();
+      const userImage = user.profileImage || user.photo3x4Url;
 
-      const participantIds = [...new Set([user.uid, ...teammates.map((t) => t.uid)])]
+      let docLink: string | undefined = undefined;
+      if (docFile) {
+        const ext = docFile.name.split(".").pop() ?? "file";
+        const storageRef = ref(
+          storage,
+          `workOutside/${user.uid}/${Date.now()}.${ext}`,
+        );
+        const snapshot = await uploadBytes(storageRef, docFile);
+        docLink = await getDownloadURL(snapshot.ref);
+      }
+
+      const participantIds = [
+        ...new Set([user.uid, ...teammates.map((t) => t.uid)]),
+      ];
 
       const payload = {
         requester: {
@@ -500,7 +601,7 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
           fullNameEn,
           fullNameLo,
           email: user.email,
-          jobTitle: user.jobTitle ?? user.position ?? '',
+          jobTitle: user.jobTitle ?? user.position ?? "",
           department: requesterDept,
           workLocation: requesterLoc,
         },
@@ -510,10 +611,10 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
         customerName,
         location: locationDisplay,
         workLocationUid: districtId,
-        departmentUid: requesterDept.uuid || '',
-        requesterWorkLocationUid: requesterLoc.uuid || '',
-        startDate: format(startDate!, 'yyyy-MM-dd'),
-        endDate: format(endDate!, 'yyyy-MM-dd'),
+        departmentUid: requesterDept.uuid || "",
+        requesterWorkLocationUid: requesterLoc.uuid || "",
+        startDate: format(startDate!, "yyyy-MM-dd"),
+        endDate: format(endDate!, "yyyy-MM-dd"),
         durationDays,
         monthKey,
         estimatedCost,
@@ -524,38 +625,45 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
         participantCount: participantIds.length,
         updatedAt: now,
         updatedBy: fullNameEn,
-      }
+        docLink: docLink ?? null,
+      };
 
       if (isEditMode && initialData) {
-        await updateDoc(doc(db, 'workOutside', initialData.id), stripUndefined(payload))
-        toast.success(`ແກ້ໄຂສຳເລັດ — ${initialData.requestNo}`)
+        await updateDoc(
+          doc(db, "workOutside", initialData.id),
+          stripUndefined(payload),
+        );
+        toast.success(`ແກ້ໄຂສຳເລັດ — ${initialData.requestNo}`);
       } else {
-        const requestNo = generateRequestNo()
-        await addDoc(collection(db, 'workOutside'), stripUndefined({
-          ...payload,
-          requestNo,
-          status: 'pending',
-          requiredApprovers: ['departmentHead', 'hr', 'manager'],
-          approvals: [
-            { role: 'departmentHead', decision: 'pending' },
-            { role: 'hr', decision: 'pending' },
-            { role: 'manager', decision: 'pending' },
-          ],
-          rejectReason: null,
-          createdAt: now,
-          createdBy: fullNameEn,
-          createdByUid: user.uid,
-        }))
-        toast.success(`ສົ່ງຄຳຂໍສຳເລັດ — ${requestNo}`)
+        const requestNo = generateRequestNo();
+        await addDoc(
+          collection(db, "workOutside"),
+          stripUndefined({
+            ...payload,
+            requestNo,
+            status: "pending",
+            requiredApprovers: ["departmentHead", "hr", "manager"],
+            approvals: [
+              { role: "departmentHead", decision: "pending" },
+              { role: "hr", decision: "pending" },
+              { role: "manager", decision: "pending" },
+            ],
+            rejectReason: null,
+            createdAt: now,
+            createdBy: fullNameEn,
+            createdByUid: user.uid,
+          }),
+        );
+        toast.success(`ສົ່ງຄຳຂໍສຳເລັດ — ${requestNo}`);
       }
 
-      onSuccess?.()
-      resetForm()
+      onSuccess?.();
+      resetForm();
     } catch (err) {
-      console.error(err)
-      toast.error('ເກີດຂໍ້ຜິດພາດ ກະລຸນາລອງໃໝ່')
+      console.error(err);
+      toast.error("ເກີດຂໍ້ຜິດພາດ ກະລຸນາລອງໃໝ່");
     } finally {
-      setIsSubmitting(false)
+      setIsSubmitting(false);
     }
   }
 
@@ -569,41 +677,51 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
       {step === 1 && (
         <div className="space-y-4">
           <div>
-            <h2 className="text-base font-semibold text-foreground">ເລືອກປະເພດກິດຈະກຳ</h2>
-            <p className="text-sm text-muted-foreground">ເລືອກປະເພດທີ່ກົງກັບຄຳຂໍຂອງທ່ານ</p>
+            <h2 className="text-base font-semibold text-foreground">
+              ເລືອກປະເພດກິດຈະກຳ
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              ເລືອກປະເພດທີ່ກົງກັບຄຳຂໍຂອງທ່ານ
+            </p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {ACTIVITIES.map(({ code, Icon, nameLo, nameEn, desc }) => {
-              const selected = activityCode === code
+              const selected = activityCode === code;
               return (
                 <button
                   key={code}
                   type="button"
                   onClick={() => setActivityCode(code)}
                   className={cn(
-                    'flex flex-col gap-2 rounded-xl border p-4 text-left transition-all',
-                    'hover:border-primary/60 hover:bg-primary/5',
+                    "flex flex-col gap-2 rounded-xl border p-4 text-left transition-all",
+                    "hover:border-primary/60 hover:bg-primary/5",
                     selected
-                      ? 'border-primary ring-2 ring-primary bg-primary/5'
-                      : 'border-border bg-card',
+                      ? "border-primary ring-2 ring-primary bg-primary/5"
+                      : "border-border bg-card",
                   )}
                 >
                   <div
                     className={cn(
-                      'w-10 h-10 rounded-lg flex items-center justify-center',
-                      selected ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground',
+                      "w-10 h-10 rounded-lg flex items-center justify-center",
+                      selected
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted text-muted-foreground",
                     )}
                   >
                     <Icon className="w-5 h-5" />
                   </div>
                   <div>
-                    <p className="font-semibold text-foreground text-sm">{nameLo}</p>
+                    <p className="font-semibold text-foreground text-sm">
+                      {nameLo}
+                    </p>
                     <p className="text-xs text-muted-foreground">{nameEn}</p>
                   </div>
-                  <p className="text-xs text-muted-foreground leading-snug">{desc}</p>
+                  <p className="text-xs text-muted-foreground leading-snug">
+                    {desc}
+                  </p>
                 </button>
-              )
+              );
             })}
           </div>
 
@@ -620,10 +738,14 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
       {step === 2 && (
         <div className="space-y-4">
           <div>
-            <h2 className="text-base font-semibold text-foreground">ລາຍລະອຽດການປະຕິບັດງານ</h2>
+            <h2 className="text-base font-semibold text-foreground">
+              ລາຍລະອຽດການປະຕິບັດງານ
+            </h2>
             <p className="text-sm text-muted-foreground">
-              ປະເພດ:{' '}
-              <span className="font-medium text-foreground">{activityMeta?.nameLo}</span>
+              ປະເພດ:{" "}
+              <span className="font-medium text-foreground">
+                {activityMeta?.nameLo}
+              </span>
             </p>
           </div>
 
@@ -658,21 +780,31 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
             <Field>
               <FieldLabel className="flex items-center gap-1.5">
                 <Car className="h-4 w-4" />
-                ເລືອກລົດ{' '}
+                ເລືອກລົດ{" "}
                 {needsCustomer ? (
                   <span className="text-destructive">*</span>
                 ) : (
-                  <span className="text-muted-foreground text-xs">(ທາງເລືອກ)</span>
+                  <span className="text-muted-foreground text-xs">
+                    (ທາງເລືອກ)
+                  </span>
                 )}
               </FieldLabel>
               <Select
                 value={customerName}
                 onValueChange={(v) => setCustomerName(v)}
               >
-                <SelectTrigger className={cn(!customerName && 'text-muted-foreground')}>
+                <SelectTrigger
+                  className={cn(!customerName && "text-muted-foreground")}
+                >
                   <SelectValue placeholder="ເລືອກລົດ..." />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem key="No" value="No">
+                    <div className="flex flex-col">
+                      <span>ບໍ່ໃຊ້ລົດ</span>
+                      <span className="text-xs text-muted-foreground">_</span>
+                    </div>
+                  </SelectItem>
                   {vehiclesList.map((v) => (
                     <SelectItem key={v.vehicleName} value={v.vehicleName}>
                       <div className="flex flex-col">
@@ -685,7 +817,9 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
                   ))}
                 </SelectContent>
               </Select>
-              {errors.customerName && <FieldError>{errors.customerName}</FieldError>}
+              {errors.customerName && (
+                <FieldError>{errors.customerName}</FieldError>
+              )}
             </Field>
 
             {/* Province */}
@@ -696,11 +830,13 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
               <Select
                 value={provinceId}
                 onValueChange={(v) => {
-                  setProvinceId(v)
-                  setDistrictId('')
+                  setProvinceId(v);
+                  setDistrictId("");
                 }}
               >
-                <SelectTrigger className={cn(!provinceId && 'text-muted-foreground')}>
+                <SelectTrigger
+                  className={cn(!provinceId && "text-muted-foreground")}
+                >
                   <SelectValue placeholder="ເລືອກແຂວງ..." />
                 </SelectTrigger>
                 <SelectContent>
@@ -711,7 +847,9 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
                   ))}
                 </SelectContent>
               </Select>
-              {errors.provinceId && <FieldError>{errors.provinceId}</FieldError>}
+              {errors.provinceId && (
+                <FieldError>{errors.provinceId}</FieldError>
+              )}
             </Field>
 
             {/* District */}
@@ -724,8 +862,14 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
                 onValueChange={setDistrictId}
                 disabled={!provinceId}
               >
-                <SelectTrigger className={cn(!districtId && 'text-muted-foreground')}>
-                  <SelectValue placeholder={provinceId ? 'ເລືອກເມືອງ...' : 'ກະລຸນາເລືອກແຂວງກ່ອນ'} />
+                <SelectTrigger
+                  className={cn(!districtId && "text-muted-foreground")}
+                >
+                  <SelectValue
+                    placeholder={
+                      provinceId ? "ເລືອກເມືອງ..." : "ກະລຸນາເລືອກແຂວງກ່ອນ"
+                    }
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {selectedProvince?.districts.map((d) => (
@@ -735,7 +879,9 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
                   ))}
                 </SelectContent>
               </Select>
-              {errors.districtId && <FieldError>{errors.districtId}</FieldError>}
+              {errors.districtId && (
+                <FieldError>{errors.districtId}</FieldError>
+              )}
             </Field>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -746,12 +892,14 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
                 <DatePickerButton
                   value={startDate}
                   onSelect={(d) => {
-                    setStartDate(d)
-                    if (endDate && d && endDate < d) setEndDate(undefined)
+                    setStartDate(d);
+                    if (endDate && d && endDate < d) setEndDate(undefined);
                   }}
                   placeholder="ເລືອກວັນທີ..."
                 />
-                {errors.startDate && <FieldError>{errors.startDate}</FieldError>}
+                {errors.startDate && (
+                  <FieldError>{errors.startDate}</FieldError>
+                )}
               </Field>
 
               <Field>
@@ -770,8 +918,10 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
 
             {startDate && endDate && durationDays > 0 && (
               <p className="text-sm text-muted-foreground -mt-2">
-                ໄລຍະເວລາ:{' '}
-                <span className="font-medium text-foreground">{durationDays} ມື້</span>
+                ໄລຍະເວລາ:{" "}
+                <span className="font-medium text-foreground">
+                  {durationDays} ມື້
+                </span>
               </p>
             )}
 
@@ -782,7 +932,9 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
               <div className="relative">
                 <Input
                   value={costDisplay}
-                  onChange={(e) => setCostDisplay(formatThousands(e.target.value))}
+                  onChange={(e) =>
+                    setCostDisplay(formatThousands(e.target.value))
+                  }
                   inputMode="numeric"
                   placeholder="0"
                   className="pr-10"
@@ -791,7 +943,67 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
                   ກີບ
                 </span>
               </div>
-              {errors.estimatedCost && <FieldError>{errors.estimatedCost}</FieldError>}
+              {errors.estimatedCost && (
+                <FieldError>{errors.estimatedCost}</FieldError>
+              )}
+            </Field>
+            <Field>
+              <FieldLabel>ເອກະສານອ້າງອີງ (ຖ້າມີ)</FieldLabel>
+              <div className="space-y-2">
+                <label
+                  className="block"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <div
+                    className={cn(
+                      "flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-6 cursor-pointer transition-colors active:bg-primary/10",
+                      docFile
+                        ? "border-primary bg-primary/5"
+                        : "border-input hover:bg-muted",
+                    )}
+                  >
+                    <Upload className="w-6 h-6 text-muted-foreground" />
+                    {docFile ? (
+                      <div className="text-center">
+                        <p className="text-sm font-medium text-primary">
+                          {docFile.name}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {(docFile.size / 1024).toFixed(1)} KB
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="text-center">
+                        <p className="text-sm text-muted-foreground">
+                          ກົດເພື່ອເລືອກໄຟລ໌
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          PDF, JPG, PNG (ສູງສຸດ 10MB)
+                        </p>
+                      </div>
+                    )}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png"
+                      className="hidden"
+                      onChange={(e) =>
+                        setDocFile(e.target.files?.[0] ?? null)
+                      }
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </div>
+                </label>
+                {docFile && (
+                  <button
+                    type="button"
+                    onClick={() => setDocFile(null)}
+                    className="flex items-center gap-1 text-xs text-destructive hover:underline"
+                  >
+                    <X className="w-3 h-3" /> ລຶບໄຟລ໌
+                  </button>
+                )}
+              </div>
             </Field>
           </FieldGroup>
 
@@ -802,7 +1014,7 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
             </Button>
             <Button
               onClick={() => {
-                if (validateStep2()) setStep(3)
+                if (validateStep2()) setStep(3);
               }}
             >
               ຕໍ່ໄປ
@@ -817,22 +1029,32 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
         <div className="space-y-5">
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-foreground">ສະມາຊິກທີມ</h2>
-              <Popover open={teammateSearchOpen} onOpenChange={setTeammateSearchOpen}>
+              <h2 className="text-base font-semibold text-foreground">
+                ສະມາຊິກທີມ
+              </h2>
+              <Popover
+                open={teammateSearchOpen}
+                onOpenChange={setTeammateSearchOpen}
+              >
                 <PopoverTrigger asChild>
                   <Button variant="outline" size="sm">
                     <UserPlus className="w-4 h-4 mr-2" />
                     ເພີ່ມສະມາຊິກ
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-80 p-0 overflow-hidden" align="end">
+                <PopoverContent
+                  className="w-80 p-0 overflow-hidden"
+                  align="end"
+                >
                   <Command>
                     <CommandInput placeholder="ຄົ້ນຫາພະນັກງານ..." />
                     <CommandList className="max-h-56 overflow-y-auto overscroll-contain [touch-action:pan-y]">
                       <CommandEmpty>ບໍ່ພົບຂໍ້ມູນ</CommandEmpty>
                       <CommandGroup>
                         {employeesList
-                          .filter((e) => !teammates.some((t) => t.uid === e.uid))
+                          .filter(
+                            (e) => !teammates.some((t) => t.uid === e.uid),
+                          )
                           .map((emp, idx) => (
                             <CommandItem
                               key={emp.uid || emp.email || idx}
@@ -842,14 +1064,17 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
                               <div className="flex items-center gap-2 w-full min-w-0">
                                 <Avatar className="w-8 h-8 shrink-0">
                                   <AvatarImage
-                                    src={resolvePhotoUrl(emp.profileImage) ?? resolvePhotoUrl(emp.photo3x4Url)}
+                                    src={
+                                      resolvePhotoUrl(emp.profileImage) ??
+                                      resolvePhotoUrl(emp.photo3x4Url)
+                                    }
                                     alt={`${emp.firstNameLo} ${emp.lastNameLo}`}
                                   />
                                   <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
                                     {`${emp.firstNameLo} ${emp.lastNameLo}`
-                                      .split(' ')
+                                      .split(" ")
                                       .map((w) => w[0])
-                                      .join('')
+                                      .join("")
                                       .slice(0, 2)
                                       .toUpperCase()}
                                   </AvatarFallback>
@@ -860,7 +1085,9 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
                                   </p>
                                   <p className="text-xs text-muted-foreground truncate">
                                     {emp.jobTitle}
-                                    {emp.department?.title ? ` · ${emp.department.title}` : ''}
+                                    {emp.department?.title
+                                      ? ` · ${emp.department.title}`
+                                      : ""}
                                   </p>
                                 </div>
                               </div>
@@ -880,21 +1107,31 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
             ) : (
               <div className="space-y-2">
                 {teammates.map((tm) => (
-                  <div key={tm.uid || tm.email} className="flex items-center gap-3 p-3 rounded-lg border bg-card">
+                  <div
+                    key={tm.uid || tm.email}
+                    className="flex items-center gap-3 p-3 rounded-lg border bg-card"
+                  >
                     <Avatar className="w-9 h-9">
-                      <AvatarImage src={resolvePhotoUrl(tm.photoUrl)} alt={tm.fullNameLo || tm.fullNameEn} />
+                      <AvatarImage
+                        src={resolvePhotoUrl(tm.photoUrl)}
+                        alt={tm.fullNameLo || tm.fullNameEn}
+                      />
                       <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
                         {(tm.fullNameLo || tm.fullNameEn)
-                          .split(' ')
+                          .split(" ")
                           .map((w) => w[0])
-                          .join('')
+                          .join("")
                           .slice(0, 2)
                           .toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{tm.fullNameLo}</p>
-                      <p className="text-xs text-muted-foreground truncate">{tm.jobTitle}</p>
+                      <p className="text-sm font-medium truncate">
+                        {tm.fullNameLo}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {tm.jobTitle}
+                      </p>
                     </div>
                     <Select
                       value={tm.roleInTrip}
@@ -929,11 +1166,15 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
 
           {/* Review */}
           <div className="space-y-3">
-            <h2 className="text-base font-semibold text-foreground">ກວດສອບຂໍ້ມູນ</h2>
+            <h2 className="text-base font-semibold text-foreground">
+              ກວດສອບຂໍ້ມູນ
+            </h2>
 
             <Card>
               <CardHeader className="pb-2 pt-3 px-4 flex flex-row items-center justify-between">
-                <CardTitle className="text-sm font-semibold">ປະເພດກິດຈະກຳ</CardTitle>
+                <CardTitle className="text-sm font-semibold">
+                  ປະເພດກິດຈະກຳ
+                </CardTitle>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -949,8 +1190,10 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
                   <div className="flex items-center gap-2">
                     <activityMeta.Icon className="w-4 h-4 text-primary shrink-0" />
                     <span className="text-sm">
-                      {activityMeta.nameLo}{' '}
-                      <span className="text-muted-foreground">({activityMeta.nameEn})</span>
+                      {activityMeta.nameLo}{" "}
+                      <span className="text-muted-foreground">
+                        ({activityMeta.nameEn})
+                      </span>
                     </span>
                   </div>
                 )}
@@ -959,7 +1202,9 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
 
             <Card>
               <CardHeader className="pb-2 pt-3 px-4 flex flex-row items-center justify-between">
-                <CardTitle className="text-sm font-semibold">ລາຍລະອຽດ</CardTitle>
+                <CardTitle className="text-sm font-semibold">
+                  ລາຍລະອຽດ
+                </CardTitle>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -973,10 +1218,12 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
               <CardContent className="px-4 pb-3">
                 <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                   <dt className="text-muted-foreground">ຫົວຂໍ້</dt>
-                  <dd className="font-medium break-words">{subject || '—'}</dd>
+                  <dd className="font-medium break-words">{subject || "—"}</dd>
 
                   <dt className="text-muted-foreground">ລາຍລະອຽດ</dt>
-                  <dd className="font-medium break-words line-clamp-2">{details || '—'}</dd>
+                  <dd className="font-medium break-words line-clamp-2">
+                    {details || "—"}
+                  </dd>
 
                   {customerName && (
                     <>
@@ -986,19 +1233,21 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
                   )}
 
                   <dt className="text-muted-foreground">ສະຖານທີ່</dt>
-                  <dd className="font-medium">{locationDisplay || '—'}</dd>
+                  <dd className="font-medium">{locationDisplay || "—"}</dd>
 
                   <dt className="text-muted-foreground">ວັນທີ</dt>
                   <dd className="font-medium">
-                    {startDate ? format(startDate, 'dd/MM/yyyy') : '—'}
-                    {endDate && startDate ? ` – ${format(endDate, 'dd/MM/yyyy')}` : ''}
+                    {startDate ? format(startDate, "dd/MM/yyyy") : "—"}
+                    {endDate && startDate
+                      ? ` – ${format(endDate, "dd/MM/yyyy")}`
+                      : ""}
                   </dd>
 
                   <dt className="text-muted-foreground">ໄລຍະເວລາ</dt>
                   <dd className="font-medium">{durationDays} ມື້</dd>
 
                   <dt className="text-muted-foreground">ຄ່າໃຊ້ຈ່າຍ</dt>
-                  <dd className="font-medium">{costDisplay || '0'} ກີບ</dd>
+                  <dd className="font-medium">{costDisplay || "0"} ກີບ</dd>
                 </dl>
               </CardContent>
             </Card>
@@ -1013,7 +1262,10 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
                 <CardContent className="px-4 pb-3">
                   <div className="space-y-1.5">
                     {teammates.map((tm) => (
-                      <div key={tm.uid} className="flex items-center justify-between text-sm">
+                      <div
+                        key={tm.uid}
+                        className="flex items-center justify-between text-sm"
+                      >
                         <span>{tm.fullNameLo}</span>
                         <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
                           {tm.roleInTrip}
@@ -1031,17 +1283,20 @@ export default function OffsiteRequestForm({ onSuccess, onDirtyChange, initialDa
               <ChevronLeft className="w-4 h-4 mr-1" />
               ກັບຄືນ
             </Button>
-            <Button onClick={handleSubmit} disabled={isSubmitting || teammates.length === 0}>
+            <Button
+              onClick={handleSubmit}
+              disabled={isSubmitting || teammates.length === 0}
+            >
               {isSubmitting ? (
                 <Spinner className="mr-2" />
               ) : (
                 <Send className="w-4 h-4 mr-2" />
               )}
-              {isEditMode ? 'ບັນທຶກການແກ້ໄຂ' : 'ສົ່ງຄຳຂໍ'}
+              {isEditMode ? "ບັນທຶກການແກ້ໄຂ" : "ສົ່ງຄຳຂໍ"}
             </Button>
           </div>
         </div>
       )}
     </div>
-  )
+  );
 }

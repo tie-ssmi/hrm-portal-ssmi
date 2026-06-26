@@ -128,6 +128,9 @@ importers:
       date-fns:
         specifier: 4.1.0
         version: 4.1.0
+      driver.js:
+        specifier: ^1.5.0
+        version: 1.5.0
       embla-carousel-react:
         specifier: 8.6.0
         version: 8.6.0(react@19.2.4)
@@ -2295,6 +2298,9 @@ packages:
 
   dom-helpers@5.2.1:
     resolution: {integrity: sha512-nRCa7CK3VTrM2NmGkIy4cbK7IZlgBE/PYMn55rrXefr5xXDP0LdtfPnblFDoVdcAfslJ7or6iqAUnx0CCGIWQA==}
+
+  driver.js@1.5.0:
+    resolution: {integrity: sha512-j31Yi1V3/fTCI6+JmS6Z30bHE3YbpT5+UlrsN0o5aswCuZVDwfaZKsMSN0tMCQbWk99RNXxEyAhALC1otj31/w==}
 
   ecdsa-sig-formatter@1.0.11:
     resolution: {integrity: sha512-nagl3RYrbNv6kQkeJIpt6NJZy8twLB/2vtz6yN9Z4vRKHN4/QZJIEbqohALSgwKdnksuY3k5Addp5lg8sVoVcQ==}
@@ -5454,6 +5460,8 @@ snapshots:
     dependencies:
       '@babel/runtime': 7.28.6
       csstype: 3.2.3
+
+  driver.js@1.5.0: {}
 
   ecdsa-sig-formatter@1.0.11:
     dependencies:

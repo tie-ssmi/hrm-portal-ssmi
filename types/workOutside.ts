@@ -70,6 +70,7 @@ export interface WorkOutsideRecord {
   createdByUid: string
   updatedAt: string
   updatedBy: string
+  docLink?: string | null
 }
 
 export type OffsiteRequestDoc = WorkOutsideRecord & { id: string }

@@ -36,8 +36,8 @@ export const LAO_PROVINCES: LaoProvince[] = [
       { id: '0203', name: 'ຍອດອູ' },
       { id: '0204', name: 'ຂວາ' },
       { id: '0205', name: 'ສຳພັນ' },
-      { id: '0206', name: 'ນ້ຳກ' },
-      { id: '0207', name: 'ບຸນໄຕ' },
+      { id: '0206', name: 'ໃໝ່' },
+      { id: '0207', name: 'ບຸນເໜືອ' },
     ],
   },
   {
