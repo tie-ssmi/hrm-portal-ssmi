@@ -1,7 +1,7 @@
 "use client";
 
 // ** core
-import { useState, useMemo, useCallback, lazy, Suspense } from "react";
+import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from "react";
 
 // ** assets / icons
 import {
@@ -11,6 +11,7 @@ import {
   Clock,
   FileWarning,
   BriefcaseBusiness,
+  HelpCircle,
 } from "lucide-react";
 
 // ** shared components (critical path — always visible)
@@ -71,6 +72,8 @@ const LazyAlertDialog = lazy(() =>
 import { useQueryClient } from "@tanstack/react-query";
 import { doc, updateDoc } from "firebase/firestore";
 import { toast } from "sonner";
+import { driver } from "driver.js";
+import "driver.js/dist/driver.css";
 
 // ** config / utils / types / hooks
 import { useAuth } from "@/lib/auth-context";
@@ -191,18 +194,87 @@ export default function FormsPage() {
     }
   }, [cancelTarget, user, queryClient]);
 
+  // ── Driver.js tour ──
+  const REQUEST_TOUR_KEY = "request-page-tour-seen";
+
+  const startTour = useCallback(() => {
+    const driverObj = driver({
+      showProgress: true,
+      animate: true,
+      overlayColor: "rgba(0,0,0,0.55)",
+      nextBtnText: "ຕໍ່ໄປ",
+      prevBtnText: "ກັບຄືນ",
+      doneBtnText: "ເຂົ້າໃຈແລ້ວ",
+      progressText: "{{current}} / {{total}}",
+      steps: [
+        {
+          element: "#request-stats",
+          popover: {
+            title: "ສະຖິຕິ",
+            description: "ເບິ່ງຈຳນວນຄຳຮ້ອງລາພັກລໍຖ້າ, ເອກະສານຄ້າງ ແລະ ການອອກວຽກນອກ",
+            side: "bottom" as const,
+            align: "center" as const,
+          },
+        },
+        {
+          element: "#request-tabs",
+          popover: {
+            title: "ສອງແບບຟອມ",
+            description: "ສະຫຼັບລະຫວ່າງ ຟອມຂໍລາພັກ ແລະ ຟອມອອກວຽກນອກ",
+            side: "bottom" as const,
+            align: "center" as const,
+          },
+        },
+        {
+          element: "#tab-leave",
+          popover: {
+            title: "ຟອມຂໍລາພັກ",
+            description: "ຍື່ນຄໍາຮ້ອງຂໍລາພັກ — ເລືອກປະເພດ, ວັນທີ ແລະ ສົ່ງຄໍາຮ້ອງ",
+            side: "bottom" as const,
+            align: "start" as const,
+          },
+        },
+        {
+          element: "#tab-offsite",
+          popover: {
+            title: "ຟອມອອກວຽກນອກ",
+            description: "ສ້າງຄຳຂໍອອກປະຕິບັດງານນອກສະຖານທີ່ ພ້ອມເພີ່ມສະມາຊິກທີມ",
+            side: "bottom" as const,
+            align: "end" as const,
+          },
+        },
+      ],
+      onDestroyed: () => {
+        localStorage.setItem(REQUEST_TOUR_KEY, "1");
+      },
+    });
+    driverObj.drive();
+  }, []);
+
+  useEffect(() => {
+    if (!localStorage.getItem(REQUEST_TOUR_KEY)) {
+      const timer = setTimeout(startTour, 600);
+      return () => clearTimeout(timer);
+    }
+  }, [startTour]);
+
   if (isLoading) return <FormsSkeleton />;
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-foreground text-2xl font-bold">Request Forms</h1>
-        <p className="text-muted-foreground">Submit leave and off-site work requests</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-foreground text-2xl font-bold">Request Forms</h1>
+          <p className="text-muted-foreground">Submit leave and off-site work requests</p>
+        </div>
+        <Button type="button" variant="ghost" size="icon" onClick={startTour}>
+          <HelpCircle className="w-5 h-5 text-muted-foreground" />
+        </Button>
       </div>
 
       {/* Stats */}
-      <div className="flex gap-2 overflow-x-auto pb-1">
+      <div id="request-stats" className="flex gap-2 overflow-x-auto pb-1">
         <Card className="min-w-0 flex-1 border-amber-200/40 bg-amber-50/50 dark:border-amber-800/30 dark:bg-amber-950/20">
           <CardContent className="px-3 pt-3 pb-3">
             <div className="mb-1 flex items-center gap-1">
@@ -262,12 +334,12 @@ export default function FormsPage() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="leave" className="gap-2">
+        <TabsList id="request-tabs" className="grid w-full grid-cols-2">
+          <TabsTrigger id="tab-leave" value="leave" className="gap-2">
             <Palmtree className="h-4 w-4" />
             ຟອມຂໍລາພັກ
           </TabsTrigger>
-          <TabsTrigger value="offsite" className="gap-2">
+          <TabsTrigger id="tab-offsite" value="offsite" className="gap-2">
             <MapPin className="h-4 w-4" />
             ຟອມອອກວຽກນອກ
           </TabsTrigger>

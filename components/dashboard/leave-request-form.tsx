@@ -1,7 +1,7 @@
 "use client";
 
 // ** core
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 
 // ** assets / icons
@@ -20,11 +20,13 @@ import {
   Upload,
   Timer,
   X,
+  HelpCircle,
 } from "lucide-react";
 
 // ** shared components
 import {
   Card,
+  CardAction,
   CardContent,
   CardHeader,
   CardTitle,
@@ -55,6 +57,8 @@ import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { format, isWeekend } from "date-fns";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { driver } from "driver.js";
+import "driver.js/dist/driver.css";
 
 // ** config / utils / types / hooks
 import { useAuth } from "@/lib/auth-context";
@@ -392,6 +396,83 @@ export default function LeaveRequestForm() {
     }
   }, [myCurrentLeavesError]);
 
+  // ── Driver.js tour ──
+  const TOUR_KEY = "leave-form-tour-seen";
+
+  const startTour = useCallback(() => {
+    const driverObj = driver({
+      showProgress: true,
+      animate: true,
+      overlayColor: "rgba(0,0,0,0.55)",
+      nextBtnText: "ຕໍ່ໄປ",
+      prevBtnText: "ກັບຄືນ",
+      doneBtnText: "ເຂົ້າໃຈແລ້ວ",
+      progressText: "{{current}} / {{total}}",
+      steps: [
+        {
+          element: "#leave-section-type",
+          popover: {
+            title: "ເລືອກປະເພດການລາ",
+            description:
+              "ເລືອກປະເພດການລາທີ່ຕ້ອງການ ເຊັ່ນ: ລາພັກຜ່ອນ, ລາເຈັບ, ລາກິດສ່ວນຕົວ ໆລໆ",
+            side: "bottom" as const,
+            align: "center" as const,
+          },
+        },
+        {
+          element: "#leave-section-dates",
+          popover: {
+            title: "ກຳນົດໄລຍະເວລາ",
+            description:
+              "ເລືອກວັນເລີ່ມ-ສິ້ນສຸດ ແລະ ຊ່ວງເວລາ (ເຊົ້າ/ບ່າຍ) ພ້ອມໃສ່ເຫດຜົນການລາ",
+            side: "bottom" as const,
+            align: "center" as const,
+          },
+        },
+        {
+          element: "#leave-section-successor",
+          popover: {
+            title: "ເລືອກຜູ້ຮັບວຽກຕໍ່",
+            description:
+              "ເລືອກເພື່ອນຮ່ວມງານທີ່ຈະຮັບຜິດຊອບວຽກແທນໃນຊ່ວງທີ່ລາ (ບໍ່ບັງຄັບ)",
+            side: "bottom" as const,
+            align: "center" as const,
+          },
+        },
+        {
+          element: "#leave-submit-btn",
+          popover: {
+            title: "ສົ່ງຄໍາຮ້ອງຂໍ",
+            description: "ກວດສອບຂໍ້ມູນໃຫ້ຖືກຕ້ອງແລ້ວກົດສົ່ງ",
+            side: "top" as const,
+            align: "center" as const,
+          },
+        },
+        {
+          element: "#leave-recent-requests",
+          popover: {
+            title: "ຄໍາຮ້ອງຂໍລ່າສຸດ",
+            description:
+              "ເບິ່ງສະຖານະຄໍາຮ້ອງຂໍທີ່ຜ່ານມາ — ກົດເພື່ອເບິ່ງລາຍລະອຽດ",
+            side: "top" as const,
+            align: "center" as const,
+          },
+        },
+      ],
+      onDestroyed: () => {
+        localStorage.setItem(TOUR_KEY, "1");
+      },
+    });
+    driverObj.drive();
+  }, []);
+
+  useEffect(() => {
+    if (!localStorage.getItem(TOUR_KEY)) {
+      const timer = setTimeout(startTour, 600);
+      return () => clearTimeout(timer);
+    }
+  }, [startTour]);
+
   function handleStartDateSelect(date?: Date) {
     setLeaveStartDate(date);
     if (date && leaveEndDate && date > leaveEndDate) setLeaveEndDate(undefined);
@@ -531,12 +612,22 @@ export default function LeaveRequestForm() {
         <CardHeader className="pb-3">
           <CardTitle className="text-lg">ແບບຟອມຂໍພັກຜ່ອນ</CardTitle>
           <CardDescription>ຍື່ນຄໍາຮ້ອງຂໍລາພັກ</CardDescription>
+          <CardAction>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={startTour}
+            >
+              <HelpCircle className="w-5 h-5 text-muted-foreground" />
+            </Button>
+          </CardAction>
         </CardHeader>
 
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Section 1: Leave type */}
-            <div className="rounded-lg border bg-card p-4 space-y-3">
+            <div id="leave-section-type" className="rounded-lg border bg-card p-4 space-y-3">
               <SectionHeader number={1} icon={FileText} title="ປະເພດການລາ" />
               <Combobox
                 value={selectedPolicyValue}
@@ -551,7 +642,7 @@ export default function LeaveRequestForm() {
             </div>
 
             {/* Section 2: Dates */}
-            <div className="rounded-lg border bg-card p-4 space-y-4">
+            <div id="leave-section-dates" className="rounded-lg border bg-card p-4 space-y-4">
               <SectionHeader
                 number={2}
                 icon={CalendarIcon}
@@ -709,7 +800,7 @@ export default function LeaveRequestForm() {
             </div>
 
             {/* Section 3: Successor */}
-            <div className="rounded-lg border bg-card p-4 space-y-3">
+            <div id="leave-section-successor" className="rounded-lg border bg-card p-4 space-y-3">
               <SectionHeader
                 number={3}
                 icon={Users}
@@ -923,6 +1014,7 @@ export default function LeaveRequestForm() {
             )}
 
             <Button
+              id="leave-submit-btn"
               type="submit"
               className="w-full h-11"
               size="lg"
@@ -940,7 +1032,7 @@ export default function LeaveRequestForm() {
       </Card>
 
       {/* Recent requests */}
-      <Card className="mt-4">
+      <Card id="leave-recent-requests" className="mt-4">
         <CardHeader className="flex justify-between pb-3">
           <CardTitle className="text-base">ຄໍາຮ້ອງຂໍລ່າສຸດ</CardTitle>
           {pendingDocLeaves.length > 0 && (
