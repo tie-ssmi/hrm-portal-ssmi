@@ -241,10 +241,10 @@ export function HRMProvider({ children }: { children: ReactNode }) {
   const submitLeaveRequest = useCallback(
     async (
       request: Omit<LeaveRequest, 'id' | 'status' | 'createdAt'>,
-      approvalsOverride?: LeaveApprovalStep[],
+      options?: { autoApproveDeptHead?: boolean },
     ) => {
       const requiredApprovers = getRequiredLeaveApprovers(request.duration)
-      const approvals = approvalsOverride ?? buildInitialLeaveApprovals(request.duration)
+      const approvals = buildInitialLeaveApprovals(request.duration, options)
       const status = resolveLeaveRequestStatus(approvals)
       const createdBy = [user?.firstNameLo || user?.firstName, user?.lastNameLo || user?.lastName]
         .filter(Boolean).join(' ') || undefined

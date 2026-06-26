@@ -1,6 +1,8 @@
 import type { User as FirebaseUser } from 'firebase/auth'
 
 export interface RolePermissions {
+  AuditDashboard: boolean
+  LPB: boolean
   approveBranch: boolean
   approveDepartment: boolean
   dashboard: boolean
@@ -8,6 +10,7 @@ export interface RolePermissions {
   highDashboard: boolean
   highManageLeave: boolean
   highManageOffsite: boolean
+  housekeeper: boolean
   loginAdmin: boolean
   manageEmployee: boolean
   manageLeave: boolean
@@ -271,7 +274,7 @@ export interface HRMContextType {
   checkOut: (location?: { lat: number; lng: number }) => Promise<{ success: boolean; message: string }>
   leaveBalance: LeaveBalance
   leaveRequests: LeaveRequest[]
-  submitLeaveRequest: (request: Omit<LeaveRequest, 'id' | 'status' | 'createdAt'>, approvalsOverride?: LeaveApprovalStep[]) => Promise<void>
+  submitLeaveRequest: (request: Omit<LeaveRequest, 'id' | 'status' | 'createdAt'>, options?: { autoApproveDeptHead?: boolean }) => Promise<void>
   reviewLeaveRequest: (
     requestId: string,
     role: LeaveApproverRole,

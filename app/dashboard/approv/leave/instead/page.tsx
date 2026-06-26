@@ -304,21 +304,6 @@ export default function InsteadLeaveRequestForm() {
     try {
       const createdBy = [user?.firstNameLo || user?.firstName, user?.lastNameLo || user?.lastName].filter(Boolean).join(' ') || undefined
       const leaveUserName = employeeName(selectedLeaveFor) || undefined
-      const now = new Date().toISOString()
-
-      const initialApprovals = buildInitialLeaveApprovals(duration)
-      const autoApprovedApprovals = initialApprovals.map((step, index) => {
-        if (index === 0 && step.role === 'departmentHead') {
-          return {
-            ...step,
-            decision: 'approved' as const,
-            reviewedAt: now,
-            reviewedBy: createdBy,
-          }
-        }
-        return step
-      })
-
       await submitLeaveRequest({
         leaveUserUuid: selectedLeaveFor.uuid || selectedLeaveFor.uid || selectedLeaveFor.id || undefined,
         leaveUserName,
@@ -347,7 +332,7 @@ export default function InsteadLeaveRequestForm() {
         workLocationUid: typeof selectedLeaveFor.workLocation === 'string'
           ? selectedLeaveFor.workLocation
           : selectedLeaveFor.workLocation?.uuid,
-      }, autoApprovedApprovals)
+      }, { autoApproveDeptHead: true })
       await refetchMyCurrentLeaves()
       toast.success('ສົ່ງຄໍາຮ້ອງຂໍສໍາເລັດ (ອະນຸມັດຂັ້ນຕົ້ນແລ້ວ)')
       setOpenConfirmDialog(false)

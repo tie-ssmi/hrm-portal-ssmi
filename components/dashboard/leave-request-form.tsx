@@ -64,7 +64,10 @@ import "driver.js/dist/driver.css";
 import { useAuth } from "@/lib/auth-context";
 import { useHRM } from "@/lib/hrm-context";
 import { storage } from "@/lib/firebase";
-import { usePendingDocLeaves, useUpcomingLeaves } from "@/lib/use-leave-queries";
+import {
+  usePendingDocLeaves,
+  useUpcomingLeaves,
+} from "@/lib/use-leave-queries";
 import { cn } from "@/lib/utils";
 
 // ** services
@@ -273,10 +276,22 @@ export default function LeaveRequestForm() {
     (typeof myCurrentLeaveRequests)[number] | null
   >(null);
 
+  const isHousekeeper = user?.rolePermissions?.housekeeper === true;
+  const isLPB = user?.rolePermissions?.LPB === true;
+  const filterByDepartment = isHousekeeper || isLPB;
+
   const { data: employeesData = [] } = useQuery({
-    queryKey: ["employees", departmentUuid ?? null],
-    queryFn: () => getEmployees({ departmentUuid }),
-    enabled: !!departmentUuid,
+    queryKey: [
+      "employees",
+      filterByDepartment ? departmentUuid : null,
+      workLocationUuid ?? null,
+    ],
+    queryFn: () =>
+      getEmployees({
+        ...(filterByDepartment ? { departmentUuid } : {}),
+        workLocationUuid,
+      }),
+    enabled: !!workLocationUuid,
   });
 
   const successorOptions = useMemo(
@@ -586,7 +601,7 @@ export default function LeaveRequestForm() {
               ? "later"
               : null,
         docLink,
-      });
+      }, isHousekeeper ? { autoApproveDeptHead: true } : undefined);
       await refetchMyCurrentLeaves();
       toast.success("ສົ່ງຄໍາຮ້ອງຂໍສໍາເລັດ");
       setSelectedPolicyValue(leaveTypeOptions[0]?.value || "annual");
@@ -627,7 +642,10 @@ export default function LeaveRequestForm() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Section 1: Leave type */}
-            <div id="leave-section-type" className="rounded-lg border bg-card p-4 space-y-3">
+            <div
+              id="leave-section-type"
+              className="rounded-lg border bg-card p-4 space-y-3"
+            >
               <SectionHeader number={1} icon={FileText} title="ປະເພດການລາ" />
               <Combobox
                 value={selectedPolicyValue}
@@ -642,7 +660,10 @@ export default function LeaveRequestForm() {
             </div>
 
             {/* Section 2: Dates */}
-            <div id="leave-section-dates" className="rounded-lg border bg-card p-4 space-y-4">
+            <div
+              id="leave-section-dates"
+              className="rounded-lg border bg-card p-4 space-y-4"
+            >
               <SectionHeader
                 number={2}
                 icon={CalendarIcon}
@@ -800,7 +821,10 @@ export default function LeaveRequestForm() {
             </div>
 
             {/* Section 3: Successor */}
-            <div id="leave-section-successor" className="rounded-lg border bg-card p-4 space-y-3">
+            <div
+              id="leave-section-successor"
+              className="rounded-lg border bg-card p-4 space-y-3"
+            >
               <SectionHeader
                 number={3}
                 icon={Users}

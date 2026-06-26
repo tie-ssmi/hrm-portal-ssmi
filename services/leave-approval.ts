@@ -7,11 +7,17 @@ export function getRequiredLeaveApprovers(duration?: number): LeaveApproverRole[
   return ['departmentHead', 'hr']
 }
 
-export function buildInitialLeaveApprovals(duration?: number): LeaveApprovalStep[] {
-  return getRequiredLeaveApprovers(duration).map((role) => ({
-    role,
-    decision: 'pending',
-  }))
+export function buildInitialLeaveApprovals(
+  duration?: number,
+  options?: { autoApproveDeptHead?: boolean },
+): LeaveApprovalStep[] {
+  const today = new Date().toISOString().split('T')[0]
+  return getRequiredLeaveApprovers(duration).map((role) => {
+    if (role === 'departmentHead' && options?.autoApproveDeptHead) {
+      return { role, decision: 'approved' as const, reviewedAt: today, reviewedBy: 'System' }
+    }
+    return { role, decision: 'pending' as const }
+  })
 }
 
 export function resolveLeaveRequestStatus(approvals?: LeaveApprovalStep[]): LeaveRequest['status'] {

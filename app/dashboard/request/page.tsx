@@ -98,6 +98,7 @@ const DEFAULT_FILTERS: OffsiteFilters = {
 
 export default function FormsPage() {
   const { user, isLoading } = useAuth();
+  const isHousekeeper = user?.rolePermissions?.housekeeper === true;
   const queryClient = useQueryClient();
 
   const [activeTab, setActiveTab] = useState<string>(() => {
@@ -311,45 +312,49 @@ export default function FormsPage() {
             )}
           </CardContent>
         </Card>
-        <Card className="min-w-0 flex-1 border-emerald-200/40 bg-emerald-50/50 dark:border-emerald-800/30 dark:bg-emerald-950/20">
-          <CardContent className="px-3 pt-3 pb-3">
-            <div className="mb-1 flex items-center gap-1">
-              <BriefcaseBusiness className="h-3 w-3 shrink-0 text-emerald-500" />
-              <p className="text-muted-foreground truncate text-[11px]">ອອກວຽກນອກ</p>
-            </div>
-            {statsLoading ? (
-              <div className="bg-muted h-5 w-6 animate-pulse rounded" />
-            ) : (
-              <p className="text-foreground text-base leading-tight font-bold">
-                {approvedOffsiteCount}
-                <span className="text-muted-foreground text-[10px] font-normal"> ຄັ້ງ</span>
-                <span className="text-muted-foreground/40 mx-0.5">/</span>
-                {approvedOffsiteDays}
-                <span className="text-muted-foreground text-[10px] font-normal"> ວັນ</span>
-              </p>
-            )}
-          </CardContent>
-        </Card>
+        {!isHousekeeper && (
+          <Card className="min-w-0 flex-1 border-emerald-200/40 bg-emerald-50/50 dark:border-emerald-800/30 dark:bg-emerald-950/20">
+            <CardContent className="px-3 pt-3 pb-3">
+              <div className="mb-1 flex items-center gap-1">
+                <BriefcaseBusiness className="h-3 w-3 shrink-0 text-emerald-500" />
+                <p className="text-muted-foreground truncate text-[11px]">ອອກວຽກນອກ</p>
+              </div>
+              {statsLoading ? (
+                <div className="bg-muted h-5 w-6 animate-pulse rounded" />
+              ) : (
+                <p className="text-foreground text-base leading-tight font-bold">
+                  {approvedOffsiteCount}
+                  <span className="text-muted-foreground text-[10px] font-normal"> ຄັ້ງ</span>
+                  <span className="text-muted-foreground/40 mx-0.5">/</span>
+                  {approvedOffsiteDays}
+                  <span className="text-muted-foreground text-[10px] font-normal"> ວັນ</span>
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-        <TabsList id="request-tabs" className="grid w-full grid-cols-2">
-          <TabsTrigger id="tab-leave" value="leave" className="gap-2">
-            <Palmtree className="h-4 w-4" />
-            ຟອມຂໍລາພັກ
-          </TabsTrigger>
-          <TabsTrigger id="tab-offsite" value="offsite" className="gap-2">
-            <MapPin className="h-4 w-4" />
-            ຟອມອອກວຽກນອກ
-          </TabsTrigger>
-        </TabsList>
+      <Tabs value={isHousekeeper ? "leave" : activeTab} onValueChange={handleTabChange} className="w-full">
+        {!isHousekeeper && (
+          <TabsList id="request-tabs" className="grid w-full grid-cols-2">
+            <TabsTrigger id="tab-leave" value="leave" className="gap-2">
+              <Palmtree className="h-4 w-4" />
+              ຟອມຂໍລາພັກ
+            </TabsTrigger>
+            <TabsTrigger id="tab-offsite" value="offsite" className="gap-2">
+              <MapPin className="h-4 w-4" />
+              ຟອມອອກວຽກນອກ
+            </TabsTrigger>
+          </TabsList>
+        )}
 
         <TabsContent value="leave" className="mt-4">
           <LeaveRequestForm />
         </TabsContent>
 
-        <TabsContent value="offsite" className="mt-4 space-y-4">
+        {!isHousekeeper && <TabsContent value="offsite" className="mt-4 space-y-4">
           <div className="flex items-center justify-between gap-4">
             <div>
               <h2 className="text-foreground text-base font-semibold">ການອອກປະຕິບັດງານນອກສະຖານທີ່</h2>
@@ -381,7 +386,7 @@ export default function FormsPage() {
               onRetry={refetch}
             />
           </Suspense>
-        </TabsContent>
+        </TabsContent>}
       </Tabs>
 
       {/* Dialogs — lazy, render only when triggered */}
