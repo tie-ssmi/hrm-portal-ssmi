@@ -2,6 +2,7 @@
 
 // ** core
 import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 // ** assets / icons
 import {
@@ -97,20 +98,31 @@ const DEFAULT_FILTERS: OffsiteFilters = {
 };
 
 export default function FormsPage() {
+  return (
+    <Suspense fallback={<FormsSkeleton />}>
+      <FormsPageContent />
+    </Suspense>
+  );
+}
+
+function FormsPageContent() {
   const { user, isLoading } = useAuth();
   const isHousekeeper = user?.rolePermissions?.housekeeper === true;
   const queryClient = useQueryClient();
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
-  const [activeTab, setActiveTab] = useState<string>(() => {
-    if (typeof window === "undefined") return "leave";
-    const saved = localStorage.getItem("request-tab");
-    return saved === "leave" || saved === "offsite" ? saved : "leave";
-  });
+  const VALID_TABS = ["leave", "offsite"] as const;
+  const rawTab = searchParams.get("tab");
+  const activeTab = VALID_TABS.includes(rawTab as typeof VALID_TABS[number])
+    ? (rawTab as string)
+    : "leave";
 
   const handleTabChange = useCallback((value: string) => {
-    setActiveTab(value);
-    localStorage.setItem("request-tab", value);
-  }, []);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", value);
+    router.replace(`?${params.toString()}`);
+  }, [router, searchParams]);
 
   const [filters, setFilters] = useState<OffsiteFilters>(DEFAULT_FILTERS);
   const [dialogOpen, setDialogOpen] = useState(false);

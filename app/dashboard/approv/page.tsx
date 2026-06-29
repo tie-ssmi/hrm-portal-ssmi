@@ -1,7 +1,7 @@
 "use client";
 // ** core
-import { useState, useMemo, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useMemo, useEffect, useCallback, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 // ** assets / icons
 import { Palmtree, MapPin } from "lucide-react";
@@ -48,7 +48,16 @@ import type { OffsiteRequestDoc } from "@/types/workOutside";
 import { fetchLeavesForApproval, updateLeaveApproval } from "@/services/leaves";
 
 export default function ApprovePage() {
+  return (
+    <Suspense fallback={<FormsSkeleton />}>
+      <ApprovePageContent />
+    </Suspense>
+  );
+}
+
+function ApprovePageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const { user, isLoading } = useAuth();
 
@@ -196,18 +205,18 @@ export default function ApprovePage() {
     [offsiteRequests],
   );
 
-  // ── Persistent tab state ─────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState("leave");
+  // ── Tab state from URL ───────────────────────────────────────────────────
+  const VALID_TABS = ["leave", "offsite"] as const;
+  const rawTab = searchParams.get("tab");
+  const activeTab = VALID_TABS.includes(rawTab as typeof VALID_TABS[number])
+    ? (rawTab as string)
+    : "leave";
 
-  useEffect(() => {
-    const saved = localStorage.getItem("approv-tab");
-    if (saved === "leave" || saved === "offsite") setActiveTab(saved);
-  }, []);
-
-  function handleTabChange(value: string) {
-    setActiveTab(value);
-    localStorage.setItem("approv-tab", value);
-  }
+  const handleTabChange = useCallback((value: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", value);
+    router.replace(`?${params.toString()}`);
+  }, [router, searchParams]);
 
   // ── Leave approval state ─────────────────────────────────────────────────
   const [openConfirmDialog, setOpenConfirmDialog] = useState(false);
