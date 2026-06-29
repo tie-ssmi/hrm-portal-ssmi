@@ -254,7 +254,7 @@ export function HRMProvider({ children }: { children: ReactNode }) {
         status,
         requiredApprovers,
         approvals,
-        createdAt: new Date().toISOString().split('T')[0],
+        createdAt: new Date().toISOString(),
         createdBy,
       }
 

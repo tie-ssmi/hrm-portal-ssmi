@@ -46,7 +46,9 @@ export interface WorkOutsideRecord {
   location: string
   workLocationUid: string
   startDate: string
+  startTime?: string
   endDate: string
+  endTime?: string
   durationDays: number
   monthKey: string
   estimatedCost: number

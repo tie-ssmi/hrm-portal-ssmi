@@ -247,7 +247,7 @@ export function useSubmitLeave() {
         status,
         requiredApprovers,
         approvals,
-        createdAt: new Date().toISOString().split('T')[0],
+        createdAt: new Date().toISOString(),
         ...(createdBy ? { createdBy } : {}),
       }
 

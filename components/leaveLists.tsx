@@ -223,7 +223,7 @@ export function ToDay({ data }: { data: LeaveData[] }) {
 
                   <div className="flex flex-col items-center shrink-0">
                     <span className="text-2xl font-bold text-primary">
-                      {countWorkDays(leave.endDate)}
+                      {countWorkDays(leave.startDate, leave.endDate)}
                     </span>
                     <span className="text-[10px] text-muted-foreground leading-none">
                       ມື້
@@ -247,15 +247,20 @@ export function CheckInToday() {
     error,
   } = useTodayCheckInAttendance();
 
-  const myWorkLocationUid =
+  const myWorkLocation =
     typeof user?.workLocation === "object" && user.workLocation !== null
-      ? ((user.workLocation as { uuid?: string; uid?: string }).uuid ??
-        (user.workLocation as { uid?: string }).uid)
+      ? (user.workLocation as { uuid?: string; uid?: string; code?: string })
       : undefined;
 
-  const filteredRecords = attendanceRecords?.filter(
-    (r) => r.workLocation?.uid === myWorkLocationUid,
-  );
+  const filteredRecords = attendanceRecords?.filter((r) => {
+    if (!myWorkLocation) return false;
+    const rUid = r.workLocation?.uid;
+    const rCode = r.workLocation?.code;
+    return (
+      (rUid && (rUid === myWorkLocation.uuid || rUid === myWorkLocation.uid)) ||
+      (rCode && rCode === myWorkLocation.code)
+    );
+  });
 
   return (
     <div>
@@ -380,6 +385,11 @@ export function TodayLeaveSection() {
       {isLoading ? (
         <div className="flex items-center justify-center py-8">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      ) : leaveDataToday.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-8 gap-2">
+          <CalendarDays className="h-10 w-10 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">ບໍ່ມີລາຍການລາພັກມື້ນີ້</p>
         </div>
       ) : (
         <ToDay data={leaveDataToday} />

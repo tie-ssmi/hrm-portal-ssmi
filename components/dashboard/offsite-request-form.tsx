@@ -213,45 +213,57 @@ function StepIndicator({ current }: { current: number }) {
   );
 }
 
-function DatePickerButton({
+function DateTimePickerButton({
   value,
+  time,
   onSelect,
+  onTimeChange,
   placeholder,
   minDate,
 }: {
   value: Date | undefined;
+  time: string;
   onSelect: (d: Date | undefined) => void;
+  onTimeChange: (t: string) => void;
   placeholder: string;
   minDate?: Date;
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          className={cn(
-            "w-full justify-start text-left font-normal",
-            !value && "text-muted-foreground",
-          )}
-        >
-          <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
-          {value ? format(value, "dd/MM/yyyy") : placeholder}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-auto p-0" align="start">
-        <Calendar
-          mode="single"
-          selected={value}
-          onSelect={(d) => {
-            onSelect(d);
-            setOpen(false);
-          }}
-          disabled={minDate ? (d) => d < minDate : undefined}
-          initialFocus
-        />
-      </PopoverContent>
-    </Popover>
+    <div className="space-y-1.5">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            className={cn(
+              "w-full justify-start text-left font-normal",
+              !value && "text-muted-foreground",
+            )}
+          >
+            <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+            {value ? format(value, "dd/MM/yyyy") : placeholder}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-0" align="start">
+          <Calendar
+            mode="single"
+            selected={value}
+            onSelect={(d) => {
+              onSelect(d);
+              setOpen(false);
+            }}
+            disabled={minDate ? (d) => d < minDate : undefined}
+            initialFocus
+          />
+        </PopoverContent>
+      </Popover>
+      <Input
+        type="time"
+        value={time}
+        onChange={(e) => onTimeChange(e.target.value)}
+        className="h-9"
+      />
+    </div>
   );
 }
 
@@ -344,8 +356,14 @@ export default function OffsiteRequestForm({
   const [startDate, setStartDate] = useState<Date | undefined>(() =>
     initialData?.startDate ? parseISO(initialData.startDate) : undefined,
   );
+  const [startTime, setStartTime] = useState(
+    () => initialData?.startTime ?? "08:00",
+  );
   const [endDate, setEndDate] = useState<Date | undefined>(() =>
     initialData?.endDate ? parseISO(initialData.endDate) : undefined,
+  );
+  const [endTime, setEndTime] = useState(
+    () => initialData?.endTime ?? "17:00",
   );
   const [costDisplay, setCostDisplay] = useState(() =>
     initialData ? initialData.estimatedCost.toLocaleString("en-US") : "0",
@@ -543,7 +561,9 @@ export default function OffsiteRequestForm({
     setProvinceId("");
     setDistrictId("");
     setStartDate(undefined);
+    setStartTime("08:00");
     setEndDate(undefined);
+    setEndTime("17:00");
     setCostDisplay("0");
     setTeammates([]);
     setDocFile(null);
@@ -614,7 +634,9 @@ export default function OffsiteRequestForm({
         departmentUid: requesterDept.uuid || "",
         requesterWorkLocationUid: requesterLoc.uuid || "",
         startDate: format(startDate!, "yyyy-MM-dd"),
+        startTime,
         endDate: format(endDate!, "yyyy-MM-dd"),
+        endTime,
         durationDays,
         monthKey,
         estimatedCost,
@@ -887,14 +909,16 @@ export default function OffsiteRequestForm({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field>
                 <FieldLabel>
-                  ວັນທີເລີ່ມ <span className="text-destructive">*</span>
+                  ວັນທີ-ເວລາເລີ່ມ <span className="text-destructive">*</span>
                 </FieldLabel>
-                <DatePickerButton
+                <DateTimePickerButton
                   value={startDate}
+                  time={startTime}
                   onSelect={(d) => {
                     setStartDate(d);
                     if (endDate && d && endDate < d) setEndDate(undefined);
                   }}
+                  onTimeChange={setStartTime}
                   placeholder="ເລືອກວັນທີ..."
                 />
                 {errors.startDate && (
@@ -904,11 +928,13 @@ export default function OffsiteRequestForm({
 
               <Field>
                 <FieldLabel>
-                  ວັນທີສິ້ນສຸດ <span className="text-destructive">*</span>
+                  ວັນທີ-ເວລາສິ້ນສຸດ <span className="text-destructive">*</span>
                 </FieldLabel>
-                <DatePickerButton
+                <DateTimePickerButton
                   value={endDate}
+                  time={endTime}
                   onSelect={setEndDate}
+                  onTimeChange={setEndTime}
                   placeholder="ເລືອກວັນທີ..."
                   minDate={startDate}
                 />
@@ -1237,9 +1263,9 @@ export default function OffsiteRequestForm({
 
                   <dt className="text-muted-foreground">ວັນທີ</dt>
                   <dd className="font-medium">
-                    {startDate ? format(startDate, "dd/MM/yyyy") : "—"}
+                    {startDate ? `${format(startDate, "dd/MM/yyyy")} ${startTime}` : "—"}
                     {endDate && startDate
-                      ? ` – ${format(endDate, "dd/MM/yyyy")}`
+                      ? ` – ${format(endDate, "dd/MM/yyyy")} ${endTime}`
                       : ""}
                   </dd>
 

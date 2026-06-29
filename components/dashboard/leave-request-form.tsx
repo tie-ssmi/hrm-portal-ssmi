@@ -1177,7 +1177,11 @@ export default function LeaveRequestForm() {
               )}
               <div className="flex justify-between">
                 <span className="text-muted-foreground">ວັນທີຍື່ນ</span>
-                <span>{selectedLeave.createdAt}</span>
+                <span>
+                  {selectedLeave.createdAt?.includes("T")
+                    ? format(new Date(selectedLeave.createdAt), "dd/MM/yyyy HH:mm")
+                    : selectedLeave.createdAt}
+                </span>
               </div>
               <Separator />
               <div>

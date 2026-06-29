@@ -149,14 +149,14 @@ const LocationCard = memo(function LocationCard({
               <>
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-muted-foreground">ໄກຈາກຫ້ອງການ</span>
-                  <span className={`font-semibold tabular-nums ${officeDistance > 50 ? 'text-destructive' : 'text-emerald-600'}`}>
-                    {officeDistance} / 50 ແມັດ
+                  <span className={`font-semibold tabular-nums ${officeDistance > 100 ? 'text-destructive' : 'text-emerald-600'}`}>
+                    {officeDistance} / 100 ແມັດ
                   </span>
                 </div>
                 <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
                   <div
-                    className={`h-full rounded-full transition-all duration-500 ${officeDistance > 50 ? 'bg-destructive' : 'bg-emerald-500'}`}
-                    style={{ width: `${Math.max(Math.min((officeDistance / 50) * 100, 100), 4)}%` }}
+                    className={`h-full rounded-full transition-all duration-500 ${officeDistance > 100 ? 'bg-destructive' : 'bg-emerald-500'}`}
+                    style={{ width: `${Math.max(Math.min((officeDistance / 100) * 100, 100), 4)}%` }}
                   />
                 </div>
               </>
@@ -462,8 +462,8 @@ export default function AttendancePage() {
       toast.error('ບໍ່ສາມາດໂຫຼດຂໍ້ມູນສະຖານທີ່ຫ້ອງການໄດ້. ກະລຸນາລອງໃໝ່.')
       return null
     }
-    if (dist > 50) {
-      toast.error(`ທ່ານຢູ່ຫ່າງຈາກຫ້ອງການ ${dist} ແມັດ. ຕ້ອງຢູ່ພາຍໃນ 50 ແມັດ.`)
+    if (dist > 100) {
+      toast.error(`ທ່ານຢູ່ຫ່າງຈາກຫ້ອງການ ${dist} ແມັດ. ຕ້ອງຢູ່ພາຍໃນ 100 ແມັດ.`)
       return null
     }
     return loc

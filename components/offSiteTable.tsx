@@ -1,7 +1,7 @@
 "use client";
 
 // ** core
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 
 // ** assets / icons
 import {
@@ -11,6 +11,7 @@ import {
   X,
   MoreHorizontal,
   UserRound,
+  HelpCircle,
 } from "lucide-react";
 
 // ** shared components
@@ -40,6 +41,10 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { StatusBadge } from "@/components/offsite/StatusBadge";
+
+// ** third party
+import { driver } from "driver.js";
+import "driver.js/dist/driver.css";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -235,6 +240,52 @@ export default function OffsiteTable({
   const [activeTab, setActiveTab] = useState<TabValue>("all");
   const [deptFilter, setDeptFilter] = useState("all");
 
+  // ── Driver.js tour ──
+  const TOUR_KEY = "offsite-table-tour-seen";
+
+  const startTour = useCallback(() => {
+    const driverObj = driver({
+      showProgress: true,
+      animate: true,
+      overlayColor: "rgba(0,0,0,0.55)",
+      nextBtnText: "ຕໍ່ໄປ",
+      prevBtnText: "ກັບຄືນ",
+      doneBtnText: "ເຂົ້າໃຈແລ້ວ",
+      progressText: "{{current}} / {{total}}",
+      steps: [
+        {
+          element: "#offsite-table-tabs",
+          popover: {
+            title: "ຕົວກັ່ນຕອງ",
+            description: "ກັ່ນຕອງຕາມສະຖານະ: ທັງໝົດ, ລໍຖ້າ, ດຳເນີນການ, ປະຕິເສດ",
+            side: "bottom" as const,
+            align: "start" as const,
+          },
+        },
+        {
+          element: "#offsite-table-list",
+          popover: {
+            title: "ລາຍການຄໍາຮ້ອງຂໍ",
+            description: "ເບິ່ງລາຍລະອຽດ, ອະນຸມັດ ຫຼື ປະຕິເສດ ແຕ່ລະຄໍາຮ້ອງ",
+            side: "top" as const,
+            align: "center" as const,
+          },
+        },
+      ],
+      onDestroyed: () => {
+        localStorage.setItem(TOUR_KEY, "1");
+      },
+    });
+    driverObj.drive();
+  }, []);
+
+  useEffect(() => {
+    if (!localStorage.getItem(TOUR_KEY)) {
+      const timer = setTimeout(startTour, 600);
+      return () => clearTimeout(timer);
+    }
+  }, [startTour]);
+
   const departments = useMemo(() => {
     const set = new Set<string>();
     data.forEach((item) => {
@@ -271,7 +322,7 @@ export default function OffsiteTable({
   return (
     <Card className={className}>
       {/* Filter bar */}
-      <div className="border-b px-4 pt-3 pb-0 space-y-3">
+      <div id="offsite-table-tabs" className="border-b px-4 pt-3 pb-0 space-y-3">
         {canApproveBranch && departments.length > 0 && (
           <Select value={deptFilter} onValueChange={setDeptFilter}>
             <SelectTrigger className="h-8 w-48 text-xs">
@@ -288,7 +339,10 @@ export default function OffsiteTable({
           </Select>
         )}
 
-        <div className="flex gap-0 overflow-x-auto">
+        <div className="flex items-center gap-0 overflow-x-auto">
+          <Button type="button" variant="ghost" size="icon" className="shrink-0 h-7 w-7 mr-1" onClick={startTour}>
+            <HelpCircle className="w-4 h-4 text-muted-foreground" />
+          </Button>
           {TABS.map((tab) => (
             <button
               key={tab.value}
@@ -317,7 +371,7 @@ export default function OffsiteTable({
         </div>
       </div>
 
-      <CardContent className="p-0">
+      <CardContent id="offsite-table-list" className="p-0">
         {filtered.length === 0 ? (
           <div className="py-12 text-center text-sm text-muted-foreground">
             ບໍ່ມີລາຍການ
