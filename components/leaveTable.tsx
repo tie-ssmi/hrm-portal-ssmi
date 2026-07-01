@@ -26,6 +26,13 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Card, CardContent } from '@/components/ui/card'
 import { StatusBadge } from '@/components/offsite/StatusBadge'
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from '@/components/ui/select'
 
 // ** third party
 import { driver } from 'driver.js'
@@ -71,6 +78,7 @@ type LeaveTableProps = {
 	onViewDetail?: (item: LeaveTableItem) => void
 	onApprove?: (item: LeaveTableItem) => void
 	onReject?: (item: LeaveTableItem) => void
+	canApproveBranch?: boolean
 	className?: string
 }
 
@@ -105,20 +113,34 @@ function formatDuration(duration?: number): string {
 	return duration === 0.5 ? '0.5 ວັນ' : `${duration} ວັນ`
 }
 
-export default function LeaveTable({ data, onViewDetail, onApprove, onReject, className }: LeaveTableProps) {
+export default function LeaveTable({ data, onViewDetail, onApprove, onReject, canApproveBranch = false, className }: LeaveTableProps) {
 	const router = useRouter()
 	const [activeTab, setActiveTab] = useState<TabValue>('all')
+	const [deptFilter, setDeptFilter] = useState('all')
+
+	const departments = useMemo(() => {
+		const set = new Set<string>()
+		data.forEach(i => { if (i.department) set.add(i.department) })
+		return Array.from(set).sort()
+	}, [data])
+
+	const deptFiltered = useMemo(() =>
+		canApproveBranch && deptFilter !== 'all'
+			? data.filter(i => i.department === deptFilter)
+			: data,
+		[data, deptFilter, canApproveBranch],
+	)
 
 	const counts = useMemo(() => ({
-		all:        data.length,
-		pending:    data.filter(i => tabMatch(i, 'pending')).length,
-		inprogress: data.filter(i => tabMatch(i, 'inprogress')).length,
-		rejected:   data.filter(i => tabMatch(i, 'rejected')).length,
-	}), [data])
+		all:        deptFiltered.length,
+		pending:    deptFiltered.filter(i => tabMatch(i, 'pending')).length,
+		inprogress: deptFiltered.filter(i => tabMatch(i, 'inprogress')).length,
+		rejected:   deptFiltered.filter(i => tabMatch(i, 'rejected')).length,
+	}), [deptFiltered])
 
 	const filtered = useMemo(() =>
-		activeTab === 'all' ? data : data.filter(i => tabMatch(i, activeTab)),
-		[data, activeTab],
+		activeTab === 'all' ? deptFiltered : deptFiltered.filter(i => tabMatch(i, activeTab)),
+		[deptFiltered, activeTab],
 	)
 
 	// ── Driver.js tour ──
@@ -188,7 +210,20 @@ export default function LeaveTable({ data, onViewDetail, onApprove, onReject, cl
 	return (
 		<Card className={className}>
 			{/* Filter bar */}
-			<div id="leave-table-tabs" className="border-b px-4 pt-3 pb-0">
+			<div id="leave-table-tabs" className="border-b px-4 pt-3 pb-0 space-y-3">
+				{canApproveBranch && departments.length > 0 && (
+					<Select value={deptFilter} onValueChange={setDeptFilter}>
+						<SelectTrigger className="h-8 w-48 text-xs">
+							<SelectValue placeholder="ທຸກພະແນກ" />
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="all">ທຸກພະແນກ</SelectItem>
+							{departments.map(dept => (
+								<SelectItem key={dept} value={dept}>{dept}</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+				)}
 				<div className="flex items-center gap-0 overflow-x-auto">
 					<Button type="button" variant="ghost" size="icon" className="shrink-0 h-7 w-7 mr-1" onClick={startTour}>
 						<HelpCircle className="w-4 h-4 text-muted-foreground" />

@@ -1,7 +1,7 @@
 "use client";
 // ** core
-import { useState, useMemo, useEffect, useCallback, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useState, useMemo, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 
 // ** assets / icons
 import { Palmtree, MapPin } from "lucide-react";
@@ -48,16 +48,11 @@ import type { OffsiteRequestDoc } from "@/types/workOutside";
 import { fetchLeavesForApproval, updateLeaveApproval } from "@/services/leaves";
 
 export default function ApprovePage() {
-  return (
-    <Suspense fallback={<FormsSkeleton />}>
-      <ApprovePageContent />
-    </Suspense>
-  );
+  return <ApprovePageContent />;
 }
 
 function ApprovePageContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const { user, isLoading } = useAuth();
 
@@ -88,25 +83,38 @@ function ApprovePageContent() {
     () => [
       "leaves",
       "approval",
-      departmentUuid ?? null,
+      canApproveBranch ? "branch" : (departmentUuid ?? null),
       workLocationUuid ?? null,
       loggedInUserUuid,
     ],
-    [departmentUuid, workLocationUuid, loggedInUserUuid],
+    [canApproveBranch, departmentUuid, workLocationUuid, loggedInUserUuid],
   );
 
   const { data: leaveRequests = [] } = useQuery({
     queryKey: leaveQueryKey,
-    queryFn: () =>
-      fetchLeavesForApproval({
+    queryFn: async () => {
+      const result = await fetchLeavesForApproval({
         departmentUid: departmentUuid!,
         workLocationUid: workLocationUuid!,
         excludeUserUuid: loggedInUserUuid,
-      }),
+        canApproveBranch,
+      });
+      // TEMP DEBUG — remove after diagnosing approveBranch visibility issue
+      console.log("[leave-approval-debug]", {
+        canApproveDept,
+        canApproveBranch,
+        departmentUuid,
+        workLocationUuid,
+        rolePermissions: user?.rolePermissions,
+        resultCount: result.length,
+        resultDepartments: result.map((r) => r.departmentUid),
+      });
+      return result;
+    },
     // FIX #1: ໃຊ້ canApproveAny ທີ່ declare ຢ່າງຖືກຕ້ອງແລ້ວ
     enabled:
-      !!departmentUuid &&
       !!workLocationUuid &&
+      (canApproveBranch || !!departmentUuid) &&
       !!loggedInUserUuid &&
       canApproveAny,
   });
@@ -206,17 +214,24 @@ function ApprovePageContent() {
   );
 
   // ── Tab state from URL ───────────────────────────────────────────────────
+  // FIX: ໃຊ້ window.location ແທນ useSearchParams() — ໃນ static export, useSearchParams()
+  // ບັງຄັບໃຫ້ build-time suspend (server ໄດ້ markup ບໍ່ຄືກັນກັບ client) ເຮັດໃຫ້ hydration mismatch
   const VALID_TABS = ["leave", "offsite"] as const;
-  const rawTab = searchParams.get("tab");
-  const activeTab = VALID_TABS.includes(rawTab as typeof VALID_TABS[number])
-    ? (rawTab as string)
-    : "leave";
+  const [activeTab, setActiveTab] = useState<typeof VALID_TABS[number]>("leave");
+
+  useEffect(() => {
+    const tab = new URLSearchParams(window.location.search).get("tab");
+    if (VALID_TABS.includes(tab as typeof VALID_TABS[number])) {
+      setActiveTab(tab as typeof VALID_TABS[number]);
+    }
+  }, []);
 
   const handleTabChange = useCallback((value: string) => {
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(window.location.search);
     params.set("tab", value);
     router.replace(`?${params.toString()}`);
-  }, [router, searchParams]);
+    setActiveTab(value as typeof VALID_TABS[number]);
+  }, [router]);
 
   // ── Leave approval state ─────────────────────────────────────────────────
   const [openConfirmDialog, setOpenConfirmDialog] = useState(false);
@@ -287,7 +302,7 @@ function ApprovePageContent() {
     try {
       const decision = offsiteAction === "approve" ? "approved" : "rejected";
       // ຊອກຫາ role ຂອງ approver ທີ່ login ຢູ່ຕໍ່ກັບ approvals array
-      const approvalRole = canApproveDept ? "departmentHead" : "manager";
+      const approvalRole = "departmentHead";
       const fullRecord = offsiteRequests.find(
         (r) => r.id === pendingOffsiteItem.id,
       );
@@ -350,7 +365,7 @@ function ApprovePageContent() {
     // FIX #3: approvalIndex ເກົ່າ hardcode ເປັນ 0 ສະເໝີ
     // ຖ້າ user ເປັນ approver ທີ່ 2 (index 1) ຈະເຂียນໄປ slot ຜິດ
     // ແກ້: ຊອກຫາ index ຂອງ slot ທີ່ກົງກັບ role ຂອງ user ປັດຈຸບັນ
-    const approvalRole = canApproveBranch ? "branchManager" : "departmentHead";
+    const approvalRole = "departmentHead";
     const fullLeave = leaveRequests.find((r) => r.id === pendingApproveItem.id);
     const approvalIndex =
       fullLeave?.approvals?.findIndex(
@@ -541,7 +556,7 @@ function ApprovePageContent() {
               ຂໍລາແທນ
             </Button>
           </div>
-          <LeaveTable data={leaveTableData} onApprove={handleApprove} />
+          <LeaveTable data={leaveTableData} canApproveBranch={canApproveBranch} onApprove={handleApprove} />
         </TabsContent>
 
         <TabsContent value="offsite" className="mt-4">

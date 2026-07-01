@@ -116,7 +116,6 @@ type OffsiteTableProps = {
   onApprove?: (item: OffsiteTableItem) => void;
   onReject?: (item: OffsiteTableItem) => void;
   canApproveBranch?: boolean;
-  currentUserRole?: string;
   className?: string;
 };
 
@@ -147,7 +146,7 @@ function getWhoRejected(approvals?: ApprovalEntry[]): string | null {
   return rejected.length > 0 ? rejected.join(", ") : null;
 }
 
-function computeRowMeta(item: OffsiteTableItem, currentUserRole?: string) {
+function computeRowMeta(item: OffsiteTableItem) {
   const approvals = Array.isArray(item.approvals) ? item.approvals : [];
 
   const isFinal =
@@ -155,15 +154,8 @@ function computeRowMeta(item: OffsiteTableItem, currentUserRole?: string) {
     item.status === "rejected" ||
     item.status === "cancelled";
 
-  let canApprove = false;
-  if (!isFinal) {
-    if (currentUserRole) {
-      const mySlot = approvals.find((a) => a.role === currentUserRole);
-      canApprove = mySlot?.decision === "pending";
-    } else {
-      canApprove = approvals[0]?.decision === "pending";
-    }
-  }
+  const deptHeadSlot = approvals.find((a) => a.role === "departmentHead");
+  const canApprove = !isFinal && deptHeadSlot?.decision === "pending";
 
   const whoPending = getWhoPending(approvals);
   const whoRejected = getWhoRejected(approvals);
@@ -234,7 +226,6 @@ export default function OffsiteTable({
   onApprove,
   onReject,
   canApproveBranch = false,
-  currentUserRole,
   className,
 }: OffsiteTableProps) {
   const [activeTab, setActiveTab] = useState<TabValue>("all");
@@ -381,10 +372,7 @@ export default function OffsiteTable({
             {/* Mobile cards */}
             <div className="space-y-3 p-3 md:hidden">
               {filtered.map((item, index) => {
-                const { canApprove, whoPending, whoRejected } = computeRowMeta(
-                  item,
-                  currentUserRole,
-                );
+                const { canApprove, whoPending, whoRejected } = computeRowMeta(item);
                 return (
                   <Card key={item.id} className="border bg-background">
                     <CardContent className="space-y-3 p-3">
@@ -527,7 +515,7 @@ export default function OffsiteTable({
                 <TableBody>
                   {filtered.map((item, index) => {
                     const { canApprove, whoPending, whoRejected } =
-                      computeRowMeta(item, currentUserRole);
+                      computeRowMeta(item);
                     return (
                       <TableRow key={item.id} className="hover:bg-muted/30">
                         <TableCell className="px-4 py-3 font-semibold text-muted-foreground text-sm">

@@ -79,16 +79,22 @@ export async function fetchLeavesForApproval(params: {
   departmentUid: string
   workLocationUid: string
   excludeUserUuid: string
+  canApproveBranch?: boolean
 }): Promise<LeaveRequest[]> {
-  const { departmentUid, workLocationUid, excludeUserUuid } = params
-  if (!departmentUid || !workLocationUid) return []
+  const { departmentUid, workLocationUid, excludeUserUuid, canApproveBranch } = params
+  if (!workLocationUid || (!canApproveBranch && !departmentUid)) return []
 
   const monthStart = new Date().toISOString().slice(0, 7) + '-01'
-  const leavesQuery = query(
-    collection(db, 'leaves'),
-    where('departmentUid', '==', departmentUid),
-    where('workLocationUid', '==', workLocationUid),
-  )
+  const leavesQuery = canApproveBranch
+    ? query(
+        collection(db, 'leaves'),
+        where('workLocationUid', '==', workLocationUid),
+      )
+    : query(
+        collection(db, 'leaves'),
+        where('departmentUid', '==', departmentUid),
+        where('workLocationUid', '==', workLocationUid),
+      )
 
   const snapshot = await getDocs(leavesQuery)
   const rows = snapshot.docs.map((doc) => ({

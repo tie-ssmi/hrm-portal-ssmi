@@ -29,6 +29,13 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -56,6 +63,7 @@ import {
   formatMonthYearLao,
 } from "@/components/laoDate";
 import type { ActivityCode, OffsiteRequestDoc } from "@/types/workOutside";
+import type { LeaveRequest } from "@/lib/types";
 
 // ** services
 import { fetchAttendanceByUser } from "@/services/attendance";
@@ -141,6 +149,127 @@ function getStatusIcon(status: string) {
   }
 }
 
+const APPROVAL_ROLE_LABEL: Record<string, string> = {
+  departmentHead: 'ຫົວໜ້າພະແນກ',
+  hr: 'HR',
+  manager: 'ຜູ້ຈັດການ',
+}
+
+function LeaveDetailContent({ leave }: { leave: LeaveRequest }) {
+  const startD    = toSafeDate(leave.startDate)
+  const endD      = toSafeDate(leave.endDate)
+  const createdD  = toSafeDate(leave.createdAt)
+  const reviewedD = toSafeDate(leave.reviewedAt)
+
+  return (
+    <div className="space-y-4 text-sm">
+      {/* Status + type */}
+      <div className="flex items-center justify-between">
+        <p className="font-semibold text-base">{leave.policyName || leave.type}</p>
+        <Badge variant={getStatusVariant(leave.status)} className="flex items-center gap-1">
+          {getStatusIcon(leave.status)}
+          {leave.status}
+        </Badge>
+      </div>
+
+      <Separator />
+
+      {/* Dates */}
+      <div className="space-y-1.5">
+        <div className="flex justify-between">
+          <span className="text-muted-foreground">ວັນເລີ່ມ</span>
+          <span>
+            {startD ? formatDayDateLao(startD) : '—'}
+            {leave.startPeriod === 'afternoon' ? ' (ບ່າຍ)' : ' (ເຊົ້າ)'}
+          </span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-muted-foreground">ວັນສິ້ນສຸດ</span>
+          <span>
+            {endD ? formatDayDateLao(endD) : '—'}
+            {leave.endPeriod === 'morning' ? ' (ເຊົ້າ)' : ' (ບ່າຍ)'}
+          </span>
+        </div>
+        {leave.duration != null && (
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">ໄລຍະເວລາ</span>
+            <span>{leave.duration === 0.5 ? '0.5 ວັນ' : `${leave.duration} ວັນ`}</span>
+          </div>
+        )}
+      </div>
+
+      <Separator />
+
+      {/* Reason */}
+      <div className="space-y-1">
+        <p className="text-muted-foreground">ເຫດຜົນ</p>
+        <p>{leave.reason || '—'}</p>
+      </div>
+
+      {/* Successor */}
+      {(leave.successorNameLo || leave.successorNameEn) && (
+        <div className="flex justify-between">
+          <span className="text-muted-foreground">ຜູ້ຮັບວຽກຕໍ່</span>
+          <span>{leave.successorNameLo || leave.successorNameEn}</span>
+        </div>
+      )}
+
+      <Separator />
+
+      {/* Approvals */}
+      {Array.isArray(leave.approvals) && leave.approvals.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-muted-foreground">ສະຖານະການອະນຸມັດ</p>
+          {leave.approvals.map((ap, i) => (
+            <div key={i} className="flex items-center justify-between">
+              <span>{APPROVAL_ROLE_LABEL[ap.role] ?? ap.role}</span>
+              <div className="flex items-center gap-1.5">
+                <Badge
+                  variant={
+                    ap.decision === 'approved' ? 'default'
+                    : ap.decision === 'rejected' ? 'destructive'
+                    : 'outline'
+                  }
+                  className="text-[10px]"
+                >
+                  {ap.decision === 'approved' ? 'ອະນຸມັດ'
+                    : ap.decision === 'rejected' ? 'ປະຕິເສດ'
+                    : 'ລໍຖ້າ'}
+                </Badge>
+                {ap.reviewedBy && (
+                  <span className="text-muted-foreground text-xs">{ap.reviewedBy}</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Separator />
+
+      {/* Meta */}
+      <div className="space-y-1 text-xs text-muted-foreground">
+        <div className="flex justify-between">
+          <span>ມື້ສົ່ງຄຳຮ້ອງ</span>
+          <span>{createdD ? formatDayDateLao(createdD) : '—'}</span>
+        </div>
+        {leave.reviewedBy && (
+          <div className="flex justify-between">
+            <span>ອະນຸມັດໂດຍ</span>
+            <span>{leave.reviewedBy}</span>
+          </div>
+        )}
+        {reviewedD && (
+          <div className="flex justify-between">
+            <span>ວັນທີອະນຸມັດ</span>
+            <span>{formatDayDateLao(reviewedD)}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function HistoryPage() {
   const { user, isLoading } = useAuth();
   useHRM();
@@ -208,6 +337,7 @@ export default function HistoryPage() {
     const now = new Date();
     return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}`;
   });
+  const [selectedLeave, setSelectedLeave] = useState<LeaveRequest | null>(null);
 
   const [selectedOffsiteMonth, setSelectedOffsiteMonth] = useState(() => {
     const now = new Date();
@@ -408,6 +538,7 @@ export default function HistoryPage() {
   }
 
   return (
+    <>
     <div className="space-y-6">
       <div>
         <h1 className="text-foreground text-2xl font-bold">ປະຫັດຕ່າງ</h1>
@@ -636,7 +767,8 @@ export default function HistoryPage() {
                       return (
                         <div
                           key={request.id}
-                          className="bg-muted/50 rounded-lg p-4"
+                          className="bg-muted/50 rounded-lg p-4 cursor-pointer hover:bg-muted/80 transition-colors"
+                          onClick={() => setSelectedLeave(request)}
                         >
                           <div className="flex items-start justify-between">
                             <div>
@@ -878,5 +1010,16 @@ export default function HistoryPage() {
         </TabsContent>
       </Tabs>
     </div>
+
+    {/* Leave detail dialog */}
+    <Dialog open={!!selectedLeave} onOpenChange={(open) => { if (!open) setSelectedLeave(null) }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>ລາຍລະອຽດໃບລາພັກ</DialogTitle>
+        </DialogHeader>
+        {selectedLeave ? <LeaveDetailContent leave={selectedLeave!} /> : null}
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

@@ -152,7 +152,7 @@ export const LAO_PROVINCES: LaoProvince[] = [
       { id: '1007', name: 'ເຟືອງ' },
       { id: '1008', name: 'ໄຊ' },
       { id: '1009', name: 'ຫຼາຍ' },
-      { id: '1010', name: 'ແກ້ວໂອຸດົມ' },
+      { id: '1010', name: 'ແກ້ວອຸດົມ' },
       { id: '1011', name: 'ສຸດ' },
       { id: '1012', name: 'ຄູນຄຳ' },
     ],

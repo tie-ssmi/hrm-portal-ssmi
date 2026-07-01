@@ -102,7 +102,8 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     return typeof loc === "string" ? loc : loc.uid || loc.uuid || loc.id;
   }, [user?.workLocation]);
 
-  const canApprove = !!user?.rolePermissions?.approveDepartment || !!user?.rolePermissions?.approveBranch;
+  const canApproveBranch = !!user?.rolePermissions?.approveBranch;
+  const canApprove = !!user?.rolePermissions?.approveDepartment || canApproveBranch;
 
   useEffect(() => {
     if (!userUid || !userDepartmentId || !userWorkLocationId || !canApprove) {
@@ -125,12 +126,19 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     // was: where("status","==","pending") only → downloaded entire collection, filtered in JS
     // now: also scoped by workLocationUid + departmentUid → only relevant dept/location
     // Requires composite index: (status, workLocationUid, departmentUid)
-    const qLeaves = query(
-      collection(db, "leaves"),
-      where("status", "==", "pending"),
-      where("workLocationUid", "==", userWorkLocationId),
-      where("departmentUid", "==", userDepartmentId),
-    );
+    // canApproveBranch → drop departmentUid filter, see all departments in the branch
+    const qLeaves = canApproveBranch
+      ? query(
+          collection(db, "leaves"),
+          where("status", "==", "pending"),
+          where("workLocationUid", "==", userWorkLocationId),
+        )
+      : query(
+          collection(db, "leaves"),
+          where("status", "==", "pending"),
+          where("workLocationUid", "==", userWorkLocationId),
+          where("departmentUid", "==", userDepartmentId),
+        );
 
     // Fix: single matcher used by both the state-build loop and the toast-trigger loop
     function isMatchingLeave(data: Record<string, any>): boolean {
@@ -179,11 +187,18 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     // =========================================================================
     // docs ໃໝ່ມີ departmentUid top-level ແລ້ວ — filter ຢູ່ Firestore level
     // docs ເກົ່າທີ່ບໍ່ມີ field ນີ້ຈະບໍ່ match query (ຍອมຮັບໄດ້ ເພາະ docs ເກົ່າບໍ່ແມ່ນ pending ແລ້ວ)
-    const qWork = query(
-      collection(db, "workOutside"),
-      where("status", "==", "pending"),
-      where("departmentUid", "==", userDepartmentId),
-    );
+    // canApproveBranch → drop departmentUid filter, scope by branch (work location) instead
+    const qWork = canApproveBranch
+      ? query(
+          collection(db, "workOutside"),
+          where("status", "==", "pending"),
+          where("requester.workLocation.uuid", "==", userWorkLocationId),
+        )
+      : query(
+          collection(db, "workOutside"),
+          where("status", "==", "pending"),
+          where("departmentUid", "==", userDepartmentId),
+        );
 
     function isMatchingWork(data: Record<string, any>): boolean {
       const workLocationId =
@@ -237,7 +252,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       unsubscribeLeaves();
       unsubscribeWork();
     };
-  }, [userUid, userDepartmentId, userWorkLocationId, canApprove, triggerNotification]);
+  }, [userUid, userDepartmentId, userWorkLocationId, canApprove, canApproveBranch, triggerNotification]);
 
   const notifications = useMemo(
     () => [...leaveNotifications, ...workNotifications],
