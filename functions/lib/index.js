@@ -78,13 +78,21 @@ function getVientianeParts() {
 function toMinuteOfDay(hour, minute) {
     return hour * 60 + minute;
 }
-function computeCheckInStatus(nowMinutes, hasMorningLeaveEndToday) {
+function computeCheckInStatus(nowMinutes, hasMorningLeaveEndToday, isOffsite) {
     if (hasMorningLeaveEndToday) {
         const presentCutoff = 12 * 60 + 30; // 12:30 — ເວລາສຸດທ້າຍທີ່ຖືວ່າມາທັນ (ມີລາພັກເຄິ່ງເຊົ້າ)
         const lateCutoff = 14 * 60; // 14:00 — ເວລາສຸດທ້າຍທີ່ຖືວ່າມາສາຍ
         if (nowMinutes <= presentCutoff)
             return 'present';
         if (nowMinutes <= lateCutoff)
+            return 'late';
+        return 'not_check_in';
+    }
+    if (isOffsite) {
+        // ອອກວຽກນອກ: ທັນ < 09:00 | ສາຍ 09:00–09:59 | ບໍ່ check-in >= 10:00
+        if (nowMinutes < 9 * 60)
+            return 'present';
+        if (nowMinutes < 10 * 60)
             return 'late';
         return 'not_check_in';
     }
@@ -283,7 +291,7 @@ exports.recordCheckIn = (0, https_1.onCall)({ region: 'asia-southeast1', cors: c
     if (dayLeaveStatus === 'blocked') {
         throw new https_1.HttpsError('failed-precondition', 'ທ່ານມີວັນລາພັກທີ່ໄດ້ຮັບອະນຸມັດໃນວັນນີ້ ບໍ່ສາມາດ Check-In ໄດ້');
     }
-    const status = computeCheckInStatus(toMinuteOfDay(parseInt(hourStr, 10), parseInt(minuteStr, 10)), dayLeaveStatus === 'morning_leave');
+    const status = computeCheckInStatus(toMinuteOfDay(parseInt(hourStr, 10), parseInt(minuteStr, 10)), dayLeaveStatus === 'morning_leave', data.isOffsite);
     // ກວດ Geofence — ດຶງ coordinates ຫ້ອງການຈາກ Firestore (client ປອມບໍ່ໄດ້)
     if (!data.isOffsite && data.location != null) {
         const empSnap = await admin.firestore()

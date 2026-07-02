@@ -658,18 +658,28 @@ export default function OffsiteRequestForm({
         toast.success(`ແກ້ໄຂສຳເລັດ — ${initialData.requestNo}`);
       } else {
         const requestNo = generateRequestNo();
+        const isLPB = !!user.rolePermissions?.LPB;
+        const requiredApprovers = isLPB
+          ? ["departmentHead", "hr", "manager"]
+          : ["departmentHead", "hr"];
+        const approvals = isLPB
+          ? [
+              { role: "departmentHead", decision: "pending" },
+              { role: "hr", decision: "pending" },
+              { role: "manager", decision: "pending" },
+            ]
+          : [
+              { role: "departmentHead", decision: "pending" },
+              { role: "hr", decision: "pending" },
+            ];
         await addDoc(
           collection(db, "workOutside"),
           stripUndefined({
             ...payload,
             requestNo,
             status: "pending",
-            requiredApprovers: ["departmentHead", "hr", "manager"],
-            approvals: [
-              { role: "departmentHead", decision: "pending" },
-              { role: "hr", decision: "pending" },
-              { role: "manager", decision: "pending" },
-            ],
+            requiredApprovers,
+            approvals,
             rejectReason: null,
             createdAt: now,
             createdBy: fullNameEn,
