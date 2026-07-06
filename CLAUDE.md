@@ -64,17 +64,66 @@ TanStack Query (`lib/query-client.ts`) is the primary data-fetching and caching 
 - **Navigation:** Use `router.push(href)` inside `<button onClick>` — do NOT use `<Link>` for nav items in `nav.tsx` and `mobile-nav.tsx`. This is an explicit project preference.
 - **No `loading.tsx` at dashboard segment level:** `app/dashboard/loading.tsx` was removed to prevent Chrome navigation flash. Do not recreate it. Per-page loading states are handled via TanStack Query `isLoading` skeletons inside each page.
 - **Shared nav utils:** `lib/nav-utils.ts` exports `isNavItemActive(pathname, href)` — use this in both nav components instead of inlining the logic.
+- **`useSearchParams()` in static export:** causes hydration mismatch. Use `window.location.search` / `new URLSearchParams(window.location.search)` inside `useEffect` instead.
+
+### Role Permissions (`RolePermissions` in `lib/types.ts`)
+
+Each employee has a `rolePermissions` object fetched from the `roles` Firestore collection via `rolesUid`. Key fields that gate UI and data access:
+
+| Permission | Effect |
+|---|---|
+| `approveDepartment` | Can approve leave/offsite for own department only; approves at `departmentHead` slot |
+| `approveBranch` | Can approve leave/offsite for all departments in same `workLocation`; also approves at `departmentHead` slot |
+| `LPB` | Offsite requests use 3-step approval chain (departmentHead → hr → manager) instead of 2-step (departmentHead → hr) |
+| `manageLeave` / `manageOffsite` | Manage (CRUD) leave/offsite records |
+| `loginAdmin` | Access to admin panel |
+| `dashboard` / `highDashboard` | Dashboard visibility tiers |
+
+Both `approveDepartment` and `approveBranch` approve at the `departmentHead` slot — they differ only in data scope (department vs whole branch).
+
+### Check-in Status Thresholds
+
+Status is computed **server-side** in `functions/src/index.ts` (`recordCheckIn` Cloud Function) — the client's submitted `status` field is ignored. Client-side mirror is `lib/server-time.ts`.
+
+| Condition | present | late | not_check_in |
+|---|---|---|---|
+| Normal | ≤ 08:15 | 08:16–09:59 | ≥ 10:00 |
+| `isOffsite: true` | < 09:00 | 09:00–09:59 | ≥ 10:00 |
+| `morningLeaveDay` | ≤ 12:30 | 12:31–13:59 | ≥ 14:00 |
+
+Penalty minutes (for late ranking on dashboard) use the same thresholds but `checkInImageURL` present shifts the normal threshold to 09:00 instead of 08:15 (`services/attendance.ts`).
+
+### Approval Flow (Leave & Offsite)
+
+**Leave** (`leaves` collection):
+- `approvals[]` array of `{ role, decision, reviewedBy, reviewedAt }`
+- Roles in order: `departmentHead` → `hr` (→ `manager` if LPB)
+- `status` field is computed from `approvals`: any rejected → `rejected`, all approved → `approved`
+- Approval logic: `services/leaves.ts` (`updateLeaveApproval`)
+
+**Offsite** (`workOutside` collection — note: NOT `workOutsideRequests`):
+- Same `approvals[]` pattern
+- `requiredApprovers` array set at submission time based on `LPB` permission
+- Approval handled inline in `app/dashboard/approv/page.tsx`
+
+Data fetched for approvers is scoped by `workLocationUid` (always) + `departmentUid` (only for `approveDepartment`; `approveBranch` skips dept filter).
+
+### Session & Auth
+
+- **Auto-logout:** 2-day inactivity via `ssmi_last_active` key in `localStorage`. Checked on every `onAuthStateChanged` in `lib/auth-context.tsx`. Updated on every app open. Manual logout clears the key.
+- Firebase Auth uses `browserLocalPersistence` by default (session survives page refresh indefinitely unless inactive for 2+ days).
 
 ### Firebase Collections (Firestore)
 
 Key collections accessed through `services/`:
 - `employees` — employee profiles
-- `attendance` — check-in/check-out records
-- `leaves` — leave requests + approval status (field: `leaveUserUuid`, `startDate`, `startPeriod`, `endDate`, `endPeriod`, `status`)
-- `workOutsideRequests` — off-site work requests
+- `attendance` — check-in/check-out records (fields: `dateKey` YYYY-MM-DD, `status`, `checkInTime` HH:mm, `isOffsite`, `checkInImageURL`, `morningLeaveDay`)
+- `leaves` — leave requests + approval status (fields: `leaveUserUuid`, `startDate`, `startPeriod`, `endDate`, `endPeriod`, `status`, `approvals[]`, `workLocationUid`, `departmentUid`)
+- `workOutside` — off-site work requests (NOT `workOutsideRequests`)
 - `workLocations` — available work locations
 - `leavePolicies` — leave policy rules
 - `news` — company announcements
+- `roles` — role permission sets (linked from `employees.rolesUid`)
 
 ### Environment Variables
 
@@ -96,7 +145,10 @@ VAPID_PRIVATE_KEY                # Web push (Cloud Functions only)
 ### Cloud Functions
 
 `functions/` is a separate Node 20 package with its own `package.json` and TypeScript config. Functions are defined in `functions/src/index.ts` and handle:
+- **`recordCheckIn`** — re-computes check-in status server-side (ignores client's `status` field) to prevent time spoofing
 - Sending web push notifications (triggered by Firestore writes)
 - Scheduled attendance reminder (Cloud Scheduler)
+
+When modifying Cloud Function logic, edit both `functions/src/index.ts` (TypeScript source) and `functions/lib/index.js` (compiled output) so deployment works without a full recompile step.
 
 Deploy functions separately with `npm run deploy` from inside `functions/`.

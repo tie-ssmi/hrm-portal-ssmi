@@ -285,6 +285,15 @@ service cloud.firestore {
     }
 
     // ==========================================================
+    // adminSettings — portal reads to check force-logout signal
+    // write: admin project uses Firebase Admin SDK (bypasses rules)
+    // ==========================================================
+    match /adminSettings/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ==========================================================
     // Deny everything not explicitly matched above
     // ==========================================================
     match /{document=**} {

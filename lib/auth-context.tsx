@@ -11,6 +11,8 @@ import {
   type User as FirebaseUser
 } from 'firebase/auth'
 import { auth } from './firebase-auth'
+import { db } from './firebase'
+import { doc, getDoc } from 'firebase/firestore'
 import type { AuthCredential } from 'firebase/auth'
 import type { AuthContextType, Employee } from './types'
 import { queryClient } from './query-client'
@@ -122,7 +124,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (fbUser) {
           const stored = localStorage.getItem(ACTIVE_KEY)
           if (stored && Date.now() - new Date(stored).getTime() > INACTIVE_MAX_MS) {
-            // Inactive for more than 2 days — force logout
             localStorage.removeItem(ACTIVE_KEY)
             await signOut(auth)
             setFirebaseUser(null)
@@ -130,6 +131,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setIsLoading(false)
             return
           }
+
+          // Force logout all — admin can set adminSettings/forceLogout.triggeredAt
+          if (stored) {
+            try {
+              const forceSnap = await getDoc(doc(db, 'adminSettings', 'forceLogout'))
+              const triggeredAt = forceSnap.data()?.triggeredAt as string | undefined
+              if (triggeredAt && new Date(stored).getTime() < new Date(triggeredAt).getTime()) {
+                localStorage.removeItem(ACTIVE_KEY)
+                await signOut(auth)
+                setFirebaseUser(null)
+                setUser(null)
+                setIsLoading(false)
+                return
+              }
+            } catch {
+              // ຖ້າ Firestore ບໍ່ໄດ້ — ຜ່ານຕໍ່ (ບໍ່ block login)
+            }
+          }
+
           // Update last active time on every app open
           localStorage.setItem(ACTIVE_KEY, new Date().toISOString())
           setFirebaseUser(fbUser)
