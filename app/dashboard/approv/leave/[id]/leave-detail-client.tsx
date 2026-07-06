@@ -229,8 +229,7 @@ export default function LeaveDetailClient({ leaveId }: { leaveId?: string }) {
   const canApproveDept = user?.rolePermissions?.approveDepartment ?? false;
   const canApproveBranch = user?.rolePermissions?.approveBranch ?? false;
   const myRoles: LeaveApproverRole[] = [];
-  if (canApproveDept) myRoles.push("departmentHead");
-  if (canApproveBranch) myRoles.push("manager");
+  if (canApproveDept || canApproveBranch) myRoles.push("departmentHead");
   if (canApproveDept || canApproveBranch) myRoles.push("hr");
 
   const pendingSlot = (leave?.approvals ?? []).find(

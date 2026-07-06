@@ -114,9 +114,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Listen for auth state changes
   useEffect(() => {
+    const INACTIVE_MAX_MS = 2 * 24 * 60 * 60 * 1000 // 2 days inactivity
+    const ACTIVE_KEY = 'ssmi_last_active'
+
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       try {
         if (fbUser) {
+          const stored = localStorage.getItem(ACTIVE_KEY)
+          if (stored && Date.now() - new Date(stored).getTime() > INACTIVE_MAX_MS) {
+            // Inactive for more than 2 days — force logout
+            localStorage.removeItem(ACTIVE_KEY)
+            await signOut(auth)
+            setFirebaseUser(null)
+            setUser(null)
+            setIsLoading(false)
+            return
+          }
+          // Update last active time on every app open
+          localStorage.setItem(ACTIVE_KEY, new Date().toISOString())
           setFirebaseUser(fbUser)
           const employeeData = await firebaseUserToEmployee(fbUser)
           setUser(employeeData)
@@ -337,6 +352,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     try {
       clearPendingGoogleLink()
+      localStorage.removeItem('ssmi_last_active')
       await signOut(auth)
       queryClient.clear()
     } catch (error) {

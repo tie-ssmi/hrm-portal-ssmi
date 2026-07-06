@@ -386,12 +386,17 @@ export type LateRankEntry = {
 
 const LATE_THRESHOLD_MINUTES = 8 * 60 + 15        // 08:15 — normal day
 const MORNING_LEAVE_THRESHOLD_MINUTES = 12 * 60 + 30 // 12:30 — half-day morning leave
+const IMAGE_THRESHOLD_MINUTES = 9 * 60             // 09:00 — check-in with photo
 
-function checkInPenaltyMinutes(checkInTime: string | null | undefined, morningLeaveDay?: boolean): number {
+function checkInPenaltyMinutes(checkInTime: string | null | undefined, morningLeaveDay?: boolean, hasImage?: boolean): number {
   if (!checkInTime) return 0
   const [hStr, mStr] = checkInTime.split(':')
   const total = parseInt(hStr, 10) * 60 + parseInt(mStr, 10)
-  const threshold = morningLeaveDay ? MORNING_LEAVE_THRESHOLD_MINUTES : LATE_THRESHOLD_MINUTES
+  const threshold = morningLeaveDay
+    ? MORNING_LEAVE_THRESHOLD_MINUTES
+    : hasImage
+      ? IMAGE_THRESHOLD_MINUTES
+      : LATE_THRESHOLD_MINUTES
   return Math.max(0, total - threshold)
 }
 
@@ -484,7 +489,7 @@ export async function fetchLateRankingForMonth(monthKey: string): Promise<LateRa
                  : uuidA || uuidB
     if (!mapKey) continue
 
-    const penalty = checkInPenaltyMinutes(data.checkInTime ?? null, data.morningLeaveDay)
+    const penalty = checkInPenaltyMinutes(data.checkInTime ?? null, data.morningLeaveDay, !!data.checkInImageURL)
     const recordDate = toIsoDateString(data)
     const existing = map.get(mapKey)
 
