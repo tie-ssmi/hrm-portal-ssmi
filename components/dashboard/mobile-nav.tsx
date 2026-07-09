@@ -163,7 +163,7 @@ export function MobileNav() {
     <>
       <nav
         className={cn(
-          "lg:hidden fixed bottom-0 left-0 right-0 z-60 bg-card border-t border-border select-none transition-transform duration-300",
+          "lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-card border-t border-border select-none transition-transform duration-300",
           showNav ? "translate-y-0" : "translate-y-full",
         )}
         style={NAV_STYLE}
@@ -202,7 +202,7 @@ export function MobileNav() {
 
       <div
         className={cn(
-          "fixed lg:hidden top-2 right-2 z-60 select-none flex items-center justify-center min-h-11 min-w-11 transition-opacity duration-300",
+          "fixed lg:hidden top-2 right-2 z-40 select-none flex items-center justify-center min-h-11 min-w-11 transition-opacity duration-300",
           showNav ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none",
         )}
       >

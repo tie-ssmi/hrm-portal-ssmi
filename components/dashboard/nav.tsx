@@ -236,7 +236,7 @@ export function DashboardNav() {
       </nav>
 
       <div className="px-3 py-2 flex items-center justify-center">
-        <p className="text-xs text-sidebar-foreground/70">V {version}</p>
+        <p className="text-xs text-sidebar-foreground/70" suppressHydrationWarning>V {version}</p>
       </div>
 
       {/* Install App */}

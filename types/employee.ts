@@ -66,9 +66,12 @@ export interface LeaveData {
   successor: string;
   startDate: string;
   endDate: string;
+  startPeriod?: 'morning' | 'afternoon';
+  endPeriod?: 'morning' | 'afternoon';
+  duration?: number;
   reason: string;
-  position: string; // Added this field
-  note: string; // This acts as the "Note"
-  type: LeaveType; // Added this field
+  position: string;
+  note: string;
+  type: LeaveType;
   leaveImage?: string | null;
 }

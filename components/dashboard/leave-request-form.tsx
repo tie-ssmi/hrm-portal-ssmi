@@ -75,6 +75,7 @@ import { getLeaveApproverRuleText } from "@/services/leave-approval";
 import { fetchOfficialHolidays } from "@/services/officialHolidays";
 import { fetchPoliciesForGender } from "@/services/policies";
 import { getEmployees } from "@/services/employees";
+import FileUpload from "@/components/fileUpload";
 
 type Period = "morning" | "afternoon";
 type LeaveTypeOption = {
@@ -223,7 +224,6 @@ export default function LeaveRequestForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [docUploadChoice, setDocUploadChoice] = useState<DocUploadChoice>(null);
   const [docFile, setDocFile] = useState<File | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const annualRemaining = leaveBalance.annual - leaveBalance.annualUsed;
   const sickRemaining = leaveBalance.sick - leaveBalance.sickUsed;
@@ -977,52 +977,7 @@ export default function LeaveRequestForm() {
                 {/* File input — shown when 'now' selected */}
                 {docUploadChoice === "now" && (
                   <div className="space-y-2">
-                    <label
-                      htmlFor="doc-file-input"
-                      className="block"
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      <div
-                        className={cn(
-                          "flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-6 cursor-pointer transition-colors active:bg-primary/10",
-                          docFile
-                            ? "border-primary bg-primary/5"
-                            : "border-input hover:bg-muted",
-                        )}
-                      >
-                        <Upload className="w-6 h-6 text-muted-foreground" />
-                        {docFile ? (
-                          <div className="text-center">
-                            <p className="text-sm font-medium text-primary">
-                              {docFile.name}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {(docFile.size / 1024).toFixed(1)} KB
-                            </p>
-                          </div>
-                        ) : (
-                          <div className="text-center">
-                            <p className="text-sm text-muted-foreground">
-                              ກົດເພື່ອເລືອກໄຟລ໌
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              PDF, JPG, PNG (ສູງສຸດ 10MB)
-                            </p>
-                          </div>
-                        )}
-                        <input
-                          ref={fileInputRef}
-                          id="doc-file-input"
-                          type="file"
-                          accept=".pdf,.jpg,.jpeg,.png"
-                          className="hidden"
-                          onChange={(e) =>
-                            setDocFile(e.target.files?.[0] ?? null)
-                          }
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      </div>
-                    </label>
+                    <FileUpload file={docFile} onFileSelect={setDocFile} />
                     {docFile && (
                       <button
                         type="button"

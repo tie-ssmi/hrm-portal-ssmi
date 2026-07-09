@@ -67,11 +67,11 @@ import { fetchPoliciesForGender } from "@/services/policies";
 const VISIBLE_COUNT = 3;
 
 function buildRankMonths(): string[] {
-  const now = new Date()
+  const now = new Date();
   return Array.from({ length: 5 }, (_, i) => {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-    return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, "0")}`
-  })
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, "0")}`;
+  });
 }
 
 function PolicyRow({ policy, used }: { policy: PolicyRecord; used: number }) {
@@ -171,9 +171,15 @@ export default function DashboardPage() {
   const { data: userLeaves = [] } = useUserLeaves(user?.uuid);
 
   // late ranking — last 5 months selector (memoised so array reference is stable)
-  const rankMonths = useMemo(buildRankMonths, [])
-  const [selectedRankMonth, setSelectedRankMonth] = useState(() => rankMonths[0])
-  const { data: lateRanking = [], isLoading: rankingLoading, isError: rankingError } = useLateRankingForMonth(selectedRankMonth, !!user);
+  const rankMonths = useMemo(buildRankMonths, []);
+  const [selectedRankMonth, setSelectedRankMonth] = useState(
+    () => rankMonths[0],
+  );
+  const {
+    data: lateRanking = [],
+    isLoading: rankingLoading,
+    isError: rankingError,
+  } = useLateRankingForMonth(selectedRankMonth, !!user);
 
   // used days per policy (approved leaves only)
   const usedByPolicy = useMemo(() => {
@@ -482,11 +488,16 @@ export default function DashboardPage() {
         </TabsContent>
         <TabsContent value="topLeave">
           <Card>
-            <CardContent className="pb-0 pt-4 text-sm">
+            <CardContent className="pt-4 pb-0 text-sm">
               {/* Select lives outside overflow-auto so Radix portal is never clipped */}
               <div className="mb-3 flex items-center justify-between gap-2">
-                <p className="text-foreground text-lg font-semibold">ອັນດັບມາຊ້າ</p>
-                <Select value={selectedRankMonth} onValueChange={setSelectedRankMonth}>
+                <p className="text-foreground text-lg font-semibold">
+                  ອັນດັບມາຊ້າ
+                </p>
+                <Select
+                  value={selectedRankMonth}
+                  onValueChange={setSelectedRankMonth}
+                >
                   <SelectTrigger className="h-8 w-40 text-xs">
                     <SelectValue />
                   </SelectTrigger>
@@ -503,12 +514,16 @@ export default function DashboardPage() {
               <div className="text-muted-foreground max-h-[440px] overflow-auto pb-4">
                 {rankingLoading ? (
                   <div className="flex flex-col items-center justify-center gap-2 py-8">
-                    <p className="text-muted-foreground text-sm">ກຳລັງໂຫຼດ...</p>
+                    <p className="text-muted-foreground text-sm">
+                      ກຳລັງໂຫຼດ...
+                    </p>
                   </div>
                 ) : rankingError ? (
                   <div className="flex flex-col items-center justify-center gap-2 py-8">
-                    <AlertTriangle className="h-10 w-10 text-destructive" />
-                    <p className="text-destructive text-sm">ໂຫຼດຂໍ້ມູນລົ້ມເຫລວ</p>
+                    <AlertTriangle className="text-destructive h-10 w-10" />
+                    <p className="text-destructive text-sm">
+                      ໂຫຼດຂໍ້ມູນລົ້ມເຫລວ
+                    </p>
                   </div>
                 ) : lateRanking.length === 0 ? (
                   <div className="flex flex-col items-center justify-center gap-2 py-8">

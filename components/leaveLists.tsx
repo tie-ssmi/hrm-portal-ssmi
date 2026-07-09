@@ -181,8 +181,16 @@ function DetailRow({
   );
 }
 
+function remainingLeaveDays(leave: LeaveData, todayStr: string): number {
+  let remaining = countWorkDays(todayStr, leave.endDate)
+  if (leave.endPeriod === "morning") remaining -= 0.5
+  if (todayStr === leave.startDate && leave.startPeriod === "afternoon") remaining -= 0.5
+  return Math.max(0, remaining)
+}
+
 // ToDay Component
 export function ToDay({ data }: { data: LeaveData[] }) {
+  const todayStr = new Date().toISOString().split("T")[0]
   return (
     <div className="flex flex-wrap gap-3">
       {data.map((leave, index) => (
@@ -221,14 +229,25 @@ export function ToDay({ data }: { data: LeaveData[] }) {
                     </p>
                   </div>
 
-                  <div className="flex flex-col items-center shrink-0">
-                    <span className="text-2xl font-bold text-primary">
-                      {countWorkDays(leave.startDate, leave.endDate)}
-                    </span>
-                    <span className="text-[10px] text-muted-foreground leading-none">
-                      ມື້
-                    </span>
-                  </div>
+                  {(() => {
+                    const rem = remainingLeaveDays(leave, todayStr)
+                    const isHalf = rem === 0.5
+                    const periodLabel = isHalf
+                      ? leave.endPeriod === "morning"
+                        ? "ຕອນເຊົ້າ"
+                        : "ຕອນແລງ"
+                      : "ມື້"
+                    return (
+                      <div className="flex flex-col items-center shrink-0">
+                        <span className="text-2xl font-bold text-primary">
+                          {String(rem).replace(".", ",")}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground leading-none text-center">
+                          {periodLabel}
+                        </span>
+                      </div>
+                    )
+                  })()}
                 </CardContent>
               </Card>
             }
@@ -360,13 +379,16 @@ export function TodayLeaveSection() {
 
   const { data: todayLeaveRequests = [], isLoading } =
     useTodayLeavesByWorkLocation(workLocationUuid);
-
+  const todayStr = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
   const leaveDataToday: LeaveData[] = todayLeaveRequests.map((r) => ({
     name: r.leaveUserName ?? "",
     department: r.departmentNameLo ?? r.departmentNameEn ?? "",
     successor: r.successorNameLo ?? r.successorNameEn ?? "",
     startDate: r.startDate,
     endDate: r.endDate,
+    startPeriod: r.startPeriod,
+    endPeriod: r.endPeriod,
+    duration: r.duration,
     reason: r.reason,
     position: r.jobTitle ?? "",
     note: r.doc ?? "",
@@ -389,7 +411,9 @@ export function TodayLeaveSection() {
       ) : leaveDataToday.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-8 gap-2">
           <CalendarDays className="h-10 w-10 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">ບໍ່ມີລາຍການລາພັກມື້ນີ້</p>
+          <p className="text-sm text-muted-foreground">
+            ບໍ່ມີລາຍການລາພັກມື້ນີ້
+          </p>
         </div>
       ) : (
         <ToDay data={leaveDataToday} />

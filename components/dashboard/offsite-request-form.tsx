@@ -26,7 +26,6 @@ import {
   Pencil,
   Plus,
   Car,
-  Upload,
 } from "lucide-react";
 
 // ** shared components
@@ -95,6 +94,7 @@ import { LAO_PROVINCES } from "@/public/data/laos-provinces";
 
 // ** services
 import { fetchOfficialHolidays } from "@/services/officialHolidays";
+import FileUpload from "@/components/fileUpload";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -377,7 +377,6 @@ export default function OffsiteRequestForm({
 
   // ── doc upload ──
   const [docFile, setDocFile] = useState<File | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── validation errors ──
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
@@ -986,50 +985,7 @@ export default function OffsiteRequestForm({
             <Field>
               <FieldLabel>ເອກະສານອ້າງອີງ (ຖ້າມີ)</FieldLabel>
               <div className="space-y-2">
-                <label
-                  className="block"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <div
-                    className={cn(
-                      "flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-6 cursor-pointer transition-colors active:bg-primary/10",
-                      docFile
-                        ? "border-primary bg-primary/5"
-                        : "border-input hover:bg-muted",
-                    )}
-                  >
-                    <Upload className="w-6 h-6 text-muted-foreground" />
-                    {docFile ? (
-                      <div className="text-center">
-                        <p className="text-sm font-medium text-primary">
-                          {docFile.name}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {(docFile.size / 1024).toFixed(1)} KB
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="text-center">
-                        <p className="text-sm text-muted-foreground">
-                          ກົດເພື່ອເລືອກໄຟລ໌
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          PDF, JPG, PNG (ສູງສຸດ 10MB)
-                        </p>
-                      </div>
-                    )}
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept=".pdf,.jpg,.jpeg,.png"
-                      className="hidden"
-                      onChange={(e) =>
-                        setDocFile(e.target.files?.[0] ?? null)
-                      }
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                  </div>
-                </label>
+                <FileUpload file={docFile} onFileSelect={setDocFile} />
                 {docFile && (
                   <button
                     type="button"
