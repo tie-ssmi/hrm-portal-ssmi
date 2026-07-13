@@ -466,7 +466,7 @@ export default function OffsiteDetailClient() {
                       </p>
                     </div>
                     <span className="bg-muted text-muted-foreground shrink-0 rounded-full px-2 py-0.5 text-xs">
-                      {tm.roleInTrip}
+                      {tm.position}
                     </span>
                   </div>
                 ))}

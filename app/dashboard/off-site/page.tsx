@@ -60,7 +60,7 @@ type TripPersonRow = {
   jobTitle: string;
   department: Department;
   photoUrl?: string;
-  roleInTrip: string;
+  position: string;
   record: OffsiteRequestDoc;
 };
 
@@ -72,7 +72,7 @@ function tripMembers(record: OffsiteRequestDoc): TripPersonRow[] {
     jobTitle: m.jobTitle,
     department: m.department,
     photoUrl: m.photoUrl,
-    roleInTrip: m.roleInTrip,
+    position: m.position,
     record,
   }));
 }

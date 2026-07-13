@@ -26,6 +26,7 @@ import {
   Pencil,
   Plus,
   Car,
+  FileSpreadsheet,
 } from "lucide-react";
 
 // ** shared components
@@ -83,12 +84,12 @@ import { db, storage } from "@/lib/firebase";
 import { cn } from "@/lib/utils";
 import type {
   ActivityCode,
-  RoleInTrip,
   TeammateEntry,
   EmployeeDoc,
   Department,
   WorkLocation,
   OffsiteRequestDoc,
+  ScheduleDay,
 } from "@/types/workOutside";
 import { LAO_PROVINCES } from "@/public/data/laos-provinces";
 
@@ -143,13 +144,20 @@ const ACTIVITIES = [
   },
 ] as const;
 
-const ROLE_OPTIONS: RoleInTrip[] = [
-  "Lead",
-  "Support",
-  "Presenter",
-  "Coordinator",
-  "Observer",
+const LAO_WEEKDAYS = [
+  "ວັນອາທິດ",
+  "ວັນຈັນ",
+  "ວັນອັງຄານ",
+  "ວັນພຸດ",
+  "ວັນພະຫັດ",
+  "ວັນສຸກ",
+  "ວັນເສົາ",
 ];
+
+function formatScheduleDate(d: Date) {
+  return `${LAO_WEEKDAYS[d.getDay()]} ${format(d, "dd/MM/yyyy")}`;
+}
+
 const CUSTOMER_REQUIRED_TYPES: ActivityCode[] = [
   "MEET_CLIENT",
   "MEETING",
@@ -267,6 +275,34 @@ function DateTimePickerButton({
   );
 }
 
+function ScheduleDatePickerButton({
+  onSelect,
+}: {
+  onSelect: (d: Date) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button type="button" variant="outline" size="sm" className="shrink-0">
+          <CalendarIcon className="w-3.5 h-3.5 mr-1.5" />
+          ເລືອກວັນທີ
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-0" align="start">
+        <Calendar
+          mode="single"
+          onSelect={(d) => {
+            if (d) onSelect(d);
+            setOpen(false);
+          }}
+          initialFocus
+        />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function formatThousands(val: string) {
   const digits = val.replace(/\D/g, "");
   return digits ? Number(digits).toLocaleString("en-US") : "";
@@ -362,11 +398,21 @@ export default function OffsiteRequestForm({
   const [endDate, setEndDate] = useState<Date | undefined>(() =>
     initialData?.endDate ? parseISO(initialData.endDate) : undefined,
   );
-  const [endTime, setEndTime] = useState(
-    () => initialData?.endTime ?? "17:00",
-  );
+  const [endTime, setEndTime] = useState(() => initialData?.endTime ?? "17:00");
   const [costDisplay, setCostDisplay] = useState(() =>
     initialData ? initialData.estimatedCost.toLocaleString("en-US") : "0",
+  );
+  const [references, setReferences] = useState<string[]>(
+    () => initialData?.references ?? [],
+  );
+  const [objective, setObjective] = useState(
+    () => initialData?.objective ?? "",
+  );
+  const [scheduleDetails, setScheduleDetails] = useState<ScheduleDay[]>(
+    () => initialData?.scheduleDetails ?? [],
+  );
+  const [equipmentUsed, setEquipmentUsed] = useState(
+    () => initialData?.equipmentUsed ?? "",
   );
 
   // ── step 3 ──
@@ -377,6 +423,10 @@ export default function OffsiteRequestForm({
 
   // ── doc upload ──
   const [docFile, setDocFile] = useState<File | null>(null);
+
+  // ── excel auto-fill ──
+  const excelInputRef = useRef<HTMLInputElement>(null);
+  const [isParsingExcel, setIsParsingExcel] = useState(false);
 
   // ── validation errors ──
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
@@ -394,7 +444,11 @@ export default function OffsiteRequestForm({
       districtId ||
       startDate ||
       endDate ||
-      costDisplay
+      costDisplay ||
+      references.length > 0 ||
+      objective ||
+      scheduleDetails.length > 0 ||
+      equipmentUsed
     )
       markDirty();
   }, [
@@ -405,6 +459,10 @@ export default function OffsiteRequestForm({
     startDate,
     endDate,
     costDisplay,
+    references,
+    objective,
+    scheduleDetails,
+    equipmentUsed,
     markDirty,
   ]);
 
@@ -531,7 +589,8 @@ export default function OffsiteRequestForm({
         email: emp.email,
         jobTitle: emp.jobTitle,
         department: emp.department,
-        roleInTrip: "Support",
+        position: emp.jobTitle,
+        remark: "",
         photoUrl:
           resolvePhotoUrl(emp.profileImage) ?? resolvePhotoUrl(emp.photo3x4Url),
       },
@@ -543,10 +602,180 @@ export default function OffsiteRequestForm({
     setTeammates((prev) => prev.filter((t) => t.uid !== uid));
   }
 
-  function updateRole(uid: string, role: RoleInTrip) {
+  function updatePosition(uid: string, position: string) {
     setTeammates((prev) =>
-      prev.map((t) => (t.uid === uid ? { ...t, roleInTrip: role } : t)),
+      prev.map((t) => (t.uid === uid ? { ...t, position } : t)),
     );
+  }
+
+  function updateRemark(uid: string, remark: string) {
+    setTeammates((prev) =>
+      prev.map((t) => (t.uid === uid ? { ...t, remark } : t)),
+    );
+  }
+
+  // ─── Reference helpers ────────────────────────────────────────────────────────
+
+  function addReference() {
+    markDirty();
+    setReferences((prev) => [...prev, ""]);
+  }
+
+  function updateReference(idx: number, value: string) {
+    setReferences((prev) => prev.map((r, i) => (i === idx ? value : r)));
+  }
+
+  function removeReference(idx: number) {
+    setReferences((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  // ─── Schedule helpers ─────────────────────────────────────────────────────────
+
+  function addScheduleDay() {
+    markDirty();
+    setScheduleDetails((prev) => [
+      ...prev,
+      { date: "", timeline: [{ time: "", details: "" }] },
+    ]);
+  }
+
+  function removeScheduleDay(dayIdx: number) {
+    setScheduleDetails((prev) => prev.filter((_, i) => i !== dayIdx));
+  }
+
+  function updateScheduleDayDate(dayIdx: number, date: string) {
+    setScheduleDetails((prev) =>
+      prev.map((d, i) => (i === dayIdx ? { ...d, date } : d)),
+    );
+  }
+
+  function addTimelineEntry(dayIdx: number) {
+    setScheduleDetails((prev) =>
+      prev.map((d, i) =>
+        i === dayIdx
+          ? { ...d, timeline: [...d.timeline, { time: "", details: "" }] }
+          : d,
+      ),
+    );
+  }
+
+  function removeTimelineEntry(dayIdx: number, entryIdx: number) {
+    setScheduleDetails((prev) =>
+      prev.map((d, i) =>
+        i === dayIdx
+          ? { ...d, timeline: d.timeline.filter((_, j) => j !== entryIdx) }
+          : d,
+      ),
+    );
+  }
+
+  function updateTimelineEntry(
+    dayIdx: number,
+    entryIdx: number,
+    field: "time" | "details",
+    value: string,
+  ) {
+    setScheduleDetails((prev) =>
+      prev.map((d, i) =>
+        i === dayIdx
+          ? {
+              ...d,
+              timeline: d.timeline.map((t, j) =>
+                j === entryIdx ? { ...t, [field]: value } : t,
+              ),
+            }
+          : d,
+      ),
+    );
+  }
+
+  // ─── Excel auto-fill ───────────────────────────────────────────────────────────
+
+  async function handleExcelUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+
+    setIsParsingExcel(true);
+    try {
+      const XLSX = await import("xlsx");
+      const buf = await f.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rows: unknown[][] = XLSX.utils.sheet_to_json(sheet, {
+        header: 1,
+        defval: "",
+      });
+
+      let newSubject = "";
+      let newObjective = "";
+      let newEquipmentUsed = "";
+      const newReferences: string[] = [];
+      const newSchedule: ScheduleDay[] = [];
+      let currentLabel = "";
+      let inSchedule = false;
+
+      for (const row of rows.slice(1)) {
+        const a = String(row[0] ?? "").trim();
+        const b = String(row[1] ?? "").trim();
+        const c = String(row[2] ?? "").trim();
+
+        if (!inSchedule && a.includes("ວັນທີ") && b.includes("ຊ່ວງເວລາ")) {
+          inSchedule = true;
+          continue;
+        }
+
+        if (inSchedule) {
+          if (!a && !b && !c) continue;
+          if (a) {
+            newSchedule.push({ date: a, timeline: [{ time: b, details: c }] });
+          } else if (newSchedule.length > 0) {
+            newSchedule[newSchedule.length - 1].timeline.push({
+              time: b,
+              details: c,
+            });
+          }
+          continue;
+        }
+
+        if (a) currentLabel = a;
+        if (!b) continue;
+
+        if (currentLabel.includes("ເລື່ອງ")) {
+          newSubject = newSubject ? newSubject : b;
+        } else if (currentLabel.includes("ຕາມ") || currentLabel.includes("ອ້າງອີງ")) {
+          newReferences.push(b);
+        } else if (currentLabel.includes("ຈຸດປະສົງ")) {
+          newObjective = newObjective ? `${newObjective} ${b}` : b;
+        } else if (currentLabel.includes("ອຸປະກອນ")) {
+          newEquipmentUsed = newEquipmentUsed ? `${newEquipmentUsed} ${b}` : b;
+        }
+      }
+
+      if (
+        !newSubject &&
+        !newObjective &&
+        !newEquipmentUsed &&
+        newReferences.length === 0 &&
+        newSchedule.length === 0
+      ) {
+        toast.error("ບໍ່ພົບຂໍ້ມູນທີ່ກົງກັບຮູບແບບໄຟລ໌");
+        return;
+      }
+
+      if (newSubject) setSubject(newSubject);
+      if (newObjective) setObjective(newObjective);
+      if (newEquipmentUsed) setEquipmentUsed(newEquipmentUsed);
+      if (newReferences.length > 0) setReferences(newReferences);
+      if (newSchedule.length > 0) setScheduleDetails(newSchedule);
+      markDirty();
+      toast.success("ດຶງຂໍ້ມູນຈາກ Excel ສຳເລັດ");
+    } catch (err) {
+      console.error(err);
+      toast.error("ອ່ານໄຟລ໌ Excel ລົ້ມເຫລວ ກະລຸນາກວດສອບຮູບແບບໄຟລ໌");
+    } finally {
+      setIsParsingExcel(false);
+    }
   }
 
   // ─── Submit ──────────────────────────────────────────────────────────────────
@@ -564,6 +793,10 @@ export default function OffsiteRequestForm({
     setEndDate(undefined);
     setEndTime("17:00");
     setCostDisplay("0");
+    setReferences([]);
+    setObjective("");
+    setScheduleDetails([]);
+    setEquipmentUsed("");
     setTeammates([]);
     setDocFile(null);
     setErrors({});
@@ -627,6 +860,10 @@ export default function OffsiteRequestForm({
         activityType: { code: activityCode!, name: activity.nameLo },
         subject,
         details,
+        references: references.filter((r) => r.trim()),
+        objective,
+        scheduleDetails,
+        equipmentUsed,
         customerName,
         location: locationDisplay,
         workLocationUid: districtId,
@@ -780,6 +1017,42 @@ export default function OffsiteRequestForm({
             </p>
           </div>
 
+          <div className="rounded-lg border border-dashed p-3 flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-2 min-w-0">
+              <FileSpreadsheet className="w-4 h-4 text-muted-foreground shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium truncate">
+                  ອັບໂຫລດ Excel ເພື່ອຕື່ມຂໍ້ມູນອັດຕະໂນມັດ
+                </p>
+                <p className="text-xs text-muted-foreground truncate">
+                  ຫົວຂໍ້, ອີງຕາມ, ຈຸດປະສົງ, ອຸປະກອນ ແລະ ຕາຕະລາງກຳນົດການ
+                </p>
+              </div>
+            </div>
+            <input
+              ref={excelInputRef}
+              type="file"
+              accept=".xlsx,.xls"
+              className="hidden"
+              onChange={handleExcelUpload}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              disabled={isParsingExcel}
+              onClick={() => excelInputRef.current?.click()}
+            >
+              {isParsingExcel ? (
+                <Spinner className="mr-2" />
+              ) : (
+                <FileSpreadsheet className="w-4 h-4 mr-1.5" />
+              )}
+              ເລືອກໄຟລ໌ Excel
+            </Button>
+          </div>
+
           <FieldGroup>
             <Field>
               <FieldLabel>
@@ -806,6 +1079,60 @@ export default function OffsiteRequestForm({
                 placeholder="ອະທິບາຍຈຸດປະສົງ ແລະ ລາຍລະອຽດ..."
               />
               {errors.details && <FieldError>{errors.details}</FieldError>}
+            </Field>
+
+            <Field>
+              <FieldLabel>
+                ອີງຕາມ{" "}
+                <span className="text-muted-foreground text-xs">
+                  (ທາງເລືອກ)
+                </span>
+              </FieldLabel>
+              <div className="space-y-2">
+                {references.map((ref, idx) => (
+                  <div key={idx} className="flex gap-2">
+                    <Input
+                      value={ref}
+                      onChange={(e) => updateReference(idx, e.target.value)}
+                      placeholder={`ອີງຕາມ ${idx + 1}...`}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
+                      onClick={() => removeReference(idx)}
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={addReference}
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  ເພີ່ມອີງຕາມ
+                </Button>
+              </div>
+            </Field>
+
+            <Field>
+              <FieldLabel>
+                ຈຸດປະສົງ{" "}
+                <span className="text-muted-foreground text-xs">
+                  (ທາງເລືອກ)
+                </span>
+              </FieldLabel>
+              <Textarea
+                value={objective}
+                onChange={(e) => setObjective(e.target.value)}
+                maxLength={1000}
+                rows={3}
+                placeholder="ຈຸດປະສົງຂອງການເດີນທາງ..."
+              />
             </Field>
 
             <Field>
@@ -962,6 +1289,108 @@ export default function OffsiteRequestForm({
 
             <Field>
               <FieldLabel>
+                ຕາຕະລາງກຳນົດການ{" "}
+                <span className="text-muted-foreground text-xs">
+                  (ທາງເລືອກ)
+                </span>
+              </FieldLabel>
+              <div className="space-y-3">
+                {scheduleDetails.map((day, dayIdx) => (
+                  <div key={dayIdx} className="rounded-lg border p-3 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <ScheduleDatePickerButton
+                        onSelect={(d) =>
+                          updateScheduleDayDate(dayIdx, formatScheduleDate(d))
+                        }
+                      />
+                      <Input
+                        value={day.date}
+                        onChange={(e) =>
+                          updateScheduleDayDate(dayIdx, e.target.value)
+                        }
+                        placeholder="ວັນອາທິດ 05/07/2026"
+                        className="flex-1"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
+                        onClick={() => removeScheduleDay(dayIdx)}
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+
+                    <div className="space-y-2">
+                      {day.timeline.map((entry, entryIdx) => (
+                        <div key={entryIdx} className="flex gap-2 items-start">
+                          <Input
+                            value={entry.time}
+                            onChange={(e) =>
+                              updateTimelineEntry(
+                                dayIdx,
+                                entryIdx,
+                                "time",
+                                e.target.value,
+                              )
+                            }
+                            placeholder="08:00 - 11:30"
+                            className="w-32 shrink-0"
+                          />
+                          <Textarea
+                            value={entry.details}
+                            onChange={(e) =>
+                              updateTimelineEntry(
+                                dayIdx,
+                                entryIdx,
+                                "details",
+                                e.target.value,
+                              )
+                            }
+                            rows={2}
+                            placeholder="ລາຍລະອຽດກິດຈະກຳ..."
+                            className="flex-1"
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
+                            onClick={() =>
+                              removeTimelineEntry(dayIdx, entryIdx)
+                            }
+                          >
+                            <X className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      ))}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => addTimelineEntry(dayIdx)}
+                      >
+                        <Plus className="w-4 h-4 mr-1" />
+                        ເພີ່ມຊ່ວງເວລາ
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={addScheduleDay}
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  ເພີ່ມມື້
+                </Button>
+              </div>
+            </Field>
+
+            <Field>
+              <FieldLabel>
                 ຄ່າໃຊ້ຈ່າຍປະມານ <span className="text-destructive">*</span>
               </FieldLabel>
               <div className="relative">
@@ -982,6 +1411,23 @@ export default function OffsiteRequestForm({
                 <FieldError>{errors.estimatedCost}</FieldError>
               )}
             </Field>
+
+            <Field>
+              <FieldLabel>
+                ອຸປະກອນທີ່ນຳໃຊ້{" "}
+                <span className="text-muted-foreground text-xs">
+                  (ທາງເລືອກ)
+                </span>
+              </FieldLabel>
+              <Textarea
+                value={equipmentUsed}
+                onChange={(e) => setEquipmentUsed(e.target.value)}
+                maxLength={1000}
+                rows={3}
+                placeholder="ອຸປະກອນ, ພາຫະນະ ແລະ ອື່ນໆ ທີ່ນຳໃຊ້..."
+              />
+            </Field>
+
             <Field>
               <FieldLabel>ເອກະສານອ້າງອີງ (ຖ້າມີ)</FieldLabel>
               <div className="space-y-2">
@@ -1101,53 +1547,54 @@ export default function OffsiteRequestForm({
                 {teammates.map((tm) => (
                   <div
                     key={tm.uid || tm.email}
-                    className="flex items-center gap-3 p-3 rounded-lg border bg-card"
+                    className="p-3 rounded-lg border bg-card space-y-2"
                   >
-                    <Avatar className="w-9 h-9">
-                      <AvatarImage
-                        src={resolvePhotoUrl(tm.photoUrl)}
-                        alt={tm.fullNameLo || tm.fullNameEn}
-                      />
-                      <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
-                        {(tm.fullNameLo || tm.fullNameEn)
-                          .split(" ")
-                          .map((w) => w[0])
-                          .join("")
-                          .slice(0, 2)
-                          .toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">
-                        {tm.fullNameLo}
-                      </p>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {tm.jobTitle}
-                      </p>
+                    <div className="flex items-center gap-3">
+                      <Avatar className="w-9 h-9">
+                        <AvatarImage
+                          src={resolvePhotoUrl(tm.photoUrl)}
+                          alt={tm.fullNameLo || tm.fullNameEn}
+                        />
+                        <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
+                          {(tm.fullNameLo || tm.fullNameEn)
+                            .split(" ")
+                            .map((w) => w[0])
+                            .join("")
+                            .slice(0, 2)
+                            .toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          {tm.fullNameLo}
+                        </p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {tm.jobTitle}
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                        onClick={() => removeTeammate(tm.uid)}
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
                     </div>
-                    <Select
-                      value={tm.roleInTrip}
-                      onValueChange={(v) => updateRole(tm.uid, v as RoleInTrip)}
-                    >
-                      <SelectTrigger className="w-32 h-8 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ROLE_OPTIONS.map((r) => (
-                          <SelectItem key={r} value={r} className="text-xs">
-                            {r}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
-                      onClick={() => removeTeammate(tm.uid)}
-                    >
-                      <X className="w-4 h-4" />
-                    </Button>
+                    <div className="grid grid-cols-2 gap-2 pl-12">
+                      <Input
+                        value={tm.position}
+                        onChange={(e) => updatePosition(tm.uid, e.target.value)}
+                        placeholder="ຕຳແໜ່ງ"
+                        className="h-8 text-xs"
+                      />
+                      <Input
+                        value={tm.remark}
+                        onChange={(e) => updateRemark(tm.uid, e.target.value)}
+                        placeholder="ໝາຍເຫດ (ຖ້າມີ)"
+                        className="h-8 text-xs"
+                      />
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1217,6 +1664,24 @@ export default function OffsiteRequestForm({
                     {details || "—"}
                   </dd>
 
+                  {objective && (
+                    <>
+                      <dt className="text-muted-foreground">ຈຸດປະສົງ</dt>
+                      <dd className="font-medium break-words line-clamp-2">
+                        {objective}
+                      </dd>
+                    </>
+                  )}
+
+                  {references.some((r) => r.trim()) && (
+                    <>
+                      <dt className="text-muted-foreground">ອີງຕາມ</dt>
+                      <dd className="font-medium break-words">
+                        {references.filter((r) => r.trim()).length} ລາຍການ
+                      </dd>
+                    </>
+                  )}
+
                   {customerName && (
                     <>
                       <dt className="text-muted-foreground">ລົດ</dt>
@@ -1229,7 +1694,9 @@ export default function OffsiteRequestForm({
 
                   <dt className="text-muted-foreground">ວັນທີ</dt>
                   <dd className="font-medium">
-                    {startDate ? `${format(startDate, "dd/MM/yyyy")} ${startTime}` : "—"}
+                    {startDate
+                      ? `${format(startDate, "dd/MM/yyyy")} ${startTime}`
+                      : "—"}
                     {endDate && startDate
                       ? ` – ${format(endDate, "dd/MM/yyyy")} ${endTime}`
                       : ""}
@@ -1238,8 +1705,31 @@ export default function OffsiteRequestForm({
                   <dt className="text-muted-foreground">ໄລຍະເວລາ</dt>
                   <dd className="font-medium">{durationDays} ມື້</dd>
 
+                  {scheduleDetails.length > 0 && (
+                    <>
+                      <dt className="text-muted-foreground">ຕາຕະລາງກຳນົດການ</dt>
+                      <dd className="font-medium">
+                        {scheduleDetails.length} ມື້,{" "}
+                        {scheduleDetails.reduce(
+                          (n, d) => n + d.timeline.length,
+                          0,
+                        )}{" "}
+                        ຊ່ວງເວລາ
+                      </dd>
+                    </>
+                  )}
+
                   <dt className="text-muted-foreground">ຄ່າໃຊ້ຈ່າຍ</dt>
                   <dd className="font-medium">{costDisplay || "0"} ກີບ</dd>
+
+                  {equipmentUsed && (
+                    <>
+                      <dt className="text-muted-foreground">ອຸປະກອນ</dt>
+                      <dd className="font-medium break-words line-clamp-2">
+                        {equipmentUsed}
+                      </dd>
+                    </>
+                  )}
                 </dl>
               </CardContent>
             </Card>
@@ -1260,7 +1750,7 @@ export default function OffsiteRequestForm({
                       >
                         <span>{tm.fullNameLo}</span>
                         <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-                          {tm.roleInTrip}
+                          {tm.position}
                         </span>
                       </div>
                     ))}

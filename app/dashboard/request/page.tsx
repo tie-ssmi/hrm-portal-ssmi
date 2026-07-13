@@ -169,6 +169,10 @@ function FormsPageContent() {
     setDialogOpen(true);
   }, []);
 
+  const handleView = useCallback((d: OffsiteRequestDoc) => {
+    router.push(`/dashboard/request/detail?id=${d.id}`);
+  }, [router]);
+
   const handleSuccess = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: [OFFSITE_QUERY_KEY] });
   }, [queryClient]);
@@ -393,6 +397,7 @@ function FormsPageContent() {
               error={error}
               currentUid={user?.uid ?? ""}
               onCreateNew={handleCreateNew}
+              onView={handleView}
               onEdit={handleEdit}
               onCancel={handleSetCancelTarget}
               onRetry={refetch}

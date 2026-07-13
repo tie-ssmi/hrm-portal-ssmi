@@ -204,7 +204,7 @@ export default function OffsiteDetailClient() {
                     <p className="text-xs text-muted-foreground">{tm.jobTitle}</p>
                   </div>
                   <span className="text-xs bg-muted text-muted-foreground rounded-full px-2 py-0.5">
-                    {tm.roleInTrip}
+                    {tm.position}
                   </span>
                 </div>
               ))}

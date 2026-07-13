@@ -21,8 +21,19 @@ export interface TeammateEntry {
   email: string
   jobTitle: string
   department: Department
-  roleInTrip: RoleInTrip
+  position: string
+  remark: string
   photoUrl?: string
+}
+
+export interface ScheduleTimelineEntry {
+  time: string
+  details: string
+}
+
+export interface ScheduleDay {
+  date: string
+  timeline: ScheduleTimelineEntry[]
 }
 
 export type RequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled'
@@ -42,6 +53,10 @@ export interface WorkOutsideRecord {
   activityType: { code: ActivityCode; name: string }
   subject: string
   details: string
+  references: string[]
+  objective: string
+  scheduleDetails: ScheduleDay[]
+  equipmentUsed: string
   customerName: string
   location: string
   workLocationUid: string
