@@ -905,17 +905,13 @@ export default function HistoryPage() {
                           <p className="text-sm leading-snug font-medium">
                             {request.subject}
                           </p>
-                          {/* Row 3: location + date */}
+                          {/* Row 3: date */}
                           <div className="text-muted-foreground flex flex-col gap-0.5 text-xs">
                             <span className="flex items-center gap-1">
-                              <MapPin className="h-3 w-3 shrink-0" />
-                              {request.location}
-                            </span>
-                            <span className="flex items-center gap-1">
                               <Calendar className="h-3 w-3 shrink-0" />
-                              {formatDateLao(
-                                new Date(request.startDate),
-                              )} – {formatDateLao(new Date(request.endDate))}
+                              {request.startDate && request.endDate
+                                ? `${formatDateLao(new Date(request.startDate))} – ${formatDateLao(new Date(request.endDate))}`
+                                : "—"}
                               {request.durationDays
                                 ? ` (${request.durationDays} ມື້)`
                                 : ""}

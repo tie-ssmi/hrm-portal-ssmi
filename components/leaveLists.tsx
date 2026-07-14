@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 // ** assets / icons
-import { MapPin, MapPinX } from "lucide-react";
+import { MapPinX } from "lucide-react";
 import {
   CalendarDays,
   User,
@@ -545,10 +545,6 @@ export function TodayOffsiteSection() {
                     >
                       {record.subject}
                     </p>
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <MapPin className="h-3 w-3 shrink-0 text-primary" />
-                      <span className="truncate">{record.location}</span>
-                    </div>
                     <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <CalendarDays className="h-3 w-3 shrink-0" />
                       <span>{record.startDate}</span>

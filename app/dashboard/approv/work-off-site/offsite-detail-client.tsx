@@ -23,11 +23,10 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { ActivityTypeBadge } from "@/components/offsite/ActivityTypeBadge";
-import { formatDateRange, formatKip, formatLaoDate } from "@/lib/format";
+import { formatDateRange, formatLaoDate } from "@/lib/format";
 import { toast } from "sonner";
 import {
   ArrowLeft,
-  Banknote,
   Briefcase,
   Building2,
   CalendarRange,
@@ -35,7 +34,6 @@ import {
   Clock,
   ExternalLink,
   FileText,
-  MapPin,
   Users,
   XCircle,
 } from "lucide-react";
@@ -391,42 +389,11 @@ export default function OffsiteDetailClient() {
           <CardContent className="space-y-4 pt-4">
             <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
               <InfoField
-                label="ສະຖານທີ່"
-                value={record.location}
-                icon={<MapPin className="h-3.5 w-3.5" />}
-              />
-              <InfoField
                 label="ວັນທີ"
                 value={`${formatDateRange(record.startDate, record.endDate)} (${record.durationDays} ມື້)`}
                 icon={<CalendarRange className="h-3.5 w-3.5" />}
               />
-              <InfoField
-                label="ຄ່າໃຊ້ຈ່າຍ"
-                value={formatKip(record.estimatedCost)}
-                icon={<Banknote className="h-3.5 w-3.5" />}
-              />
-              {record.customerName && (
-                <InfoField
-                  label="ລູກຄ້າ / ຄູ່ຄ້າ"
-                  value={record.customerName}
-                  icon={<Users className="h-3.5 w-3.5" />}
-                />
-              )}
             </div>
-
-            {record.details && (
-              <>
-                <Separator />
-                <div className="rounded-lg border p-3">
-                  <p className="text-muted-foreground mb-1.5 inline-flex items-center gap-1.5 text-xs">
-                    <FileText className="h-3.5 w-3.5" /> ລາຍລະອຽດ
-                  </p>
-                  <p className="text-foreground text-sm leading-6 whitespace-pre-wrap">
-                    {record.details}
-                  </p>
-                </div>
-              </>
-            )}
           </CardContent>
         </Card>
 

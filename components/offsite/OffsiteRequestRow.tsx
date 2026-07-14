@@ -16,7 +16,7 @@ import { StatusBadge } from './StatusBadge'
 import { ActivityTypeBadge } from './ActivityTypeBadge'
 
 // ** config / utils / types / hooks
-import { formatDateRange, formatKip } from '@/lib/format'
+import { formatDateRange } from '@/lib/format'
 import type { OffsiteRequestDoc } from '@/types/workOutside'
 
 interface Props {
@@ -92,9 +92,6 @@ export function OffsiteRequestRow({ doc, currentUid, onView, onEdit, onCancel }:
         <p className="text-sm truncate" title={doc.subject}>
           {doc.subject}
         </p>
-        {doc.customerName && (
-          <p className="text-xs text-muted-foreground truncate">{doc.customerName}</p>
-        )}
       </td>
 
       {/* date range */}
@@ -116,11 +113,6 @@ export function OffsiteRequestRow({ doc, currentUid, onView, onEdit, onCancel }:
       {/* status */}
       <td className="px-3 py-3 align-middle">
         <StatusBadge status={doc.status} />
-      </td>
-
-      {/* estimatedCost */}
-      <td className="px-3 py-3 align-middle text-right whitespace-nowrap">
-        <span className="text-sm font-medium">{formatKip(doc.estimatedCost)}</span>
       </td>
 
       {/* actions */}
@@ -190,9 +182,6 @@ export function OffsiteRequestCard({ doc, currentUid, onView, onEdit, onCancel }
             </span>
           )}
           <p className="text-sm font-medium mt-1 truncate">{doc.subject}</p>
-          {doc.customerName && (
-            <p className="text-xs text-muted-foreground truncate">{doc.customerName}</p>
-          )}
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -235,10 +224,6 @@ export function OffsiteRequestCard({ doc, currentUid, onView, onEdit, onCancel }
 
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span>{formatDateRange(doc.startDate, doc.endDate)}</span>
-        <span className="font-medium text-foreground">{formatKip(doc.estimatedCost)}</span>
-      </div>
-
-      <div className="flex items-center gap-1 text-xs text-muted-foreground">
         <span>{doc.participantCount} ຄົນ</span>
       </div>
     </div>

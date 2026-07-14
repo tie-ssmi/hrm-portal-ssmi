@@ -227,7 +227,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
             type: "workOutside" as const,
             title: "ຂໍອອກນອກສະຖານທີ່",
             userName: data.createdBy || "ບໍ່ມີຊື່",
-            detail: `${data.activityType?.name || ""} ໄປທີ່: ${data.location || "ບໍ່ລະບຸ"}`,
+            detail: `${data.activityType?.name || ""} — ${data.subject || "ບໍ່ລະບຸ"}`,
           };
         });
 
@@ -237,7 +237,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
             const data = change.doc.data();
             triggerNotification(
               "🚗 ມີຄຳຂໍອອກນອກສະຖານທີ່ໃໝ່!",
-              `ພະນັກງານ: ${data.createdBy || "ບໍ່ມີຊື່"} ຂໍອອກໄປ: ${data.location || "ບໍ່ລະບຸ"}`
+              `ພະນັກງານ: ${data.createdBy || "ບໍ່ມີຊື່"} — ${data.subject || "ບໍ່ລະບຸ"}`
             );
           }
         });

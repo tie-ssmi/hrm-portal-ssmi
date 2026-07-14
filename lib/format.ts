@@ -8,14 +8,19 @@ const LAO_MONTHS: Record<number, string> = {
 }
 
 export function formatLaoDate(isoDate: string): string {
+  if (!isoDate) return '—'
   const d = parseISO(isoDate)
+  if (Number.isNaN(d.getTime())) return '—'
   return `${d.getDate()} ${LAO_MONTHS[d.getMonth() + 1]} ${d.getFullYear()}`
 }
 
 export function formatDateRange(start: string, end: string): string {
+  if (!start && !end) return '—'
+  if (!start || !end) return formatLaoDate(start || end)
   if (start === end) return formatLaoDate(start)
   const s = parseISO(start)
   const e = parseISO(end)
+  if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return '—'
   if (s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear()) {
     return `${s.getDate()} - ${e.getDate()} ${LAO_MONTHS[e.getMonth() + 1]} ${e.getFullYear()}`
   }

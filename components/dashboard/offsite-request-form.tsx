@@ -25,7 +25,6 @@ import {
   UserPlus,
   Pencil,
   Plus,
-  Car,
   FileSpreadsheet,
 } from "lucide-react";
 
@@ -55,20 +54,13 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
 
 // ** third party
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { format, isWeekend, parseISO } from "date-fns";
+import { format, parseISO } from "date-fns";
 import {
   collection,
   getDocs,
@@ -91,10 +83,8 @@ import type {
   OffsiteRequestDoc,
   ScheduleDay,
 } from "@/types/workOutside";
-import { LAO_PROVINCES } from "@/public/data/laos-provinces";
 
 // ** services
-import { fetchOfficialHolidays } from "@/services/officialHolidays";
 import FileUpload from "@/components/fileUpload";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -158,12 +148,6 @@ function formatScheduleDate(d: Date) {
   return `${LAO_WEEKDAYS[d.getDay()]} ${format(d, "dd/MM/yyyy")}`;
 }
 
-const CUSTOMER_REQUIRED_TYPES: ActivityCode[] = [
-  "MEET_CLIENT",
-  "MEETING",
-  "BOOTH",
-];
-
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -221,60 +205,6 @@ function StepIndicator({ current }: { current: number }) {
   );
 }
 
-function DateTimePickerButton({
-  value,
-  time,
-  onSelect,
-  onTimeChange,
-  placeholder,
-  minDate,
-}: {
-  value: Date | undefined;
-  time: string;
-  onSelect: (d: Date | undefined) => void;
-  onTimeChange: (t: string) => void;
-  placeholder: string;
-  minDate?: Date;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="space-y-1.5">
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            variant="outline"
-            className={cn(
-              "w-full justify-start text-left font-normal",
-              !value && "text-muted-foreground",
-            )}
-          >
-            <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
-            {value ? format(value, "dd/MM/yyyy") : placeholder}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-auto p-0" align="start">
-          <Calendar
-            mode="single"
-            selected={value}
-            onSelect={(d) => {
-              onSelect(d);
-              setOpen(false);
-            }}
-            disabled={minDate ? (d) => d < minDate : undefined}
-            initialFocus
-          />
-        </PopoverContent>
-      </Popover>
-      <Input
-        type="time"
-        value={time}
-        onChange={(e) => onTimeChange(e.target.value)}
-        className="h-9"
-      />
-    </div>
-  );
-}
-
 function ScheduleDatePickerButton({
   onSelect,
 }: {
@@ -301,11 +231,6 @@ function ScheduleDatePickerButton({
       </PopoverContent>
     </Popover>
   );
-}
-
-function formatThousands(val: string) {
-  const digits = val.replace(/\D/g, "");
-  return digits ? Number(digits).toLocaleString("en-US") : "";
 }
 
 // Firestore rejects undefined values — strip them via JSON round-trip
@@ -338,13 +263,6 @@ function generateRequestNo(): string {
   return `WO-${year}-${suffix}`;
 }
 
-type VehicleDoc = {
-  nameLocation: string;
-  typeVehicle: string;
-  vehicleName: string;
-  workLocationUid: string;
-};
-
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function OffsiteRequestForm({
@@ -374,34 +292,6 @@ export default function OffsiteRequestForm({
 
   // ── step 2 ──
   const [subject, setSubject] = useState(() => initialData?.subject ?? "");
-  const [details, setDetails] = useState(() => initialData?.details ?? "");
-  const [customerName, setCustomerName] = useState(
-    () => initialData?.customerName ?? "",
-  );
-  const [provinceId, setProvinceId] = useState(() => {
-    if (!initialData?.workLocationUid) return "";
-    return (
-      LAO_PROVINCES.find((p) =>
-        p.districts.some((d) => d.id === initialData.workLocationUid),
-      )?.id ?? ""
-    );
-  });
-  const [districtId, setDistrictId] = useState(
-    () => initialData?.workLocationUid ?? "",
-  );
-  const [startDate, setStartDate] = useState<Date | undefined>(() =>
-    initialData?.startDate ? parseISO(initialData.startDate) : undefined,
-  );
-  const [startTime, setStartTime] = useState(
-    () => initialData?.startTime ?? "08:00",
-  );
-  const [endDate, setEndDate] = useState<Date | undefined>(() =>
-    initialData?.endDate ? parseISO(initialData.endDate) : undefined,
-  );
-  const [endTime, setEndTime] = useState(() => initialData?.endTime ?? "17:00");
-  const [costDisplay, setCostDisplay] = useState(() =>
-    initialData ? initialData.estimatedCost.toLocaleString("en-US") : "0",
-  );
   const [references, setReferences] = useState<string[]>(
     () => initialData?.references ?? [],
   );
@@ -439,12 +329,6 @@ export default function OffsiteRequestForm({
   useEffect(() => {
     if (
       subject ||
-      details ||
-      customerName ||
-      districtId ||
-      startDate ||
-      endDate ||
-      costDisplay ||
       references.length > 0 ||
       objective ||
       scheduleDetails.length > 0 ||
@@ -453,12 +337,6 @@ export default function OffsiteRequestForm({
       markDirty();
   }, [
     subject,
-    details,
-    customerName,
-    districtId,
-    startDate,
-    endDate,
-    costDisplay,
     references,
     objective,
     scheduleDetails,
@@ -493,17 +371,6 @@ export default function OffsiteRequestForm({
     enabled: !!user,
   });
 
-  const { data: vehiclesList = [] } = useQuery<VehicleDoc[]>({
-    queryKey: ["vehicles-all", workLocationUuid],
-    queryFn: async () => {
-      const snap = await getDocs(collection(db, "vehicles"));
-      return snap.docs
-        .map((d) => d.data() as VehicleDoc)
-        .filter((v) => v.workLocationUid === workLocationUuid);
-    },
-    enabled: !!user,
-  });
-
   // ─── Derived ────────────────────────────────────────────────────────────────
 
   const activityMeta = useMemo(
@@ -511,66 +378,11 @@ export default function OffsiteRequestForm({
     [activityCode],
   );
 
-  const { data: officialHolidays = [] } = useQuery({
-    queryKey: ["officialHolidays"],
-    queryFn: fetchOfficialHolidays,
-    staleTime: 24 * 60 * 60 * 1000,
-  });
-
-  const holidaySet = useMemo(
-    () => new Set(officialHolidays.map((h) => h.date)),
-    [officialHolidays],
-  );
-
-  const durationDays = useMemo(() => {
-    if (!startDate || !endDate) return 0;
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    start.setHours(0, 0, 0, 0);
-    end.setHours(0, 0, 0, 0);
-    if (start > end) return 0;
-    let count = 0;
-    const cursor = new Date(start);
-    while (cursor <= end) {
-      const dateKey = format(cursor, "yyyy-MM-dd");
-      if (!isWeekend(cursor) && !holidaySet.has(dateKey)) count++;
-      cursor.setDate(cursor.getDate() + 1);
-    }
-    return count;
-  }, [startDate, endDate, holidaySet]);
-
-  const selectedProvince = useMemo(
-    () => LAO_PROVINCES.find((p) => p.id === provinceId),
-    [provinceId],
-  );
-  const selectedDistrict = useMemo(
-    () => selectedProvince?.districts.find((d) => d.id === districtId),
-    [selectedProvince, districtId],
-  );
-  const locationDisplay =
-    selectedProvince && selectedDistrict
-      ? `${selectedProvince.name} - ${selectedDistrict.name}`
-      : "";
-
-  const needsCustomer = activityCode
-    ? CUSTOMER_REQUIRED_TYPES.includes(activityCode)
-    : false;
-
   // ─── Validation ─────────────────────────────────────────────────────────────
 
   function validateStep2() {
     const e: Partial<Record<string, string>> = {};
     if (!subject.trim()) e.subject = "ກະລຸນາໃສ່ຫົວຂໍ້";
-    if (!details.trim()) e.details = "ກະລຸນາໃສ່ລາຍລະອຽດ";
-    if (needsCustomer && !customerName.trim())
-      e.customerName = "ກະລຸນາເລືອກລົດ";
-    if (!provinceId) e.provinceId = "ກະລຸນາເລືອກແຂວງ";
-    if (!districtId) e.districtId = "ກະລຸນາເລືອກເມືອງ";
-    if (!startDate) e.startDate = "ກະລຸນາເລືອກວັນທີເລີ່ມ";
-    if (!endDate) e.endDate = "ກະລຸນາເລືອກວັນທີສິ້ນສຸດ";
-    if (startDate && endDate && endDate < startDate)
-      e.endDate = "ວັນທີສິ້ນສຸດຕ້ອງຫຼັງວັນທີເລີ່ມ";
-    if (!costDisplay) e.estimatedCost = "ກະລຸນາໃສ່ຄ່າໃຊ້ຈ່າຍ";
     setErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -643,9 +455,13 @@ export default function OffsiteRequestForm({
     setScheduleDetails((prev) => prev.filter((_, i) => i !== dayIdx));
   }
 
-  function updateScheduleDayDate(dayIdx: number, date: string) {
+  function updateScheduleDayDate(
+    dayIdx: number,
+    date: string,
+    dateIso?: string,
+  ) {
     setScheduleDetails((prev) =>
-      prev.map((d, i) => (i === dayIdx ? { ...d, date } : d)),
+      prev.map((d, i) => (i === dayIdx ? { ...d, date, dateIso } : d)),
     );
   }
 
@@ -700,7 +516,7 @@ export default function OffsiteRequestForm({
     try {
       const XLSX = await import("xlsx");
       const buf = await f.arrayBuffer();
-      const wb = XLSX.read(buf, { type: "array" });
+      const wb = XLSX.read(buf, { type: "array", cellDates: true });
       const sheet = wb.Sheets[wb.SheetNames[0]];
       const rows: unknown[][] = XLSX.utils.sheet_to_json(sheet, {
         header: 1,
@@ -728,7 +544,18 @@ export default function OffsiteRequestForm({
         if (inSchedule) {
           if (!a && !b && !c) continue;
           if (a) {
-            newSchedule.push({ date: a, timeline: [{ time: b, details: c }] });
+            const isDateCell = row[0] instanceof Date;
+            const dateLabel = isDateCell
+              ? formatScheduleDate(row[0] as Date)
+              : a;
+            const dateIso = isDateCell
+              ? format(row[0] as Date, "yyyy-MM-dd")
+              : undefined;
+            newSchedule.push({
+              date: dateLabel,
+              dateIso,
+              timeline: [{ time: b, details: c }],
+            });
           } else if (newSchedule.length > 0) {
             newSchedule[newSchedule.length - 1].timeline.push({
               time: b,
@@ -742,8 +569,11 @@ export default function OffsiteRequestForm({
         if (!b) continue;
 
         if (currentLabel.includes("ເລື່ອງ")) {
-          newSubject = newSubject ? newSubject : b;
-        } else if (currentLabel.includes("ຕາມ") || currentLabel.includes("ອ້າງອີງ")) {
+          newSubject ||= b;
+        } else if (
+          currentLabel.includes("ອີງຕາມ") ||
+          currentLabel.includes("ອ້າງອີງ")
+        ) {
           newReferences.push(b);
         } else if (currentLabel.includes("ຈຸດປະສົງ")) {
           newObjective = newObjective ? `${newObjective} ${b}` : b;
@@ -784,15 +614,6 @@ export default function OffsiteRequestForm({
     setStep(1);
     setActivityCode(null);
     setSubject("");
-    setDetails("");
-    setCustomerName("");
-    setProvinceId("");
-    setDistrictId("");
-    setStartDate(undefined);
-    setStartTime("08:00");
-    setEndDate(undefined);
-    setEndTime("17:00");
-    setCostDisplay("0");
     setReferences([]);
     setObjective("");
     setScheduleDetails([]);
@@ -809,8 +630,20 @@ export default function OffsiteRequestForm({
     try {
       const activity = activityMeta!;
       const now = new Date().toISOString();
-      const monthKey = format(startDate!, "MM-yyyy");
-      const estimatedCost = Number(costDisplay.replace(/,/g, ""));
+
+      // Trip dates aren't picked manually anymore — derive them from whichever
+      // schedule days have a real calendar date (calendar picker or Excel date cell).
+      const scheduleIsoDates = scheduleDetails
+        .map((d) => d.dateIso)
+        .filter((d): d is string => !!d)
+        .sort();
+      const derivedStartDate = scheduleIsoDates[0] ?? "";
+      const derivedEndDate =
+        scheduleIsoDates[scheduleIsoDates.length - 1] ?? "";
+      const derivedDurationDays = scheduleDetails.length;
+      const monthKey = derivedStartDate
+        ? format(parseISO(derivedStartDate), "MM-yyyy")
+        : format(new Date(now), "MM-yyyy");
 
       const requesterDept: Department =
         typeof user.department === "object" && user.department !== null
@@ -832,7 +665,7 @@ export default function OffsiteRequestForm({
         `${user.firstNameLo ?? ""} ${user.lastNameLo ?? ""}`.trim();
       const userImage = user.profileImage || user.photo3x4Url;
 
-      let docLink: string | undefined = undefined;
+      let docLink: string | null = null;
       if (docFile) {
         const ext = docFile.name.split(".").pop() ?? "file";
         const storageRef = ref(
@@ -856,26 +689,20 @@ export default function OffsiteRequestForm({
           jobTitle: user.jobTitle ?? user.position ?? "",
           department: requesterDept,
           workLocation: requesterLoc,
+          photoUrl: userImage || undefined,
         },
         activityType: { code: activityCode!, name: activity.nameLo },
         subject,
-        details,
         references: references.filter((r) => r.trim()),
         objective,
         scheduleDetails,
         equipmentUsed,
-        customerName,
-        location: locationDisplay,
-        workLocationUid: districtId,
         departmentUid: requesterDept.uuid || "",
         requesterWorkLocationUid: requesterLoc.uuid || "",
-        startDate: format(startDate!, "yyyy-MM-dd"),
-        startTime,
-        endDate: format(endDate!, "yyyy-MM-dd"),
-        endTime,
-        durationDays,
+        startDate: derivedStartDate,
+        endDate: derivedEndDate,
+        durationDays: derivedDurationDays,
         monthKey,
-        estimatedCost,
         teammateTitle: teammates.length,
         teammate: teammates,
         participantIds,
@@ -883,7 +710,7 @@ export default function OffsiteRequestForm({
         participantCount: participantIds.length,
         updatedAt: now,
         updatedBy: fullNameEn,
-        docLink: docLink ?? null,
+        docLink,
       };
 
       if (isEditMode && initialData) {
@@ -1069,20 +896,6 @@ export default function OffsiteRequestForm({
 
             <Field>
               <FieldLabel>
-                ລາຍລະອຽດ <span className="text-destructive">*</span>
-              </FieldLabel>
-              <Textarea
-                value={details}
-                onChange={(e) => setDetails(e.target.value)}
-                maxLength={1000}
-                rows={4}
-                placeholder="ອະທິບາຍຈຸດປະສົງ ແລະ ລາຍລະອຽດ..."
-              />
-              {errors.details && <FieldError>{errors.details}</FieldError>}
-            </Field>
-
-            <Field>
-              <FieldLabel>
                 ອີງຕາມ{" "}
                 <span className="text-muted-foreground text-xs">
                   (ທາງເລືອກ)
@@ -1136,158 +949,6 @@ export default function OffsiteRequestForm({
             </Field>
 
             <Field>
-              <FieldLabel className="flex items-center gap-1.5">
-                <Car className="h-4 w-4" />
-                ເລືອກລົດ{" "}
-                {needsCustomer ? (
-                  <span className="text-destructive">*</span>
-                ) : (
-                  <span className="text-muted-foreground text-xs">
-                    (ທາງເລືອກ)
-                  </span>
-                )}
-              </FieldLabel>
-              <Select
-                value={customerName}
-                onValueChange={(v) => setCustomerName(v)}
-              >
-                <SelectTrigger
-                  className={cn(!customerName && "text-muted-foreground")}
-                >
-                  <SelectValue placeholder="ເລືອກລົດ..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem key="No" value="No">
-                    <div className="flex flex-col">
-                      <span>ບໍ່ໃຊ້ລົດ</span>
-                      <span className="text-xs text-muted-foreground">_</span>
-                    </div>
-                  </SelectItem>
-                  {vehiclesList.map((v) => (
-                    <SelectItem key={v.vehicleName} value={v.vehicleName}>
-                      <div className="flex flex-col">
-                        <span>{v.vehicleName}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {v.typeVehicle} · {v.nameLocation}
-                        </span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {errors.customerName && (
-                <FieldError>{errors.customerName}</FieldError>
-              )}
-            </Field>
-
-            {/* Province */}
-            <Field>
-              <FieldLabel>
-                ແຂວງ <span className="text-destructive">*</span>
-              </FieldLabel>
-              <Select
-                value={provinceId}
-                onValueChange={(v) => {
-                  setProvinceId(v);
-                  setDistrictId("");
-                }}
-              >
-                <SelectTrigger
-                  className={cn(!provinceId && "text-muted-foreground")}
-                >
-                  <SelectValue placeholder="ເລືອກແຂວງ..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {LAO_PROVINCES.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {errors.provinceId && (
-                <FieldError>{errors.provinceId}</FieldError>
-              )}
-            </Field>
-
-            {/* District */}
-            <Field>
-              <FieldLabel>
-                ເມືອງ <span className="text-destructive">*</span>
-              </FieldLabel>
-              <Select
-                value={districtId}
-                onValueChange={setDistrictId}
-                disabled={!provinceId}
-              >
-                <SelectTrigger
-                  className={cn(!districtId && "text-muted-foreground")}
-                >
-                  <SelectValue
-                    placeholder={
-                      provinceId ? "ເລືອກເມືອງ..." : "ກະລຸນາເລືອກແຂວງກ່ອນ"
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {selectedProvince?.districts.map((d) => (
-                    <SelectItem key={d.id} value={d.id}>
-                      ເມືອງ {d.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {errors.districtId && (
-                <FieldError>{errors.districtId}</FieldError>
-              )}
-            </Field>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field>
-                <FieldLabel>
-                  ວັນທີ-ເວລາເລີ່ມ <span className="text-destructive">*</span>
-                </FieldLabel>
-                <DateTimePickerButton
-                  value={startDate}
-                  time={startTime}
-                  onSelect={(d) => {
-                    setStartDate(d);
-                    if (endDate && d && endDate < d) setEndDate(undefined);
-                  }}
-                  onTimeChange={setStartTime}
-                  placeholder="ເລືອກວັນທີ..."
-                />
-                {errors.startDate && (
-                  <FieldError>{errors.startDate}</FieldError>
-                )}
-              </Field>
-
-              <Field>
-                <FieldLabel>
-                  ວັນທີ-ເວລາສິ້ນສຸດ <span className="text-destructive">*</span>
-                </FieldLabel>
-                <DateTimePickerButton
-                  value={endDate}
-                  time={endTime}
-                  onSelect={setEndDate}
-                  onTimeChange={setEndTime}
-                  placeholder="ເລືອກວັນທີ..."
-                  minDate={startDate}
-                />
-                {errors.endDate && <FieldError>{errors.endDate}</FieldError>}
-              </Field>
-            </div>
-
-            {startDate && endDate && durationDays > 0 && (
-              <p className="text-sm text-muted-foreground -mt-2">
-                ໄລຍະເວລາ:{" "}
-                <span className="font-medium text-foreground">
-                  {durationDays} ມື້
-                </span>
-              </p>
-            )}
-
-            <Field>
               <FieldLabel>
                 ຕາຕະລາງກຳນົດການ{" "}
                 <span className="text-muted-foreground text-xs">
@@ -1300,7 +961,11 @@ export default function OffsiteRequestForm({
                     <div className="flex items-center gap-2">
                       <ScheduleDatePickerButton
                         onSelect={(d) =>
-                          updateScheduleDayDate(dayIdx, formatScheduleDate(d))
+                          updateScheduleDayDate(
+                            dayIdx,
+                            formatScheduleDate(d),
+                            format(d, "yyyy-MM-dd"),
+                          )
                         }
                       />
                       <Input
@@ -1387,29 +1052,6 @@ export default function OffsiteRequestForm({
                   ເພີ່ມມື້
                 </Button>
               </div>
-            </Field>
-
-            <Field>
-              <FieldLabel>
-                ຄ່າໃຊ້ຈ່າຍປະມານ <span className="text-destructive">*</span>
-              </FieldLabel>
-              <div className="relative">
-                <Input
-                  value={costDisplay}
-                  onChange={(e) =>
-                    setCostDisplay(formatThousands(e.target.value))
-                  }
-                  inputMode="numeric"
-                  placeholder="0"
-                  className="pr-10"
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">
-                  ກີບ
-                </span>
-              </div>
-              {errors.estimatedCost && (
-                <FieldError>{errors.estimatedCost}</FieldError>
-              )}
             </Field>
 
             <Field>
@@ -1659,11 +1301,6 @@ export default function OffsiteRequestForm({
                   <dt className="text-muted-foreground">ຫົວຂໍ້</dt>
                   <dd className="font-medium break-words">{subject || "—"}</dd>
 
-                  <dt className="text-muted-foreground">ລາຍລະອຽດ</dt>
-                  <dd className="font-medium break-words line-clamp-2">
-                    {details || "—"}
-                  </dd>
-
                   {objective && (
                     <>
                       <dt className="text-muted-foreground">ຈຸດປະສົງ</dt>
@@ -1682,29 +1319,6 @@ export default function OffsiteRequestForm({
                     </>
                   )}
 
-                  {customerName && (
-                    <>
-                      <dt className="text-muted-foreground">ລົດ</dt>
-                      <dd className="font-medium">{customerName}</dd>
-                    </>
-                  )}
-
-                  <dt className="text-muted-foreground">ສະຖານທີ່</dt>
-                  <dd className="font-medium">{locationDisplay || "—"}</dd>
-
-                  <dt className="text-muted-foreground">ວັນທີ</dt>
-                  <dd className="font-medium">
-                    {startDate
-                      ? `${format(startDate, "dd/MM/yyyy")} ${startTime}`
-                      : "—"}
-                    {endDate && startDate
-                      ? ` – ${format(endDate, "dd/MM/yyyy")} ${endTime}`
-                      : ""}
-                  </dd>
-
-                  <dt className="text-muted-foreground">ໄລຍະເວລາ</dt>
-                  <dd className="font-medium">{durationDays} ມື້</dd>
-
                   {scheduleDetails.length > 0 && (
                     <>
                       <dt className="text-muted-foreground">ຕາຕະລາງກຳນົດການ</dt>
@@ -1718,9 +1332,6 @@ export default function OffsiteRequestForm({
                       </dd>
                     </>
                   )}
-
-                  <dt className="text-muted-foreground">ຄ່າໃຊ້ຈ່າຍ</dt>
-                  <dd className="font-medium">{costDisplay || "0"} ກີບ</dd>
 
                   {equipmentUsed && (
                     <>

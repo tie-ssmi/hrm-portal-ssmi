@@ -1,7 +1,14 @@
 "use client";
 
 // ** core
-import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from "react";
+import {
+  useState,
+  useMemo,
+  useCallback,
+  useEffect,
+  lazy,
+  Suspense,
+} from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 // ** assets / icons
@@ -13,6 +20,7 @@ import {
   FileWarning,
   BriefcaseBusiness,
   HelpCircle,
+  Download,
 } from "lucide-react";
 
 // ** shared components (critical path — always visible)
@@ -24,35 +32,55 @@ import LeaveRequestForm from "@/components/dashboard/leave-request-form";
 
 // ** lazy — offsite + dialogs load on demand
 const OffsiteListFilterBar = lazy(() =>
-  import("@/components/offsite/OffsiteListFilterBar").then((m) => ({ default: m.OffsiteListFilterBar })),
+  import("@/components/offsite/OffsiteListFilterBar").then((m) => ({
+    default: m.OffsiteListFilterBar,
+  })),
 );
 const OffsiteRequestList = lazy(() =>
-  import("@/components/offsite/OffsiteRequestList").then((m) => ({ default: m.OffsiteRequestList })),
+  import("@/components/offsite/OffsiteRequestList").then((m) => ({
+    default: m.OffsiteRequestList,
+  })),
 );
 const CreateRequestDialog = lazy(() =>
-  import("@/components/offsite/CreateRequestDialog").then((m) => ({ default: m.CreateRequestDialog })),
+  import("@/components/offsite/CreateRequestDialog").then((m) => ({
+    default: m.CreateRequestDialog,
+  })),
 );
 const LazyAlertDialog = lazy(() =>
   import("@/components/ui/alert-dialog").then((m) => {
-    function CancelDialog({ target, isCancelling, onConfirm, onClose }: {
+    function CancelDialog({
+      target,
+      isCancelling,
+      onConfirm,
+      onClose,
+    }: {
       target: { requestNo: string } | null;
       isCancelling: boolean;
       onConfirm: () => void;
       onClose: () => void;
     }) {
       return (
-        <m.AlertDialog open={!!target} onOpenChange={(open: boolean) => { if (!open) onClose(); }}>
+        <m.AlertDialog
+          open={!!target}
+          onOpenChange={(open: boolean) => {
+            if (!open) onClose();
+          }}
+        >
           <m.AlertDialogContent>
             <m.AlertDialogHeader>
               <m.AlertDialogTitle>ຍົກເລີກຄຳຂໍນີ້?</m.AlertDialogTitle>
               <m.AlertDialogDescription>
                 ຄຳຂໍ{" "}
-                <span className="font-mono font-semibold">{target?.requestNo}</span>
-                {" "}ຈະຖືກຍົກເລີກ ແລະ ບໍ່ສາມາດກັບຄືນໄດ້
+                <span className="font-mono font-semibold">
+                  {target?.requestNo}
+                </span>{" "}
+                ຈະຖືກຍົກເລີກ ແລະ ບໍ່ສາມາດກັບຄືນໄດ້
               </m.AlertDialogDescription>
             </m.AlertDialogHeader>
             <m.AlertDialogFooter>
-              <m.AlertDialogCancel disabled={isCancelling}>ປິດ</m.AlertDialogCancel>
+              <m.AlertDialogCancel disabled={isCancelling}>
+                ປິດ
+              </m.AlertDialogCancel>
               <m.AlertDialogAction
                 onClick={onConfirm}
                 disabled={isCancelling}
@@ -114,20 +142,25 @@ function FormsPageContent() {
 
   const VALID_TABS = ["leave", "offsite"] as const;
   const rawTab = searchParams.get("tab");
-  const activeTab = VALID_TABS.includes(rawTab as typeof VALID_TABS[number])
+  const activeTab = VALID_TABS.includes(rawTab as (typeof VALID_TABS)[number])
     ? (rawTab as string)
     : "leave";
 
-  const handleTabChange = useCallback((value: string) => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("tab", value);
-    router.replace(`?${params.toString()}`);
-  }, [router, searchParams]);
+  const handleTabChange = useCallback(
+    (value: string) => {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("tab", value);
+      router.replace(`?${params.toString()}`);
+    },
+    [router, searchParams],
+  );
 
   const [filters, setFilters] = useState<OffsiteFilters>(DEFAULT_FILTERS);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<OffsiteRequestDoc | undefined>();
-  const [cancelTarget, setCancelTarget] = useState<OffsiteRequestDoc | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<OffsiteRequestDoc | null>(
+    null,
+  );
   const [isCancelling, setIsCancelling] = useState(false);
 
   const isOffsiteTab = activeTab === "offsite";
@@ -142,8 +175,10 @@ function FormsPageContent() {
   } = useMyOffsiteRequests(filters, isOffsiteTab);
 
   const userUuid = user?.uuid ?? user?.uid ?? "";
-  const { data: upcomingLeaves = [], isLoading: leavesLoading } = useUpcomingLeaves(userUuid);
-  const { data: pendingDocLeaves = [], isLoading: docLeavesLoading } = usePendingDocLeaves(userUuid);
+  const { data: upcomingLeaves = [], isLoading: leavesLoading } =
+    useUpcomingLeaves(userUuid);
+  const { data: pendingDocLeaves = [], isLoading: docLeavesLoading } =
+    usePendingDocLeaves(userUuid);
   const statsLoading = leavesLoading || docLeavesLoading;
 
   const pendingLeaveCount = useMemo(
@@ -155,7 +190,10 @@ function FormsPageContent() {
     const approved = allDocs.filter((d) => d.status === "approved");
     return {
       approvedOffsiteCount: approved.length,
-      approvedOffsiteDays: approved.reduce((sum, d) => sum + (d.durationDays ?? 0), 0),
+      approvedOffsiteDays: approved.reduce(
+        (sum, d) => sum + (d.durationDays ?? 0),
+        0,
+      ),
     };
   }, [allDocs]);
 
@@ -169,9 +207,12 @@ function FormsPageContent() {
     setDialogOpen(true);
   }, []);
 
-  const handleView = useCallback((d: OffsiteRequestDoc) => {
-    router.push(`/dashboard/request/detail?id=${d.id}`);
-  }, [router]);
+  const handleView = useCallback(
+    (d: OffsiteRequestDoc) => {
+      router.push(`/dashboard/request/detail?id=${d.id}`);
+    },
+    [router],
+  );
 
   const handleSuccess = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: [OFFSITE_QUERY_KEY] });
@@ -228,7 +269,8 @@ function FormsPageContent() {
           element: "#request-stats",
           popover: {
             title: "ສະຖິຕິ",
-            description: "ເບິ່ງຈຳນວນຄຳຮ້ອງລາພັກລໍຖ້າ, ເອກະສານຄ້າງ ແລະ ການອອກວຽກນອກ",
+            description:
+              "ເບິ່ງຈຳນວນຄຳຮ້ອງລາພັກລໍຖ້າ, ເອກະສານຄ້າງ ແລະ ການອອກວຽກນອກ",
             side: "bottom" as const,
             align: "center" as const,
           },
@@ -246,7 +288,8 @@ function FormsPageContent() {
           element: "#tab-leave",
           popover: {
             title: "ຟອມຂໍລາພັກ",
-            description: "ຍື່ນຄໍາຮ້ອງຂໍລາພັກ — ເລືອກປະເພດ, ວັນທີ ແລະ ສົ່ງຄໍາຮ້ອງ",
+            description:
+              "ຍື່ນຄໍາຮ້ອງຂໍລາພັກ — ເລືອກປະເພດ, ວັນທີ ແລະ ສົ່ງຄໍາຮ້ອງ",
             side: "bottom" as const,
             align: "start" as const,
           },
@@ -283,10 +326,12 @@ function FormsPageContent() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-foreground text-2xl font-bold">Request Forms</h1>
-          <p className="text-muted-foreground">Submit leave and off-site work requests</p>
+          <p className="text-muted-foreground">
+            Submit leave and off-site work requests
+          </p>
         </div>
         <Button type="button" variant="ghost" size="icon" onClick={startTour}>
-          <HelpCircle className="w-5 h-5 text-muted-foreground" />
+          <HelpCircle className="text-muted-foreground h-5 w-5" />
         </Button>
       </div>
 
@@ -296,7 +341,9 @@ function FormsPageContent() {
           <CardContent className="px-3 pt-3 pb-3">
             <div className="mb-1 flex items-center gap-1">
               <Clock className="h-3 w-3 shrink-0 text-amber-500" />
-              <p className="text-muted-foreground truncate text-[11px]">ລາພັກລໍຖ້າ</p>
+              <p className="text-muted-foreground truncate text-[11px]">
+                ລາພັກລໍຖ້າ
+              </p>
             </div>
             {statsLoading ? (
               <div className="bg-muted h-5 w-6 animate-pulse rounded" />
@@ -314,7 +361,9 @@ function FormsPageContent() {
           <CardContent className="px-3 pt-3 pb-3">
             <div className="mb-1 flex items-center gap-1">
               <FileWarning className="h-3 w-3 shrink-0 text-blue-500" />
-              <p className="text-muted-foreground truncate text-[11px]">ລໍຖ້າເອກະສານ</p>
+              <p className="text-muted-foreground truncate text-[11px]">
+                ລໍຖ້າເອກະສານ
+              </p>
             </div>
             {statsLoading ? (
               <div className="bg-muted h-5 w-6 animate-pulse rounded" />
@@ -333,17 +382,25 @@ function FormsPageContent() {
             <CardContent className="px-3 pt-3 pb-3">
               <div className="mb-1 flex items-center gap-1">
                 <BriefcaseBusiness className="h-3 w-3 shrink-0 text-emerald-500" />
-                <p className="text-muted-foreground truncate text-[11px]">ອອກວຽກນອກ</p>
+                <p className="text-muted-foreground truncate text-[11px]">
+                  ອອກວຽກນອກ
+                </p>
               </div>
               {statsLoading ? (
                 <div className="bg-muted h-5 w-6 animate-pulse rounded" />
               ) : (
                 <p className="text-foreground text-base leading-tight font-bold">
                   {approvedOffsiteCount}
-                  <span className="text-muted-foreground text-[10px] font-normal"> ຄັ້ງ</span>
+                  <span className="text-muted-foreground text-[10px] font-normal">
+                    {" "}
+                    ຄັ້ງ
+                  </span>
                   <span className="text-muted-foreground/40 mx-0.5">/</span>
                   {approvedOffsiteDays}
-                  <span className="text-muted-foreground text-[10px] font-normal"> ວັນ</span>
+                  <span className="text-muted-foreground text-[10px] font-normal">
+                    {" "}
+                    ວັນ
+                  </span>
                 </p>
               )}
             </CardContent>
@@ -352,7 +409,11 @@ function FormsPageContent() {
       </div>
 
       {/* Tabs */}
-      <Tabs value={isHousekeeper ? "leave" : activeTab} onValueChange={handleTabChange} className="w-full">
+      <Tabs
+        value={isHousekeeper ? "leave" : activeTab}
+        onValueChange={handleTabChange}
+        className="w-full"
+      >
         {!isHousekeeper && (
           <TabsList id="request-tabs" className="grid w-full grid-cols-2">
             <TabsTrigger id="tab-leave" value="leave" className="gap-2">
@@ -370,40 +431,67 @@ function FormsPageContent() {
           <LeaveRequestForm />
         </TabsContent>
 
-        {!isHousekeeper && <TabsContent value="offsite" className="mt-4 space-y-4">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <h2 className="text-foreground text-base font-semibold">ການອອກປະຕິບັດງານນອກສະຖານທີ່</h2>
-              <p className="text-muted-foreground text-sm">ລາຍການຄຳຂໍຂອງທ່ານ</p>
+        {!isHousekeeper && (
+          <TabsContent value="offsite" className="mt-4 space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-foreground text-base font-semibold">
+                  ການອອກປະຕິບັດງານນອກສະຖານທີ່
+                </h2>
+                <p className="text-muted-foreground text-sm">
+                  ລາຍການຄຳຂໍຂອງທ່ານ
+                </p>
+              </div>
+              <div className="justify-content flex flex-wrap items-end justify-end gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0 gap-2"
+                  asChild
+                >
+                  <a href="/data/format.xlsx" download="format.xlsx">
+                    <Download className="h-4 w-4" />
+                    Excel
+                  </a>
+                </Button>
+                <Button
+                  onClick={handleCreateNew}
+                  size="sm"
+                  className="shrink-0 gap-2"
+                >
+                  <Plus className="h-4 w-4" />
+                  ສ້າງຄຳຂໍໃໝ່
+                </Button>
+              </div>
             </div>
-            <Button onClick={handleCreateNew} size="sm" className="shrink-0 gap-2">
-              <Plus className="h-4 w-4" />
-              ສ້າງຄຳຂໍໃໝ່
-            </Button>
-          </div>
 
-          <Suspense fallback={<div className="bg-muted h-10 animate-pulse rounded-lg" />}>
-            <OffsiteListFilterBar
-              filters={filters}
-              onFiltersChange={setFilters}
-              availableMonths={availableMonths}
-            />
-          </Suspense>
+            <Suspense
+              fallback={
+                <div className="bg-muted h-10 animate-pulse rounded-lg" />
+              }
+            >
+              <OffsiteListFilterBar
+                filters={filters}
+                onFiltersChange={setFilters}
+                availableMonths={availableMonths}
+              />
+            </Suspense>
 
-          <Suspense fallback={<FormsSkeleton />}>
-            <OffsiteRequestList
-              docs={filtered}
-              isLoading={listLoading}
-              error={error}
-              currentUid={user?.uid ?? ""}
-              onCreateNew={handleCreateNew}
-              onView={handleView}
-              onEdit={handleEdit}
-              onCancel={handleSetCancelTarget}
-              onRetry={refetch}
-            />
-          </Suspense>
-        </TabsContent>}
+            <Suspense fallback={<FormsSkeleton />}>
+              <OffsiteRequestList
+                docs={filtered}
+                isLoading={listLoading}
+                error={error}
+                currentUid={user?.uid ?? ""}
+                onCreateNew={handleCreateNew}
+                onView={handleView}
+                onEdit={handleEdit}
+                onCancel={handleSetCancelTarget}
+                onRetry={refetch}
+              />
+            </Suspense>
+          </TabsContent>
+        )}
       </Tabs>
 
       {/* Dialogs — lazy, render only when triggered */}

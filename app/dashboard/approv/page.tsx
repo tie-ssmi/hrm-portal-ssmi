@@ -187,13 +187,9 @@ function ApprovePageContent() {
         requester: r.requester,
         activityType: r.activityType,
         subject: r.subject,
-        details: r.details,
-        customerName: r.customerName,
-        location: r.location,
         startDate: r.startDate,
         endDate: r.endDate,
         durationDays: r.durationDays,
-        estimatedCost: r.estimatedCost,
         status: (r.status === "cancelled" ? "rejected" : r.status) as
           | "pending"
           | "approved"

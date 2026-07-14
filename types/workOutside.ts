@@ -33,6 +33,7 @@ export interface ScheduleTimelineEntry {
 
 export interface ScheduleDay {
   date: string
+  dateIso?: string
   timeline: ScheduleTimelineEntry[]
 }
 
@@ -52,21 +53,14 @@ export interface WorkOutsideRecord {
   }
   activityType: { code: ActivityCode; name: string }
   subject: string
-  details: string
   references: string[]
   objective: string
   scheduleDetails: ScheduleDay[]
   equipmentUsed: string
-  customerName: string
-  location: string
-  workLocationUid: string
   startDate: string
-  startTime?: string
   endDate: string
-  endTime?: string
   durationDays: number
   monthKey: string
-  estimatedCost: number
   teammateTitle: number
   teammate: TeammateEntry[]
   participantIds: (string | {

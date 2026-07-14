@@ -45,7 +45,6 @@ export function useMyOffsiteRequests(filters: OffsiteFilters, enabled = true) {
         const q = filters.search.toLowerCase()
         const hit =
           doc.subject.toLowerCase().includes(q) ||
-          doc.customerName.toLowerCase().includes(q) ||
           doc.requestNo.toLowerCase().includes(q)
         if (!hit) return false
       }

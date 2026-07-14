@@ -6,20 +6,16 @@ import { useRouter, useSearchParams } from 'next/navigation'
 // ** assets / icons
 import {
   ArrowLeft,
-  Banknote,
   Briefcase,
   Building2,
   CalendarRange,
-  FileText,
   Hash,
-  MapPin,
   Users,
 } from 'lucide-react'
 
 // ** shared components
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { StatusBadge } from '@/components/offsite/StatusBadge'
 import { ActivityTypeBadge } from '@/components/offsite/ActivityTypeBadge'
@@ -30,7 +26,7 @@ import { doc, getDoc } from 'firebase/firestore'
 
 // ** config / utils / types / hooks
 import { db } from '@/lib/firebase'
-import { formatDateRange, formatKip, formatLaoDate } from '@/lib/format'
+import { formatDateRange, formatLaoDate } from '@/lib/format'
 import type { OffsiteRequestDoc } from '@/types/workOutside'
 
 function InfoField({
@@ -154,37 +150,10 @@ export default function OffsiteDetailClient() {
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <InfoField
-              label="ສະຖານທີ່"
-              value={record.location}
-              icon={<MapPin className="h-3.5 w-3.5" />}
-            />
-            <InfoField
               label="ວັນທີ"
               value={`${formatDateRange(record.startDate, record.endDate)} (${record.durationDays} ມື້)`}
               icon={<CalendarRange className="h-3.5 w-3.5" />}
             />
-            <InfoField
-              label="ຄ່າໃຊ້ຈ່າຍ"
-              value={formatKip(record.estimatedCost)}
-              icon={<Banknote className="h-3.5 w-3.5" />}
-            />
-            {record.customerName && (
-              <InfoField
-                label="ລູກຄ້າ / ຄູ່ຄ້າ"
-                value={record.customerName}
-                icon={<Users className="h-3.5 w-3.5" />}
-              />
-            )}
-          </div>
-
-          <Separator />
-
-          <div className="rounded-lg border p-4">
-            <p className="mb-2 inline-flex items-center gap-2 text-xs text-muted-foreground">
-              <FileText className="h-3.5 w-3.5" />
-              ລາຍລະອຽດ
-            </p>
-            <p className="text-sm leading-6 whitespace-pre-wrap">{record.details || '—'}</p>
           </div>
         </CardContent>
       </Card>

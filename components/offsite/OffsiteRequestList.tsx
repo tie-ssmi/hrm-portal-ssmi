@@ -23,7 +23,6 @@ const TABLE_HEADERS = [
   { label: 'ວັນທີ', className: 'w-44' },
   { label: 'ຜູ້ຮ່ວມ', className: 'w-24' },
   { label: 'ສະຖານະ', className: 'w-24' },
-  { label: 'ຄ່າໃຊ້ຈ່າຍ', className: 'w-32 text-right' },
   { label: '', className: 'w-12' },
 ]
 
@@ -62,7 +61,6 @@ function SkeletonRows() {
                 <td className="px-3 py-3"><Skeleton className="h-4 w-32" /></td>
                 <td className="px-3 py-3"><Skeleton className="h-6 w-16 rounded-full" /></td>
                 <td className="px-3 py-3"><Skeleton className="h-5 w-16 rounded-full" /></td>
-                <td className="px-3 py-3 text-right"><Skeleton className="h-4 w-24 ml-auto" /></td>
                 <td className="px-3 py-3"><Skeleton className="h-8 w-8 rounded-md" /></td>
               </tr>
             ))}

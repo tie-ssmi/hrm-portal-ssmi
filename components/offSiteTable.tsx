@@ -92,13 +92,9 @@ export type OffsiteTableItem = {
   };
   activityType?: { code: string; name: string };
   subject?: string;
-  details?: string;
-  customerName?: string;
-  location?: string;
   startDate: string;
   endDate: string;
   durationDays?: number;
-  estimatedCost?: number;
   status?: "pending" | "approved" | "rejected" | "cancelled";
   approvals?: ApprovalEntry[];
   teammate?: TeammateEntry[];

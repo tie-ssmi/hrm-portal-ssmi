@@ -4,7 +4,7 @@
 import { useMemo, useState } from "react";
 
 // ** assets / icons
-import { Search, Users, Building2, MapPin, Calendar } from "lucide-react";
+import { Search, Users, Building2, Calendar } from "lucide-react";
 
 // ** shared components
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -286,12 +286,6 @@ export default function OffsiteTodayPage() {
                             >
                               {row.record.subject}
                             </p>
-                            <div className="text-muted-foreground flex items-center gap-1 truncate text-xs">
-                              <MapPin className="h-3 w-3 shrink-0" />
-                              <span className="truncate">
-                                {row.record.location || "-"}
-                              </span>
-                            </div>
                             {showBranchCol && (
                               <p className="text-muted-foreground truncate text-xs">
                                 {row.record.requester?.workLocation?.nameLo ??

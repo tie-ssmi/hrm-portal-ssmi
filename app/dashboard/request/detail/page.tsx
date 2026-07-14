@@ -7,11 +7,8 @@ import { useRouter } from "next/navigation";
 // ** assets / icons
 import {
   ArrowLeft,
-  MapPin,
   CalendarDays,
   Users,
-  Banknote,
-  FileText,
   User,
   ClipboardList,
   Wrench,
@@ -31,7 +28,7 @@ import { doc, getDoc } from "firebase/firestore";
 
 // ** config / utils / types / hooks
 import { db } from "@/lib/firebase";
-import { formatDateRange, formatKip } from "@/lib/format";
+import { formatDateRange } from "@/lib/format";
 import type { OffsiteRequestDoc } from "@/types/workOutside";
 
 function InfoRow({
@@ -131,9 +128,6 @@ export default function OffsiteRequestDetailPage() {
         <h1 className="text-foreground mt-1 text-lg font-semibold">
           {record.subject}
         </h1>
-        {record.customerName && (
-          <p className="text-muted-foreground text-sm">{record.customerName}</p>
-        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -149,25 +143,14 @@ export default function OffsiteRequestDetailPage() {
         <InfoRow icon={CalendarDays} label="ວັນທີ">
           {formatDateRange(record.startDate, record.endDate)}
         </InfoRow>
-        <InfoRow icon={MapPin} label="ສະຖານທີ່">
-          {record.location || "—"}
-        </InfoRow>
         <InfoRow icon={User} label="ຜູ້ສະເໜີ">
           {record.requester.fullNameLo || record.requester.fullNameEn}
         </InfoRow>
-        {record.details && (
-          <InfoRow icon={FileText} label="ລາຍລະອຽດ">
-            {record.details}
-          </InfoRow>
-        )}
         {record.objective && (
           <InfoRow icon={ClipboardList} label="ຈຸດປະສົງ">
             {record.objective}
           </InfoRow>
         )}
-        <InfoRow icon={Banknote} label="ຄ່າໃຊ້ຈ່າຍ">
-          {formatKip(record.estimatedCost)}
-        </InfoRow>
         {record.equipmentUsed && (
           <InfoRow icon={Wrench} label="ອຸປະກອນ">
             {record.equipmentUsed}
