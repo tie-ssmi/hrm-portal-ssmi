@@ -1,5 +1,4 @@
 export type ActivityCode = 'MEET_CLIENT' | 'MEETING' | 'BOOTH' | 'PROMO' | 'TRAINING'
-export type RoleInTrip = 'Lead' | 'Support' | 'Presenter' | 'Coordinator' | 'Observer'
 
 export interface Department {
   uuid: string
@@ -57,6 +56,8 @@ export interface WorkOutsideRecord {
   objective: string
   scheduleDetails: ScheduleDay[]
   equipmentUsed: string
+  departmentUid: string
+  requesterWorkLocationUid: string
   startDate: string
   endDate: string
   durationDays: number

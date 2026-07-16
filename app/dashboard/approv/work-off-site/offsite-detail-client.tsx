@@ -29,12 +29,15 @@ import {
   ArrowLeft,
   Briefcase,
   Building2,
+  BookMarked,
   CalendarRange,
   CheckCircle2,
+  ClipboardList,
   Clock,
   ExternalLink,
   FileText,
   Users,
+  Wrench,
   XCircle,
 } from "lucide-react";
 import type { OffsiteRequestDoc } from "@/types/workOutside";
@@ -394,6 +397,66 @@ export default function OffsiteDetailClient() {
                 icon={<CalendarRange className="h-3.5 w-3.5" />}
               />
             </div>
+
+            {record.objective && (
+              <div className="rounded-lg border p-3">
+                <p className="text-muted-foreground mb-1.5 inline-flex items-center gap-1.5 text-xs">
+                  <ClipboardList className="h-3.5 w-3.5" /> ຈຸດປະສົງ
+                </p>
+                <p className="text-foreground text-sm leading-6 whitespace-pre-wrap">
+                  {record.objective}
+                </p>
+              </div>
+            )}
+
+            {record.references?.length > 0 && (
+              <div className="rounded-lg border p-3">
+                <p className="text-muted-foreground mb-1.5 inline-flex items-center gap-1.5 text-xs">
+                  <BookMarked className="h-3.5 w-3.5" /> ອີງຕາມ
+                </p>
+                <ul className="list-disc space-y-1 pl-4 text-sm">
+                  {record.references.map((ref, i) => (
+                    <li key={i}>{ref}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {record.scheduleDetails?.length > 0 && (
+              <div>
+                <p className="text-muted-foreground mb-2 inline-flex items-center gap-1.5 text-xs">
+                  <CalendarRange className="h-3.5 w-3.5" /> ຕາຕະລາງກຳນົດການ
+                </p>
+                <div className="space-y-2">
+                  {record.scheduleDetails.map((day, i) => (
+                    <div key={i} className="rounded-lg border p-3">
+                      <p className="text-sm font-semibold">{day.date}</p>
+                      <div className="mt-2 space-y-1.5">
+                        {day.timeline.map((entry, j) => (
+                          <div key={j} className="flex gap-3 text-sm">
+                            <span className="text-muted-foreground w-28 shrink-0">
+                              {entry.time}
+                            </span>
+                            <span className="flex-1">{entry.details}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {record.equipmentUsed && (
+              <div className="rounded-lg border p-3">
+                <p className="text-muted-foreground mb-1.5 inline-flex items-center gap-1.5 text-xs">
+                  <Wrench className="h-3.5 w-3.5" /> ອຸປະກອນທີ່ນຳໃຊ້
+                </p>
+                <p className="text-foreground text-sm leading-6 whitespace-pre-wrap">
+                  {record.equipmentUsed}
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
 

@@ -13,6 +13,7 @@ import {
 } from '@/services/attendance'
 import { fetchServerTime } from '@/lib/server-time'
 import { fetchTodayLeaveStatus, type DayLeaveStatus } from '@/services/leaves'
+import { fetchActiveTripForUser } from '@/services/trip'
 
 export type { DayLeaveStatus }
 
@@ -273,6 +274,19 @@ export function useTodayLeaveStatus(userUuid: string | null | undefined, isoDate
   return useQuery({
     queryKey: leaveStatusKeys.today(userUuid || '', isoDate),
     queryFn: () => fetchTodayLeaveStatus(userUuid!, isoDate),
+    enabled: !!userUuid,
+    staleTime: 1000 * 60 * 5,
+  })
+}
+
+export const tripKeys = {
+  today: (userUuid: string, isoDate: string) => ['trip', 'today', userUuid, isoDate] as const,
+}
+
+export function useTodayTrip(userUuid: string | null | undefined, isoDate: string) {
+  return useQuery({
+    queryKey: tripKeys.today(userUuid || '', isoDate),
+    queryFn: () => fetchActiveTripForUser(userUuid!, isoDate),
     enabled: !!userUuid,
     staleTime: 1000 * 60 * 5,
   })

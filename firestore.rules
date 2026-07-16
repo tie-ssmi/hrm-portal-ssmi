@@ -46,6 +46,25 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/roles/$(rolesUid)).data.role.approveDepartment == true;
     }
 
+    // NOTE: `IT` is not a field on RolePermissions in lib/types.ts — this name is
+    // inferred by convention (matches isAdmin/isLPB pattern). Verify against the
+    // actual `roles` collection schema and adjust the field name if it differs.
+    function isIT() {
+      let emp = get(/databases/$(database)/documents/employees/$(request.auth.uid)).data;
+      let rolesUid = emp.get('rolesUid', null);
+      return request.auth != null
+        && rolesUid != null
+        && get(/databases/$(database)/documents/roles/$(rolesUid)).data.role.IT == true;
+    }
+
+    function isLPB() {
+      let emp = get(/databases/$(database)/documents/employees/$(request.auth.uid)).data;
+      let rolesUid = emp.get('rolesUid', null);
+      return request.auth != null
+        && rolesUid != null
+        && get(/databases/$(database)/documents/roles/$(rolesUid)).data.role.LPB == true;
+    }
+
     // Approver for workOutside/offsite requests
     function isApprover() {
       let emp = get(/databases/$(database)/documents/employees/$(request.auth.uid)).data;
@@ -187,6 +206,20 @@ service cloud.firestore {
     match /officialHoliday/{docId} {
       allow read: if isSignedIn();
       allow write: if isAdmin();
+    }
+
+    // ==========================================================
+    // trip — group business trips / study tours
+    // Read is open to all signed-in users so attendance check-in
+    // can look up whether the current user is on an active trip.
+    // Manage (create/update/delete) is IT, Admin, or LPB only —
+    // no 3-day-edit-window restriction.
+    // ==========================================================
+    match /trip/{docId} {
+      allow read: if isSignedIn();
+      allow create: if isIT() || isAdmin() || isLPB();
+      allow update: if isIT() || isAdmin() || isLPB();
+      allow delete: if isIT() || isAdmin() || isLPB();
     }
 
     // ==========================================================

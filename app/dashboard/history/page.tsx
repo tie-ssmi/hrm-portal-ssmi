@@ -133,6 +133,8 @@ function getStatusLabel(
       return "ລາພັກ";
     case "offsite":
       return "ອອກວຽກນອກ" + forgotOut;
+    case "trip":
+      return "ທັດສະນະ";
     default:
       return status;
   }
@@ -150,23 +152,28 @@ function getStatusIcon(status: string) {
 }
 
 const APPROVAL_ROLE_LABEL: Record<string, string> = {
-  departmentHead: 'ຫົວໜ້າພະແນກ',
-  hr: 'HR',
-  manager: 'ຜູ້ຈັດການ',
-}
+  departmentHead: "ຫົວໜ້າພະແນກ",
+  hr: "HR",
+  manager: "ຜູ້ຈັດການ",
+};
 
 function LeaveDetailContent({ leave }: { leave: LeaveRequest }) {
-  const startD    = toSafeDate(leave.startDate)
-  const endD      = toSafeDate(leave.endDate)
-  const createdD  = toSafeDate(leave.createdAt)
-  const reviewedD = toSafeDate(leave.reviewedAt)
+  const startD = toSafeDate(leave.startDate);
+  const endD = toSafeDate(leave.endDate);
+  const createdD = toSafeDate(leave.createdAt);
+  const reviewedD = toSafeDate(leave.reviewedAt);
 
   return (
     <div className="space-y-4 text-sm">
       {/* Status + type */}
       <div className="flex items-center justify-between">
-        <p className="font-semibold text-base">{leave.policyName || leave.type}</p>
-        <Badge variant={getStatusVariant(leave.status)} className="flex items-center gap-1">
+        <p className="text-base font-semibold">
+          {leave.policyName || leave.type}
+        </p>
+        <Badge
+          variant={getStatusVariant(leave.status)}
+          className="flex items-center gap-1"
+        >
           {getStatusIcon(leave.status)}
           {leave.status}
         </Badge>
@@ -179,21 +186,23 @@ function LeaveDetailContent({ leave }: { leave: LeaveRequest }) {
         <div className="flex justify-between">
           <span className="text-muted-foreground">ວັນເລີ່ມ</span>
           <span>
-            {startD ? formatDayDateLao(startD) : '—'}
-            {leave.startPeriod === 'afternoon' ? ' (ບ່າຍ)' : ' (ເຊົ້າ)'}
+            {startD ? formatDayDateLao(startD) : "—"}
+            {leave.startPeriod === "afternoon" ? " (ບ່າຍ)" : " (ເຊົ້າ)"}
           </span>
         </div>
         <div className="flex justify-between">
           <span className="text-muted-foreground">ວັນສິ້ນສຸດ</span>
           <span>
-            {endD ? formatDayDateLao(endD) : '—'}
-            {leave.endPeriod === 'morning' ? ' (ເຊົ້າ)' : ' (ບ່າຍ)'}
+            {endD ? formatDayDateLao(endD) : "—"}
+            {leave.endPeriod === "morning" ? " (ເຊົ້າ)" : " (ບ່າຍ)"}
           </span>
         </div>
         {leave.duration != null && (
           <div className="flex justify-between">
             <span className="text-muted-foreground">ໄລຍະເວລາ</span>
-            <span>{leave.duration === 0.5 ? '0.5 ວັນ' : `${leave.duration} ວັນ`}</span>
+            <span>
+              {leave.duration === 0.5 ? "0.5 ວັນ" : `${leave.duration} ວັນ`}
+            </span>
           </div>
         )}
       </div>
@@ -203,7 +212,7 @@ function LeaveDetailContent({ leave }: { leave: LeaveRequest }) {
       {/* Reason */}
       <div className="space-y-1">
         <p className="text-muted-foreground">ເຫດຜົນ</p>
-        <p>{leave.reason || '—'}</p>
+        <p>{leave.reason || "—"}</p>
       </div>
 
       {/* Successor */}
@@ -226,18 +235,24 @@ function LeaveDetailContent({ leave }: { leave: LeaveRequest }) {
               <div className="flex items-center gap-1.5">
                 <Badge
                   variant={
-                    ap.decision === 'approved' ? 'default'
-                    : ap.decision === 'rejected' ? 'destructive'
-                    : 'outline'
+                    ap.decision === "approved"
+                      ? "default"
+                      : ap.decision === "rejected"
+                        ? "destructive"
+                        : "outline"
                   }
                   className="text-[10px]"
                 >
-                  {ap.decision === 'approved' ? 'ອະນຸມັດ'
-                    : ap.decision === 'rejected' ? 'ປະຕິເສດ'
-                    : 'ລໍຖ້າ'}
+                  {ap.decision === "approved"
+                    ? "ອະນຸມັດ"
+                    : ap.decision === "rejected"
+                      ? "ປະຕິເສດ"
+                      : "ລໍຖ້າ"}
                 </Badge>
                 {ap.reviewedBy && (
-                  <span className="text-muted-foreground text-xs">{ap.reviewedBy}</span>
+                  <span className="text-muted-foreground text-xs">
+                    {ap.reviewedBy}
+                  </span>
                 )}
               </div>
             </div>
@@ -248,10 +263,10 @@ function LeaveDetailContent({ leave }: { leave: LeaveRequest }) {
       <Separator />
 
       {/* Meta */}
-      <div className="space-y-1 text-xs text-muted-foreground">
+      <div className="text-muted-foreground space-y-1 text-xs">
         <div className="flex justify-between">
           <span>ມື້ສົ່ງຄຳຮ້ອງ</span>
-          <span>{createdD ? formatDayDateLao(createdD) : '—'}</span>
+          <span>{createdD ? formatDayDateLao(createdD) : "—"}</span>
         </div>
         {leave.reviewedBy && (
           <div className="flex justify-between">
@@ -267,7 +282,7 @@ function LeaveDetailContent({ leave }: { leave: LeaveRequest }) {
         )}
       </div>
     </div>
-  )
+  );
 }
 
 export default function HistoryPage() {
@@ -519,7 +534,8 @@ export default function HistoryPage() {
     () =>
       myOffsiteRequests
         .filter(
-          (r) => r.status === "approved" && r.startDate?.startsWith(CURRENT_YEAR),
+          (r) =>
+            r.status === "approved" && r.startDate?.startsWith(CURRENT_YEAR),
         )
         .reduce((sum, r) => sum + (r.durationDays ?? 0), 0),
     [myOffsiteRequests],
@@ -539,322 +555,212 @@ export default function HistoryPage() {
 
   return (
     <>
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-foreground text-2xl font-bold">ປະຫັດຕ່າງ</h1>
-        <p className="text-muted-foreground">ເບິ່ງປະຫັດຕ່າງຂອງທ່ານ</p>
-      </div>
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-foreground text-2xl font-bold">ປະຫັດຕ່າງ</h1>
+          <p className="text-muted-foreground">ເບິ່ງປະຫັດຕ່າງຂອງທ່ານ</p>
+        </div>
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Card>
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="bg-chart-1/10 flex h-10 w-10 items-center justify-center rounded-lg">
-                <Calendar className="text-chart-1 h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-muted-foreground text-xs">ຈຳນວນມື້ມາການ</p>
-                <p className="text-foreground text-xl font-bold">
-                  {yearAttendanceCount}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="bg-chart-2/10 flex h-10 w-10 items-center justify-center rounded-lg">
-                <Palmtree className="text-chart-2 h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-muted-foreground text-xs">ຈຳນວນມື້ທີລາພັກ</p>
-                <p className="text-foreground text-xl font-bold">
-                  {yearLeaveDays}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="bg-chart-2/10 flex h-10 w-10 items-center justify-center rounded-lg">
-                <MapPin className="text-chart-2 h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-muted-foreground text-xs">
-                  ຈຳນວນມື້ອອກວຽກນອກ
-                </p>
-                <p className="text-foreground text-xl font-bold">
-                  {yearOffsiteDays}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="bg-destructive/10 flex h-10 w-10 items-center justify-center rounded-lg">
-                <DollarSign className="text-destructive h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-muted-foreground text-xs">ຄ່າປັບທັງໝົດ</p>
-                <p className="text-foreground hidden text-xl font-bold md:block">
-                  {formatKip(yearFines)}
-                </p>
-                <p className="text-foreground block text-xl font-bold md:hidden">
-                  {formatKipText(yearFines)}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Tabs defaultValue="attendance" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="attendance" className="text-xs sm:text-sm">
-            <Clock className="h-4 w-4 sm:mr-2" />
-            <span className="hidden sm:inline">check in/out</span>
-          </TabsTrigger>
-          <TabsTrigger value="leave" className="text-xs sm:text-sm">
-            <Palmtree className="h-4 w-4 sm:mr-2" />
-            <span className="hidden sm:inline">ລາພັກ</span>
-          </TabsTrigger>
-          <TabsTrigger value="offsite" className="text-xs sm:text-sm">
-            <MapPin className="h-4 w-4 sm:mr-2" />
-            <span className="hidden sm:inline">ອອກວຽກນອກ</span>
-          </TabsTrigger>
-          <TabsTrigger value="fines" className="text-xs sm:text-sm">
-            <DollarSign className="h-4 w-4 sm:mr-2" />
-            <span className="hidden sm:inline">ຄ່າປັບ</span>
-          </TabsTrigger>
-        </TabsList>
-        {/* Checkin */}
-        <TabsContent value="attendance" className="mt-4">
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <CardTitle className="text-base">
-                    ປະຫວັດການເຂົ້າ-ອອກ
-                  </CardTitle>
-                  <CardDescription>ລາຍລະອຽດການເຂົ້າ-ອອກ</CardDescription>
+            <CardContent className="pt-4 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="bg-chart-1/10 flex h-10 w-10 items-center justify-center rounded-lg">
+                  <Calendar className="text-chart-1 h-5 w-5" />
                 </div>
-                <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-                  <SelectTrigger className="w-[160px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {monthOptions.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <ScrollArea className="h-[400px] pr-4">
-                {allWeekdays.length === 0 ? (
-                  <p className="text-muted-foreground py-8 text-center text-sm">
-                    No records for this month
+                <div>
+                  <p className="text-muted-foreground text-xs">ຈຳນວນມື້ມາການ</p>
+                  <p className="text-foreground text-xl font-bold">
+                    {yearAttendanceCount}
                   </p>
-                ) : (
-                  <div className="space-y-3">
-                    {allWeekdays.map(({ date, record }) => (
-                      <div
-                        key={date}
-                        className="bg-muted/50 rounded-lg p-3 sm:p-4"
-                      >
-                        <div className="mb-2 flex items-start justify-between gap-2">
-                          <div className="flex min-w-0 flex-1 items-start gap-2">
-                            <Calendar className="text-muted-foreground mt-0.5 h-4 w-4 flex-shrink-0" />
-                            <div className="min-w-0 flex-1">
-                              <p className="hidden truncate text-sm font-medium md:block">
-                                {formatDayDateLao(new Date(date))}
-                              </p>
-                              <p className="truncate text-sm font-medium md:hidden">
-                                {formatDateLao(new Date(date))}
-                              </p>
-                            </div>
-                          </div>
-                          {record ? (
-                            <Badge
-                              variant={getStatusVariant(record.status)}
-                              className="flex-shrink-0"
-                            >
-                              {getStatusLabel(
-                                record.status,
-                                record?.checkIn,
-                                record?.checkOut,
-                              )}
-                            </Badge>
-                          ) : (
-                            <Badge
-                              variant="outline"
-                              className="text-muted-foreground flex-shrink-0"
-                            >
-                              ບໍ່ມີຂໍ້ມູນ
-                            </Badge>
-                          )}
-                        </div>
-                        <div className="text-muted-foreground flex gap-2 pl-6 text-xs sm:flex-row sm:items-center sm:gap-4">
-                          <span className="flex items-center gap-1">
-                            <LogIn className="h-3 w-3 flex-shrink-0" />
-                            <span className="truncate">
-                              {record?.checkIn || "--:--"}
-                            </span>
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <LogOut className="h-3 w-3 flex-shrink-0" />
-                            <span className="truncate">
-                              {record?.checkOut || "--:--"}
-                            </span>
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </ScrollArea>
+                </div>
+              </div>
             </CardContent>
           </Card>
-        </TabsContent>
-        {/* Leave */}
-        <TabsContent value="leave" className="mt-4">
+
           <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <CardTitle className="text-base">ປະຫວັດການຂໍລາ</CardTitle>
-                  <CardDescription>ລາຍລະອຽດການຂໍລາ</CardDescription>
+            <CardContent className="pt-4 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="bg-chart-2/10 flex h-10 w-10 items-center justify-center rounded-lg">
+                  <Palmtree className="text-chart-2 h-5 w-5" />
                 </div>
-                <Select
-                  value={selectedLeaveMonth}
-                  onValueChange={setSelectedLeaveMonth}
-                >
-                  <SelectTrigger className="w-[160px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {leaveMonthOptions.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <ScrollArea className="h-[400px] pr-4">
-                {filteredLeaveRequests.length === 0 ? (
-                  <p className="text-muted-foreground py-8 text-center text-sm">
-                    No leave requests for this month
+                <div>
+                  <p className="text-muted-foreground text-xs">
+                    ຈຳນວນມື້ທີລາພັກ
                   </p>
-                ) : (
-                  <div className="space-y-3">
-                    {filteredLeaveRequests.map((request) => {
-                      const startD = toSafeDate(request.startDate);
-                      const endD = toSafeDate(request.endDate);
-                      const createdD = toSafeDate(request.createdAt);
-                      return (
-                        <div
-                          key={request.id}
-                          className="bg-muted/50 rounded-lg p-4 cursor-pointer hover:bg-muted/80 transition-colors"
-                          onClick={() => setSelectedLeave(request)}
-                        >
-                          <div className="flex items-start justify-between">
-                            <div>
-                              <p className="text-sm font-medium">
-                                {request.policyName || request.type}
-                              </p>
-                              <p className="text-muted-foreground mt-1 hidden text-xs md:block">
-                                {startD ? formatMonthDateLao(startD) : "—"} -{" "}
-                                {endD ? formatDatedayLao(endD) : "—"}
-                              </p>
-                              <p className="text-muted-foreground mt-1 text-xs md:hidden">
-                                {startD ? formatDateMonthLao(startD) : "—"} -{" "}
-                                {endD ? formatDateLao(endD) : "—"}
-                              </p>
-                            </div>
-                            <Badge
-                              variant={getStatusVariant(request.status)}
-                              className="flex items-center gap-1"
-                            >
-                              {getStatusIcon(request.status)}
-                              {request.status}
-                            </Badge>
-                          </div>
-                          <p className="text-muted-foreground mt-2 text-sm">
-                            {request.reason}
-                          </p>
-                          <div className="text-muted-foreground mt-3 flex hidden items-center gap-4 text-xs md:block">
-                            <span>
-                              ມື້ສົ່ງຄຳຮອງ :{" "}
-                              {createdD ? formatDayDateLao(createdD) : "—"}
-                            </span>
-                            {request.reviewedBy && (
-                              <span>Reviewed by: {request.reviewedBy}</span>
-                            )}
-                          </div>
-                          <div className="text-muted-foreground mt-3 flex items-center gap-4 text-xs md:hidden">
-                            <span>
-                              ມື້ສົ່ງຄຳຮອງ :{" "}
-                              {createdD ? formatDateLao(createdD) : "—"}
-                            </span>
-                            {request.reviewedBy && (
-                              <span>Reviewed by: {request.reviewedBy}</span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </ScrollArea>
+                  <p className="text-foreground text-xl font-bold">
+                    {yearLeaveDays}
+                  </p>
+                </div>
+              </div>
             </CardContent>
           </Card>
-        </TabsContent>
-
-        <TabsContent value="offsite" className="mt-4">
           <Card>
-            <CardHeader>
-              <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <CardTitle className="text-base">ປະຫວັດອອກວຽກນອກ</CardTitle>
-                  <CardDescription>ລາຍລະອຽດການອອກວຽກນອກ</CardDescription>
+            <CardContent className="pt-4 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="bg-chart-2/10 flex h-10 w-10 items-center justify-center rounded-lg">
+                  <MapPin className="text-chart-2 h-5 w-5" />
                 </div>
-                <div className="flex items-center gap-2">
+                <div>
+                  <p className="text-muted-foreground text-xs">
+                    ຈຳນວນມື້ອອກວຽກນອກ
+                  </p>
+                  <p className="text-foreground text-xl font-bold">
+                    {yearOffsiteDays}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="pt-4 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="bg-destructive/10 flex h-10 w-10 items-center justify-center rounded-lg">
+                  <DollarSign className="text-destructive h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-xs">ຄ່າປັບທັງໝົດ</p>
+                  <p className="text-foreground hidden text-xl font-bold md:block">
+                    {formatKip(yearFines)}
+                  </p>
+                  <p className="text-foreground block text-xl font-bold md:hidden">
+                    {formatKipText(yearFines)}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Tabs defaultValue="attendance" className="w-full">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="attendance" className="text-xs sm:text-sm">
+              <Clock className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">check in/out</span>
+            </TabsTrigger>
+            <TabsTrigger value="leave" className="text-xs sm:text-sm">
+              <Palmtree className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">ລາພັກ</span>
+            </TabsTrigger>
+            <TabsTrigger value="offsite" className="text-xs sm:text-sm">
+              <MapPin className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">ອອກວຽກນອກ</span>
+            </TabsTrigger>
+            <TabsTrigger value="fines" className="text-xs sm:text-sm">
+              <DollarSign className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">ຄ່າປັບ</span>
+            </TabsTrigger>
+          </TabsList>
+          {/* Checkin */}
+          <TabsContent value="attendance" className="mt-4">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <CardTitle className="text-base">
+                      ປະຫວັດການເຂົ້າ-ອອກ
+                    </CardTitle>
+                    <CardDescription>ລາຍລະອຽດການເຂົ້າ-ອອກ</CardDescription>
+                  </div>
                   <Select
-                    value={selectedActivityType}
-                    onValueChange={(v) =>
-                      setSelectedActivityType(v as ActivityCode | "all")
-                    }
+                    value={selectedMonth}
+                    onValueChange={setSelectedMonth}
                   >
-                    <SelectTrigger className="w-[140px]">
-                      <SelectValue placeholder="ທຸກກິດຈະກຳ" />
+                    <SelectTrigger className="w-[160px]">
+                      <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">ທຸກກິດຈະກຳ</SelectItem>
-                      {ACTIVITY_CODES.map((code) => (
-                        <SelectItem key={code} value={code}>
-                          {activityLabel(code)}
+                      {monthOptions.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[400px] pr-4">
+                  {allWeekdays.length === 0 ? (
+                    <p className="text-muted-foreground py-8 text-center text-sm">
+                      No records for this month
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      {allWeekdays.map(({ date, record }) => (
+                        <div
+                          key={date}
+                          className="bg-muted/50 rounded-lg p-3 sm:p-4"
+                        >
+                          <div className="mb-2 flex items-start justify-between gap-2">
+                            <div className="flex min-w-0 flex-1 items-start gap-2">
+                              <Calendar className="text-muted-foreground mt-0.5 h-4 w-4 flex-shrink-0" />
+                              <div className="min-w-0 flex-1">
+                                <p className="hidden truncate text-sm font-medium md:block">
+                                  {formatDayDateLao(new Date(date))}
+                                </p>
+                                <p className="truncate text-sm font-medium md:hidden">
+                                  {formatDateLao(new Date(date))}
+                                </p>
+                              </div>
+                            </div>
+                            {record ? (
+                              <Badge
+                                variant={getStatusVariant(record.status)}
+                                className="flex-shrink-0"
+                              >
+                                {getStatusLabel(
+                                  record.status,
+                                  record?.checkIn,
+                                  record?.checkOut,
+                                )}
+                              </Badge>
+                            ) : (
+                              <Badge
+                                variant="outline"
+                                className="text-muted-foreground flex-shrink-0"
+                              >
+                                ບໍ່ມີຂໍ້ມູນ
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="text-muted-foreground flex gap-2 pl-6 text-xs sm:flex-row sm:items-center sm:gap-4">
+                            <span className="flex items-center gap-1">
+                              <LogIn className="h-3 w-3 flex-shrink-0" />
+                              <span className="truncate">
+                                {record?.checkIn || "--:--"}
+                              </span>
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <LogOut className="h-3 w-3 flex-shrink-0" />
+                              <span className="truncate">
+                                {record?.checkOut || "--:--"}
+                              </span>
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          </TabsContent>
+          {/* Leave */}
+          <TabsContent value="leave" className="mt-4">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <CardTitle className="text-base">ປະຫວັດການຂໍລາ</CardTitle>
+                    <CardDescription>ລາຍລະອຽດການຂໍລາ</CardDescription>
+                  </div>
                   <Select
-                    value={selectedOffsiteMonth}
-                    onValueChange={setSelectedOffsiteMonth}
+                    value={selectedLeaveMonth}
+                    onValueChange={setSelectedLeaveMonth}
                   >
-                    <SelectTrigger className="w-[150px]">
+                    <SelectTrigger className="w-[160px]">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -866,156 +772,278 @@ export default function HistoryPage() {
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <ScrollArea className="h-[400px] pr-4">
-                {filteredOffsiteRequests.length === 0 ? (
-                  <p className="text-muted-foreground py-8 text-center text-sm">
-                    ບໍ່ມີລາຍການອອກວຽກນອກ
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    {filteredOffsiteRequests.map((request) => {
-                      const isRequester = request.createdByUid === userUid;
-                      return (
-                        <div
-                          key={request.id}
-                          className="bg-muted/50 space-y-2 rounded-lg p-3"
-                        >
-                          {/* Row 1: type + role badge + status */}
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                              <ActivityTypeBadge
-                                code={request.activityType.code}
-                              />
-                              <span className="bg-background text-muted-foreground shrink-0 rounded-full border px-2 py-0.5 text-[10px]">
-                                {isRequester ? "ຜູ້ຍື່ນຄຳຂໍ" : "ສະມາຊິກທີມ"}
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[400px] pr-4">
+                  {filteredLeaveRequests.length === 0 ? (
+                    <p className="text-muted-foreground py-8 text-center text-sm">
+                      No leave requests for this month
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      {filteredLeaveRequests.map((request) => {
+                        const startD = toSafeDate(request.startDate);
+                        const endD = toSafeDate(request.endDate);
+                        const createdD = toSafeDate(request.createdAt);
+                        return (
+                          <div
+                            key={request.id}
+                            className="bg-muted/50 hover:bg-muted/80 cursor-pointer rounded-lg p-4 transition-colors"
+                            onClick={() => setSelectedLeave(request)}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div>
+                                <p className="text-sm font-medium">
+                                  {request.policyName || request.type}
+                                </p>
+                                <p className="text-muted-foreground mt-1 hidden text-xs md:block">
+                                  {startD ? formatMonthDateLao(startD) : "—"} -{" "}
+                                  {endD ? formatDatedayLao(endD) : "—"}
+                                </p>
+                                <p className="text-muted-foreground mt-1 text-xs md:hidden">
+                                  {startD ? formatDateMonthLao(startD) : "—"} -{" "}
+                                  {endD ? formatDateLao(endD) : "—"}
+                                </p>
+                              </div>
+                              <Badge
+                                variant={getStatusVariant(request.status)}
+                                className="flex items-center gap-1"
+                              >
+                                {getStatusIcon(request.status)}
+                                {request.status}
+                              </Badge>
+                            </div>
+                            <p className="text-muted-foreground mt-2 text-sm">
+                              {request.reason}
+                            </p>
+                            <div className="text-muted-foreground mt-3 flex hidden items-center gap-4 text-xs md:block">
+                              <span>
+                                ມື້ສົ່ງຄຳຮອງ :{" "}
+                                {createdD ? formatDayDateLao(createdD) : "—"}
+                              </span>
+                              {request.reviewedBy && (
+                                <span>Reviewed by: {request.reviewedBy}</span>
+                              )}
+                            </div>
+                            <div className="text-muted-foreground mt-3 flex items-center gap-4 text-xs md:hidden">
+                              <span>
+                                ມື້ສົ່ງຄຳຮອງ :{" "}
+                                {createdD ? formatDateLao(createdD) : "—"}
+                              </span>
+                              {request.reviewedBy && (
+                                <span>Reviewed by: {request.reviewedBy}</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="offsite" className="mt-4">
+            <Card>
+              <CardHeader>
+                <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <CardTitle className="text-base">ປະຫວັດອອກວຽກນອກ</CardTitle>
+                    <CardDescription>ລາຍລະອຽດການອອກວຽກນອກ</CardDescription>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Select
+                      value={selectedActivityType}
+                      onValueChange={(v) =>
+                        setSelectedActivityType(v as ActivityCode | "all")
+                      }
+                    >
+                      <SelectTrigger className="w-[140px]">
+                        <SelectValue placeholder="ທຸກກິດຈະກຳ" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">ທຸກກິດຈະກຳ</SelectItem>
+                        {ACTIVITY_CODES.map((code) => (
+                          <SelectItem key={code} value={code}>
+                            {activityLabel(code)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select
+                      value={selectedOffsiteMonth}
+                      onValueChange={setSelectedOffsiteMonth}
+                    >
+                      <SelectTrigger className="w-[150px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {leaveMonthOptions.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[400px] pr-4">
+                  {filteredOffsiteRequests.length === 0 ? (
+                    <p className="text-muted-foreground py-8 text-center text-sm">
+                      ບໍ່ມີລາຍການອອກວຽກນອກ
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      {filteredOffsiteRequests.map((request) => {
+                        const isRequester = request.createdByUid === userUid;
+                        return (
+                          <div
+                            key={request.id}
+                            className="bg-muted/50 space-y-2 rounded-lg p-3"
+                          >
+                            {/* Row 1: type + role badge + status */}
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                                <ActivityTypeBadge
+                                  code={request.activityType.code}
+                                />
+                                <span className="bg-background text-muted-foreground shrink-0 rounded-full border px-2 py-0.5 text-[10px]">
+                                  {isRequester ? "ຜູ້ຍື່ນຄຳຂໍ" : "ສະມາຊິກທີມ"}
+                                </span>
+                              </div>
+                              <Badge
+                                variant={getStatusVariant(request.status)}
+                                className="flex shrink-0 items-center gap-1 text-xs"
+                              >
+                                {getStatusIcon(request.status)}
+                                {request.status}
+                              </Badge>
+                            </div>
+                            {/* Row 2: subject */}
+                            <p className="text-sm leading-snug font-medium">
+                              {request.subject}
+                            </p>
+                            {/* Row 3: date */}
+                            <div className="text-muted-foreground flex flex-col gap-0.5 text-xs">
+                              <span className="flex items-center gap-1">
+                                <Calendar className="h-3 w-3 shrink-0" />
+                                {request.startDate && request.endDate
+                                  ? `${formatDateLao(new Date(request.startDate))} – ${formatDateLao(new Date(request.endDate))}`
+                                  : "—"}
+                                {request.durationDays
+                                  ? ` (${request.durationDays} ມື້)`
+                                  : ""}
                               </span>
                             </div>
-                            <Badge
-                              variant={getStatusVariant(request.status)}
-                              className="flex shrink-0 items-center gap-1 text-xs"
-                            >
-                              {getStatusIcon(request.status)}
-                              {request.status}
-                            </Badge>
                           </div>
-                          {/* Row 2: subject */}
-                          <p className="text-sm leading-snug font-medium">
-                            {request.subject}
-                          </p>
-                          {/* Row 3: date */}
-                          <div className="text-muted-foreground flex flex-col gap-0.5 text-xs">
-                            <span className="flex items-center gap-1">
-                              <Calendar className="h-3 w-3 shrink-0" />
-                              {request.startDate && request.endDate
-                                ? `${formatDateLao(new Date(request.startDate))} – ${formatDateLao(new Date(request.endDate))}`
-                                : "—"}
-                              {request.durationDays
-                                ? ` (${request.durationDays} ມື້)`
-                                : ""}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </ScrollArea>
-            </CardContent>
-          </Card>
-        </TabsContent>
+                        );
+                      })}
+                    </div>
+                  )}
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-        <TabsContent value="fines" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Late Arrivals & Fines</CardTitle>
-              <CardDescription>
-                Record of late check-ins and associated penalties
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ScrollArea className="h-[400px] pr-4">
-                {monthlyFineSummaries.length === 0 ? (
-                  <p className="text-muted-foreground py-8 text-center text-sm">
-                    ບໍ່ມີຂໍ້ມູນ
-                  </p>
-                ) : (
-                  <>
-                    <div className="bg-destructive/10 border-destructive/20 mb-4 rounded-lg border p-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-destructive text-sm font-medium">
-                            ຄ່າປັບທັງໝົດ
-                          </p>
-                          <p className="text-muted-foreground mt-1 text-xs">
-                            {
-                              monthlyFineSummaries.filter((m) => m.fines > 0)
-                                .length
-                            }{" "}
-                            ເດືອນທີ່ມີຄ່າປັບ
+          <TabsContent value="fines" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">
+                  Late Arrivals & Fines
+                </CardTitle>
+                <CardDescription>
+                  Record of late check-ins and associated penalties
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[400px] pr-4">
+                  {monthlyFineSummaries.length === 0 ? (
+                    <p className="text-muted-foreground py-8 text-center text-sm">
+                      ບໍ່ມີຂໍ້ມູນ
+                    </p>
+                  ) : (
+                    <>
+                      <div className="bg-destructive/10 border-destructive/20 mb-4 rounded-lg border p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-destructive text-sm font-medium">
+                              ຄ່າປັບທັງໝົດ
+                            </p>
+                            <p className="text-muted-foreground mt-1 text-xs">
+                              {
+                                monthlyFineSummaries.filter((m) => m.fines > 0)
+                                  .length
+                              }{" "}
+                              ເດືອນທີ່ມີຄ່າປັບ
+                            </p>
+                          </div>
+                          <p className="text-destructive text-xl font-bold">
+                            {formatKip(computedTotalFines)}
                           </p>
                         </div>
-                        <p className="text-destructive text-xl font-bold">
-                          {formatKip(computedTotalFines)}
-                        </p>
                       </div>
-                    </div>
-                    <div className="space-y-3">
-                      {monthlyFineSummaries.map(
-                        ({ month, label, late, notCheckInPts, fines }) => (
-                          <div
-                            key={month}
-                            className="bg-muted/50 rounded-lg p-4"
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <div>
-                                <p className="text-sm font-medium">{label}</p>
-                                <div className="text-muted-foreground mt-1 space-y-0.5 text-xs">
-                                  <p>
-                                    ມາຊ້າ: {late} ຄັ້ງ
-                                    {late > 4 ? (
-                                      <span className="text-destructive ml-1">
-                                        (ເກີນ {late - 4} ຄັ້ງ)
-                                      </span>
-                                    ) : (
-                                      <span className="ml-1">
-                                        (ຟຣີ {late}/4)
-                                      </span>
-                                    )}
-                                  </p>
-                                  <p>ຂາດ/ລືມ: {notCheckInPts} ຄັ້ງ</p>
+                      <div className="space-y-3">
+                        {monthlyFineSummaries.map(
+                          ({ month, label, late, notCheckInPts, fines }) => (
+                            <div
+                              key={month}
+                              className="bg-muted/50 rounded-lg p-4"
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div>
+                                  <p className="text-sm font-medium">{label}</p>
+                                  <div className="text-muted-foreground mt-1 space-y-0.5 text-xs">
+                                    <p>
+                                      ມາຊ້າ: {late} ຄັ້ງ
+                                      {late > 4 ? (
+                                        <span className="text-destructive ml-1">
+                                          (ເກີນ {late - 4} ຄັ້ງ)
+                                        </span>
+                                      ) : (
+                                        <span className="ml-1">
+                                          (ຟຣີ {late}/4)
+                                        </span>
+                                      )}
+                                    </p>
+                                    <p>ຂາດ/ລືມ: {notCheckInPts} ຄັ້ງ</p>
+                                  </div>
                                 </div>
+                                <p
+                                  className={`shrink-0 text-base font-bold ${fines > 0 ? "text-destructive" : "text-muted-foreground"}`}
+                                >
+                                  {fines > 0 ? `-${formatKip(fines)}` : "—"}
+                                </p>
                               </div>
-                              <p
-                                className={`shrink-0 text-base font-bold ${fines > 0 ? "text-destructive" : "text-muted-foreground"}`}
-                              >
-                                {fines > 0 ? `-${formatKip(fines)}` : "—"}
-                              </p>
                             </div>
-                          </div>
-                        ),
-                      )}
-                    </div>
-                  </>
-                )}
-              </ScrollArea>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-    </div>
+                          ),
+                        )}
+                      </div>
+                    </>
+                  )}
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </div>
 
-    {/* Leave detail dialog */}
-    <Dialog open={!!selectedLeave} onOpenChange={(open) => { if (!open) setSelectedLeave(null) }}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>ລາຍລະອຽດໃບລາພັກ</DialogTitle>
-        </DialogHeader>
-        {selectedLeave ? <LeaveDetailContent leave={selectedLeave!} /> : null}
-      </DialogContent>
-    </Dialog>
+      {/* Leave detail dialog */}
+      <Dialog
+        open={!!selectedLeave}
+        onOpenChange={(open) => {
+          if (!open) setSelectedLeave(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>ລາຍລະອຽດໃບລາພັກ</DialogTitle>
+          </DialogHeader>
+          {selectedLeave ? <LeaveDetailContent leave={selectedLeave!} /> : null}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
