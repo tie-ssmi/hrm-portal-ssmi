@@ -485,3 +485,77 @@ export const recordCheckOut = onCall(
     return { attendanceId, checkOutTime: checkTime, workHours }
   }
 )
+
+// =========================================================================
+// 📝 7. AUDIT LOG — client relays through here so ipAddress/userAgent come
+// from the real request, and actorUid is stamped from the verified auth
+// token rather than trusted from the client payload (can't be spoofed).
+// =========================================================================
+
+type AuditLogPayload = {
+  action: string
+  actorName?: string
+  actorRoleUuid?: string
+  actorRoleName?: string
+  targetType: string
+  targetId: string
+  targetName?: string
+  before?: Record<string, unknown>
+  after?: Record<string, unknown>
+  changedFields?: string[]
+  reason?: string
+  status: 'SUCCESS' | 'FAILED'
+  errorMessage?: string
+  requestUrl?: string
+  companyId?: string
+  branchId?: string
+}
+
+export const logAuditEvent = onCall(
+  { region: 'asia-southeast1', cors: callableCorsOrigins, invoker: 'public' },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Must be signed in')
+    }
+
+    const data = request.data as AuditLogPayload
+    if (!data.action || !data.targetType || !data.targetId || !data.status) {
+      throw new HttpsError('invalid-argument', 'action, targetType, targetId, status are required')
+    }
+
+    const forwardedFor = request.rawRequest.headers['x-forwarded-for']
+    const ipAddress =
+      (Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor)?.split(',')[0]?.trim()
+      ?? request.rawRequest.ip
+    const userAgent = request.rawRequest.headers['user-agent'] as string | undefined
+
+    const entry = {
+      systemType: 'portal',
+      action: data.action,
+      actorUid: request.auth.uid,
+      actorName: data.actorName ?? '',
+      actorRoleUuid: data.actorRoleUuid ?? '',
+      ...(data.actorRoleName != null ? { actorRoleName: data.actorRoleName } : {}),
+      targetType: data.targetType,
+      targetId: data.targetId,
+      ...(data.targetName != null ? { targetName: data.targetName } : {}),
+      // Always present — {} when the action has no natural prior/new state
+      // (e.g. login/logout) rather than omitting the field entirely.
+      before: data.before ?? {},
+      after: data.after ?? {},
+      ...(data.changedFields != null ? { changedFields: data.changedFields } : {}),
+      ...(data.reason != null ? { reason: data.reason } : {}),
+      status: data.status,
+      ...(data.errorMessage != null ? { errorMessage: data.errorMessage } : {}),
+      ...(ipAddress != null ? { ipAddress } : {}),
+      ...(userAgent != null ? { userAgent } : {}),
+      ...(data.requestUrl != null ? { requestUrl: data.requestUrl } : {}),
+      ...(data.companyId != null ? { companyId: data.companyId } : {}),
+      ...(data.branchId != null ? { branchId: data.branchId } : {}),
+      createdAt: new Date().toISOString(),
+    }
+
+    const docRef = await admin.firestore().collection('auditLogs').add(entry)
+    return { id: docRef.id }
+  }
+)

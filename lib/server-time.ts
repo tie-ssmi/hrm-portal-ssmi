@@ -18,6 +18,13 @@ function computeStatus(hour: number, minute: number): CheckInStatus {
   return 'not_check_in'
 }
 
+// Synchronous "today" in Vientiane time — use this instead of `new Date()` /
+// date-fns `format()` for any isoDate comparison against leave/attendance data,
+// since those are all anchored to Asia/Vientiane regardless of the viewer's device timezone.
+export function getVientianeIsoDate(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: TIMEZONE }).format(new Date())
+}
+
 export function fetchServerTime(_userUuid?: string): Promise<ServerTimeResult> {
   const now = new Date()
   const formatter = new Intl.DateTimeFormat('en-GB', {

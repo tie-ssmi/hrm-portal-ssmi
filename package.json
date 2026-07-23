@@ -1,6 +1,6 @@
 {
   "name": "my-project",
-  "version": "0.3.9",
+  "version": "0.4.1",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -8,9 +8,13 @@
     "start": "next start",
     "deploy": "node scripts/build.js prod && firebase deploy --only hosting:hrm-portal-ssmi",
     "deploy_dev": "node scripts/build.js staging && node -e \"try{require('fs').unlinkSync('.firebase/hosting.b3V0.cache')}catch(e){}\" && firebase --project hrm-dev-24dff deploy --only hosting:hrm-dev-24dff",
+    "get_apk": "pnpm build && npx cap sync android && cd android && gradlew.bat assembleDebug && cd .. && copy android\\app\\build\\outputs\\apk\\debug\\app-debug.apk SSMI-HRM.apk",
+    "android": "pnpm build && npx cap sync android && npx cap run android",
+    "ios": "npx cap run ios",
     "lint": "eslint ."
   },
   "dependencies": {
+    "@capacitor-firebase/authentication": "^8.3.0",
     "@capacitor/android": "^8.3.0",
     "@capacitor/cli": "^8.3.0",
     "@capacitor/core": "^8.3.0",
@@ -66,6 +70,7 @@
     "react-dom": "19.2.4",
     "react-hook-form": "^7.54.1",
     "react-resizable-panels": "^2.1.7",
+    "react-snowfall": "^2.4.0",
     "recharts": "2.15.0",
     "sonner": "^1.7.1",
     "tailwind-merge": "^3.3.1",
@@ -75,6 +80,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
     "@tailwindcss/postcss": "^4.2.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",

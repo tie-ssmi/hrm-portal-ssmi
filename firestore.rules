@@ -327,6 +327,18 @@ service cloud.firestore {
     }
 
     // ==========================================================
+    // auditLogs — append-only trail. Writes go only through the
+    // logAuditEvent Cloud Function (Admin SDK, bypasses these rules), which
+    // stamps actorUid from the verified auth token and attaches ipAddress —
+    // clients never write here directly. No one may edit or delete past
+    // entries. Only admins can read the trail back.
+    // ==========================================================
+    match /auditLogs/{docId} {
+      allow create, update, delete: if false;
+      allow read: if isAdmin();
+    }
+
+    // ==========================================================
     // Deny everything not explicitly matched above
     // ==========================================================
     match /{document=**} {

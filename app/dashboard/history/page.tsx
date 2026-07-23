@@ -151,6 +151,46 @@ function getStatusIcon(status: string) {
   }
 }
 
+// A morning-half + afternoon-half leave for the same person on the same single day are
+// really one full day off — merge them into one entry instead of listing two 0.5-day rows.
+function mergeFullDayLeaves(requests: LeaveRequest[]): LeaveRequest[] {
+  const isSingleDayHalf = (r: LeaveRequest, period: "morning" | "afternoon") =>
+    r.startDate === r.endDate &&
+    r.duration === 0.5 &&
+    r.startPeriod === period &&
+    r.endPeriod === period;
+
+  const mornings = requests.filter((r) => isSingleDayHalf(r, "morning"));
+  const afternoons = requests.filter((r) => isSingleDayHalf(r, "afternoon"));
+  const consumed = new Set<LeaveRequest>();
+  const merged: LeaveRequest[] = [];
+
+  for (const morning of mornings) {
+    const afternoon = afternoons.find(
+      (a) =>
+        !consumed.has(a) &&
+        a.startDate === morning.startDate &&
+        a.status === morning.status &&
+        (a.leaveUserUuid || a.leaveUserName) ===
+          (morning.leaveUserUuid || morning.leaveUserName),
+    );
+    if (!afternoon) continue;
+    consumed.add(morning);
+    consumed.add(afternoon);
+    merged.push({
+      ...morning,
+      endPeriod: "afternoon",
+      duration: (morning.duration ?? 0.5) + (afternoon.duration ?? 0.5),
+      reason:
+        morning.reason && afternoon.reason && morning.reason !== afternoon.reason
+          ? `${morning.reason} / ${afternoon.reason}`
+          : morning.reason || afternoon.reason,
+    });
+  }
+
+  return [...merged, ...requests.filter((r) => !consumed.has(r))];
+}
+
 const APPROVAL_ROLE_LABEL: Record<string, string> = {
   departmentHead: "ຫົວໜ້າພະແນກ",
   hr: "HR",
@@ -487,7 +527,7 @@ export default function HistoryPage() {
   }, [selectedMonth, filteredAttendance]);
 
   const filteredLeaveRequests = useMemo(() => {
-    return leaveRequests
+    return mergeFullDayLeaves(leaveRequests)
       .filter((r) => {
         const start = typeof r.startDate === "string" ? r.startDate : "";
         const end = typeof r.endDate === "string" ? r.endDate : "";
@@ -557,8 +597,8 @@ export default function HistoryPage() {
     <>
       <div className="space-y-6">
         <div>
-          <h1 className="text-foreground text-2xl font-bold">ປະຫັດຕ່າງ</h1>
-          <p className="text-muted-foreground">ເບິ່ງປະຫັດຕ່າງຂອງທ່ານ</p>
+          <h1 className="text-foreground text-2xl font-bold">ປະຫວັດ</h1>
+          <p className="text-muted-foreground">ເບິ່ງປະຫວັດຕ່າງໆຂອງທ່ານ</p>
         </div>
 
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">

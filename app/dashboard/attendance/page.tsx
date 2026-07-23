@@ -56,6 +56,7 @@ import {
   useTodayTrip,
 } from "@/lib/use-attendance-queries";
 import { useOfficialHolidays } from "@/lib/use-official-holidays-query";
+import { getVientianeIsoDate } from "@/lib/server-time";
 import type { AttendanceRecord } from "@/lib/types";
 
 type LocationState = {
@@ -64,6 +65,14 @@ type LocationState = {
   accuracy: number;
   error?: string;
 };
+
+// Turns a "YYYY-MM-DD" Vientiane calendar date into a local Date at local
+// midnight for that same day, so date-fns / getDay() (which read local time)
+// land on the correct day regardless of the viewer's own timezone offset.
+function isoDateToLocalDate(iso: string): Date {
+  const [year, month, day] = iso.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
 
 // --- Sub-components ---
 
@@ -470,17 +479,17 @@ export default function AttendancePage() {
   const { user } = useAuth();
   const { distanceToOffice, geoFenceStatus } = useHRM();
 
-  // Recomputed each render to detect midnight boundary (intentional — cheap string)
-  const todayIso = format(new Date(), "yyyy-MM-dd");
+  // Recomputed each render to detect midnight boundary (intentional — cheap string).
+  // Must use Vientiane time, not the browser's local timezone, since leave/attendance
+  // dates are all anchored to Asia/Vientiane regardless of the viewer's device.
+  const todayIso = getVientianeIsoDate();
 
   const { data: todayAttendance, isLoading: isLoadingHistory } =
     useTodayAttendance(user?.uuid);
   const { data: attendanceHistory = [] } = useAttendanceHistory(user?.uuid);
   const { data: holidays = [] } = useOfficialHolidays();
-  const { data: todayLeaveStatus = "none" } = useTodayLeaveStatus(
-    user?.uuid,
-    todayIso,
-  );
+  const { data: todayLeaveStatus = "none", isLoading: isLoadingLeaveStatus } =
+    useTodayLeaveStatus(user?.uuid, todayIso);
   const { data: todayTrip = null } = useTodayTrip(user?.uuid, todayIso);
   const checkInMutation = useCheckIn();
   const checkOutMutation = useCheckOut();
@@ -583,7 +592,7 @@ export default function AttendancePage() {
     }, [location, getLocation, distanceToOffice, geoFenceStatus]);
 
   const isBlockedDay = useMemo(() => {
-    const day = new Date().getDay();
+    const day = isoDateToLocalDate(todayIso).getDay();
     if (day === 0 || day === 6)
       return {
         blocked: true,
@@ -611,6 +620,10 @@ export default function AttendancePage() {
     async (type: "checkIn" | "checkOut") => {
       if (!user) {
         toast.error("ບໍ່ເຫັນຂໍ້ມູນຜູ້ໃຊ້. ກະລຸນາເຂົ້າລະບົບອີກຄັ້ງ.");
+        return;
+      }
+      if (type === "checkIn" && isLoadingLeaveStatus) {
+        toast.error("ກຳລັງກວດສອບສະຖານະລາພັກ. ກະລຸນາລໍຖ້າ ແລ້ວລອງໃໝ່.");
         return;
       }
       if (type === "checkIn" && isBlockedDay.blocked) {
@@ -673,6 +686,7 @@ export default function AttendancePage() {
       user,
       isOffsite,
       isBlockedDay,
+      isLoadingLeaveStatus,
       getLocation,
       getValidatedLocation,
       captureImage,
@@ -687,11 +701,14 @@ export default function AttendancePage() {
   const isWithinOffice = useMemo(() => {
     if (!location || !!location.error) return true;
     if (geoFenceStatus === "no_coordinates") return true;
-    return officeDistance !== null && officeDistance <= 50;
+    // Must match the 100m limit enforced in getValidatedLocation — otherwise
+    // the button disables (and badge reads "outside office") for users who
+    // are actually still within the allowed check-in radius.
+    return officeDistance !== null && officeDistance <= 100;
   }, [location, officeDistance, geoFenceStatus]);
 
   const weeklyHistory = useMemo(() => {
-    const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
+    const weekStart = startOfWeek(isoDateToLocalDate(todayIso), { weekStartsOn: 1 });
     const weekStartIso = format(weekStart, "yyyy-MM-dd");
     const weekEndIso = format(addDays(weekStart, 6), "yyyy-MM-dd");
     return attendanceHistory
@@ -799,6 +816,7 @@ export default function AttendancePage() {
               onClick={() => handleAttendance("checkIn")}
               disabled={
                 isBlockedDay.blocked ||
+                isLoadingLeaveStatus ||
                 checkInMutation.isPending ||
                 !!todayAttendance?.checkIn ||
                 (!isOffsite && !isWithinOffice)

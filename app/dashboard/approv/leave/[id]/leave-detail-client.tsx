@@ -260,6 +260,8 @@ export default function LeaveDetailClient({ leaveId }: { leaveId?: string }) {
         decision: "approved",
         reviewedBy,
         reviewedByUid,
+        actorRoleUuid: user?.rolesUid,
+        actorRoleName: user?.rolesName,
       });
       await queryClient.invalidateQueries({ queryKey: ["leave", id] });
       await queryClient.invalidateQueries({ queryKey: ["leaves"] });
@@ -284,6 +286,8 @@ export default function LeaveDetailClient({ leaveId }: { leaveId?: string }) {
         reviewedBy,
         reviewedByUid,
         rejectReason: rejectReason.trim() || undefined,
+        actorRoleUuid: user?.rolesUid,
+        actorRoleName: user?.rolesName,
       });
       await queryClient.invalidateQueries({ queryKey: ["leave", id] });
       await queryClient.invalidateQueries({ queryKey: ["leaves"] });

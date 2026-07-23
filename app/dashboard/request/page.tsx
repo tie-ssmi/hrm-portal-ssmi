@@ -107,6 +107,7 @@ import "driver.js/dist/driver.css";
 // ** config / utils / types / hooks
 import { useAuth } from "@/lib/auth-context";
 import { db } from "@/lib/firebase";
+import { logAudit } from "@/services/audit-log";
 import {
   useUpcomingLeaves,
   usePendingDocLeaves,
@@ -232,19 +233,43 @@ function FormsPageContent() {
   const handleConfirmCancel = useCallback(async () => {
     if (!cancelTarget || !user) return;
     setIsCancelling(true);
+    const fullName =
+      `${user.firstNameEn ?? user.firstName ?? ""} ${user.lastNameEn ?? user.lastName ?? ""}`.trim();
     try {
       const now = new Date().toISOString();
-      const fullName =
-        `${user.firstNameEn ?? user.firstName ?? ""} ${user.lastNameEn ?? user.lastName ?? ""}`.trim();
       await updateDoc(doc(db, "workOutside", cancelTarget.id), {
         status: "cancelled",
         updatedAt: now,
         updatedBy: fullName,
       });
+      await logAudit({
+        action: "offsite.request.cancel",
+        actorUid: user.uid ?? user.id ?? "",
+        actorName: fullName,
+        actorRoleUuid: user.rolesUid ?? "",
+        actorRoleName: user.rolesName,
+        targetType: "workOutside",
+        targetId: cancelTarget.id,
+        targetName: cancelTarget.requestNo,
+        before: { status: cancelTarget.status },
+        after: { status: "cancelled" },
+        status: "SUCCESS",
+      });
       toast.success(`ຍົກເລີກຄຳຂໍ ${cancelTarget.requestNo} ສຳເລັດ`);
       queryClient.invalidateQueries({ queryKey: [OFFSITE_QUERY_KEY] });
     } catch (err) {
       console.error(err);
+      await logAudit({
+        action: "offsite.request.cancel",
+        actorUid: user.uid ?? user.id ?? "",
+        actorName: fullName,
+        actorRoleUuid: user.rolesUid ?? "",
+        actorRoleName: user.rolesName,
+        targetType: "workOutside",
+        targetId: cancelTarget.id,
+        status: "FAILED",
+        errorMessage: err instanceof Error ? err.message : String(err),
+      });
       toast.error("ຍົກເລີກລົ້ມເຫລວ ກະລຸນາລອງໃໝ່");
     } finally {
       setIsCancelling(false);

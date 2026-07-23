@@ -36,7 +36,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.recordCheckOut = exports.recordCheckIn = exports.checkAttendanceAt814 = exports.checkAttendanceAt800 = exports.getServerTime = void 0;
+exports.logAuditEvent = exports.recordCheckOut = exports.recordCheckIn = exports.checkAttendanceAt814 = exports.checkAttendanceAt800 = exports.getServerTime = void 0;
 const admin = __importStar(require("firebase-admin"));
 const https_1 = require("firebase-functions/v2/https");
 const scheduler_1 = require("firebase-functions/v2/scheduler");
@@ -353,5 +353,24 @@ exports.recordCheckOut = (0, https_1.onCall)({ region: 'asia-southeast1', cors: 
         .doc(attendanceId)
         .set(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ checkOutTime: checkTime, workHours }, (data.fullNameEn != null ? { fullNameEn: data.fullNameEn } : {})), (data.fullNameLo != null ? { fullNameLo: data.fullNameLo } : {})), (data.jobTitle != null ? { jobTitle: data.jobTitle } : {})), (data.employeeImage != null ? { employeeImage: data.employeeImage } : {})), (data.department ? { department: data.department } : {})), (data.workLocation ? { workLocation: data.workLocation } : {})), (data.checkOutImageURL ? { checkOutImageURL: data.checkOutImageURL } : {})), (data.location ? { location: { lat: data.location.lat, lng: data.location.lng } } : {})), { updatedAt: new Date().toISOString(), updatedBy: data.userUuid }), { merge: true });
     return { attendanceId, checkOutTime: checkTime, workHours };
+});
+exports.logAuditEvent = (0, https_1.onCall)({ region: 'asia-southeast1', cors: callableCorsOrigins, invoker: 'public' }, async (request) => {
+    var _a, _b, _c, _d, _e, _f, _g;
+    if (!request.auth) {
+        throw new https_1.HttpsError('unauthenticated', 'Must be signed in');
+    }
+    const data = request.data;
+    if (!data.action || !data.targetType || !data.targetId || !data.status) {
+        throw new https_1.HttpsError('invalid-argument', 'action, targetType, targetId, status are required');
+    }
+    const forwardedFor = request.rawRequest.headers['x-forwarded-for'];
+    const ipAddress = (_c = (_b = (_a = (Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor)) === null || _a === void 0 ? void 0 : _a.split(',')[0]) === null || _b === void 0 ? void 0 : _b.trim()) !== null && _c !== void 0 ? _c : request.rawRequest.ip;
+    const userAgent = request.rawRequest.headers['user-agent'];
+    const entry = Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ systemType: 'portal', action: data.action, actorUid: request.auth.uid, actorName: (_d = data.actorName) !== null && _d !== void 0 ? _d : '', actorRoleUuid: (_e = data.actorRoleUuid) !== null && _e !== void 0 ? _e : '' }, (data.actorRoleName != null ? { actorRoleName: data.actorRoleName } : {})), { targetType: data.targetType, targetId: data.targetId }), (data.targetName != null ? { targetName: data.targetName } : {})), { 
+        // Always present — {} when the action has no natural prior/new state
+        // (e.g. login/logout) rather than omitting the field entirely.
+        before: (_f = data.before) !== null && _f !== void 0 ? _f : {}, after: (_g = data.after) !== null && _g !== void 0 ? _g : {} }), (data.changedFields != null ? { changedFields: data.changedFields } : {})), (data.reason != null ? { reason: data.reason } : {})), { status: data.status }), (data.errorMessage != null ? { errorMessage: data.errorMessage } : {})), (ipAddress != null ? { ipAddress } : {})), (userAgent != null ? { userAgent } : {})), (data.requestUrl != null ? { requestUrl: data.requestUrl } : {})), (data.companyId != null ? { companyId: data.companyId } : {})), (data.branchId != null ? { branchId: data.branchId } : {})), { createdAt: new Date().toISOString() });
+    const docRef = await admin.firestore().collection('auditLogs').add(entry);
+    return { id: docRef.id };
 });
 //# sourceMappingURL=index.js.map

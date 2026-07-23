@@ -1,6 +1,29 @@
-import { collection, doc, getDoc, getDocs, query, updateDoc, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, query, updateDoc, where, type DocumentReference, type DocumentData } from 'firebase/firestore'
 import { db } from './firebase'
 import type { Employee, RolePermissions } from './types'
+import { logAudit } from '@/services/audit-log'
+
+type ProfileEditActor = { name?: string; roleUuid?: string; roleName?: string }
+
+// Some employee docs use uid as the doc ID directly; older ones store uid as a
+// field on a doc keyed by something else. Resolves both, returning the doc's
+// current data too so callers can build a "before" snapshot for the audit log.
+async function resolveEmployeeDocRef(
+  uid: string,
+): Promise<{ ref: DocumentReference<DocumentData>; data: Record<string, unknown> } | null> {
+  const directRef = doc(db, 'employees', uid)
+  const directSnap = await getDoc(directRef)
+  if (directSnap.exists()) {
+    return { ref: directRef, data: directSnap.data() }
+  }
+
+  const employeesRef = collection(db, 'employees')
+  const q = query(employeesRef, where('uid', '==', uid))
+  const querySnapshot = await getDocs(q)
+  if (querySnapshot.empty) return null
+
+  return { ref: querySnapshot.docs[0].ref, data: querySnapshot.docs[0].data() }
+}
 
 export async function fetchEmployeeByUid(uid: string): Promise<Partial<Employee> | null> {
   try {
@@ -106,25 +129,78 @@ export async function updateEmployeeUidByEmail(email: string, uid: string): Prom
   await updateDoc(employeeDocRef, { uid, email: normalizedEmail })
 }
 
-export async function updateEmployeeProfileImage(uid: string, profileImageUrl: string): Promise<void> {
+export async function updateEmployeeProfileImage(
+  uid: string,
+  profileImageUrl: string,
+  actor?: ProfileEditActor,
+): Promise<void> {
   const payload = { profileImage: profileImageUrl }
 
-  try {
-    const directDocRef = doc(db, 'employees', uid)
-    await updateDoc(directDocRef, payload)
-    return
-  } catch {
-    // Fallback for schemas where doc ID is not uid but `uid` is stored as a field.
-  }
+  const logResult = (status: 'SUCCESS' | 'FAILED', before?: Record<string, unknown>, errorMessage?: string) =>
+    logAudit({
+      action: 'hr.employee.updatePhoto',
+      actorUid: uid,
+      actorName: actor?.name ?? '',
+      actorRoleUuid: actor?.roleUuid ?? '',
+      actorRoleName: actor?.roleName,
+      targetType: 'employees',
+      targetId: uid,
+      before: status === 'SUCCESS' ? before : undefined,
+      after: status === 'SUCCESS' ? payload : undefined,
+      status,
+      errorMessage,
+    })
 
-  const employeesRef = collection(db, 'employees')
-  const q = query(employeesRef, where('uid', '==', uid))
-  const querySnapshot = await getDocs(q)
-
-  if (querySnapshot.empty) {
+  const resolved = await resolveEmployeeDocRef(uid)
+  if (!resolved) {
+    await logResult('FAILED', undefined, 'Employee document not found for uid')
     throw new Error('Employee document not found for uid')
   }
 
-  const employeeDocRef = querySnapshot.docs[0].ref
-  await updateDoc(employeeDocRef, payload)
+  try {
+    await updateDoc(resolved.ref, payload)
+    await logResult('SUCCESS', { profileImage: resolved.data.profileImage })
+  } catch (error) {
+    await logResult('FAILED', undefined, error instanceof Error ? error.message : String(error))
+    throw error
+  }
+}
+
+export async function updateEmployeeProfile(
+  uid: string,
+  updates: Partial<Employee>,
+  actor?: ProfileEditActor,
+): Promise<void> {
+  const changedFields = Object.keys(updates)
+
+  const logResult = (status: 'SUCCESS' | 'FAILED', before?: Record<string, unknown>, errorMessage?: string) =>
+    logAudit({
+      action: 'hr.employee.update',
+      actorUid: uid,
+      actorName: actor?.name ?? '',
+      actorRoleUuid: actor?.roleUuid ?? '',
+      actorRoleName: actor?.roleName,
+      targetType: 'employees',
+      targetId: uid,
+      before: status === 'SUCCESS' ? before : undefined,
+      after: status === 'SUCCESS' ? (updates as Record<string, unknown>) : undefined,
+      changedFields: status === 'SUCCESS' ? changedFields : undefined,
+      status,
+      errorMessage,
+    })
+
+  const resolved = await resolveEmployeeDocRef(uid)
+  if (!resolved) {
+    await logResult('FAILED', undefined, 'Employee document not found for uid')
+    throw new Error('Employee document not found for uid')
+  }
+
+  try {
+    const before = Object.fromEntries(changedFields.map((key) => [key, resolved.data[key]]))
+    await updateDoc(resolved.ref, updates)
+    await logResult('SUCCESS', before)
+  } catch (error) {
+    await logResult('FAILED', undefined, error instanceof Error ? error.message : String(error))
+    throw error
+  }
 }

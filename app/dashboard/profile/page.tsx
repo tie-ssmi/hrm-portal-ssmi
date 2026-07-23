@@ -3,6 +3,7 @@
 // ** core
 import { useState, useMemo, useCallback, memo, lazy, Suspense } from "react";
 import type { ElementType } from "react";
+import { useRouter } from "next/navigation";
 
 // ** assets / icons
 import {
@@ -21,6 +22,7 @@ import {
   Eye,
   EyeOff,
   Layers,
+  Pencil,
 } from "lucide-react";
 
 // ** shared components
@@ -33,15 +35,25 @@ import {
 } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import ProfileSkeleton from "@/components/skeletons/profileSkeleton";
 import { NumberFormatter } from "@/components/formatNumber";
 import { formatDateLao } from "@/components/laoDate";
-
+import {
+  translateJobTitle,
+  translateEmployeeType,
+} from "@/components/translater";
 // ** lazy — Dialog + FileUpload ບໍ່ຕ້ອງ load ທັນທີ (1 chunk ແທນ 5)
 const FileUpload = lazy(() => import("@/components/cameraUpload"));
 const ImageDialog = lazy(() =>
   import("@/components/ui/dialog").then((m) => {
-    function ImageDialogWrapper({ open, onOpenChange, trigger, src, alt }: {
+    function ImageDialogWrapper({
+      open,
+      onOpenChange,
+      trigger,
+      src,
+      alt,
+    }: {
       open: boolean;
       onOpenChange: (v: boolean) => void;
       trigger: React.ReactNode;
@@ -53,7 +65,11 @@ const ImageDialog = lazy(() =>
           <m.DialogTrigger asChild>{trigger}</m.DialogTrigger>
           <m.DialogContent className="max-h-[80vh] max-w-md p-2">
             <m.DialogTitle className="sr-only">ຮູບໂປຣໄຟລ໌</m.DialogTitle>
-            <img src={src} alt={alt} className="h-auto w-full rounded-md object-contain" />
+            <img
+              src={src}
+              alt={alt}
+              className="h-auto w-full rounded-md object-contain"
+            />
           </m.DialogContent>
         </m.Dialog>
       );
@@ -146,24 +162,60 @@ function buildEducationFields(profileUser: Employee | null): InfoField[] {
 
   if (educations.length === 0) {
     return [
-      { label: "ລະດັບການສຶກສາ", value: toStr(profileUser?.education), icon: GraduationCap },
-      { label: "ສະຖາບັນທີ່ຈົບການສຶກສາ", value: toStr(profileUser?.graduatedFrom), icon: GraduationCap },
-      { label: "ສາຂາວິຊາ", value: toStr(profileUser?.major), icon: GraduationCap },
-      { label: "ໃບຂັບຂີ່", value: toStr(profileUser?.drivingLicenseType), icon: IdCard },
+      {
+        label: "ລະດັບການສຶກສາ",
+        value: toStr(profileUser?.education),
+        icon: GraduationCap,
+      },
+      {
+        label: "ສະຖາບັນທີ່ຈົບການສຶກສາ",
+        value: toStr(profileUser?.graduatedFrom),
+        icon: GraduationCap,
+      },
+      {
+        label: "ສາຂາວິຊາ",
+        value: toStr(profileUser?.major),
+        icon: GraduationCap,
+      },
+      {
+        label: "ໃບຂັບຂີ່",
+        value: toStr(profileUser?.drivingLicenseType),
+        icon: IdCard,
+      },
     ];
   }
 
   const fields: InfoField[] = educations.flatMap((item, index) => [
-    { label: `ລະດັບການສຶກສາ (${index + 1})`, value: toStr(item.education), icon: GraduationCap },
-    { label: `ສະຖາບັນທີ່ຈົບການສຶກສາ (${index + 1})`, value: toStr(item.graduatedFrom), icon: GraduationCap },
-    { label: `ສາຂາວິຊາ (${index + 1})`, value: toStr(item.major), icon: GraduationCap },
+    {
+      label: `ລະດັບການສຶກສາ (${index + 1})`,
+      value: toStr(item.education),
+      icon: GraduationCap,
+    },
+    {
+      label: `ສະຖາບັນທີ່ຈົບການສຶກສາ (${index + 1})`,
+      value: toStr(item.graduatedFrom),
+      icon: GraduationCap,
+    },
+    {
+      label: `ສາຂາວິຊາ (${index + 1})`,
+      value: toStr(item.major),
+      icon: GraduationCap,
+    },
   ]);
 
-  fields.push({ label: "ໃບຂັບຂີ່", value: toStr(profileUser?.drivingLicenseType), icon: IdCard });
+  fields.push({
+    label: "ໃບຂັບຂີ່",
+    value: toStr(profileUser?.drivingLicenseType),
+    icon: IdCard,
+  });
   return fields;
 }
 
-const EmploymentRow = memo(function EmploymentRow({ field }: { field: InfoField }) {
+const EmploymentRow = memo(function EmploymentRow({
+  field,
+}: {
+  field: InfoField;
+}) {
   return (
     <div>
       <div className="flex items-center gap-3 py-2">
@@ -172,7 +224,9 @@ const EmploymentRow = memo(function EmploymentRow({ field }: { field: InfoField 
         </div>
         <div>
           <p className="text-muted-foreground text-xs">{field.label}</p>
-          <p className="text-foreground text-sm font-medium">{field.value || "-"}</p>
+          <p className="text-foreground text-sm font-medium">
+            {field.value || "-"}
+          </p>
         </div>
       </div>
       <div className="border-border border-t" />
@@ -181,26 +235,35 @@ const EmploymentRow = memo(function EmploymentRow({ field }: { field: InfoField 
 });
 
 export default function ProfilePage() {
+  const router = useRouter();
   const { user, firebaseUser } = useAuth();
   const [showSalary, setShowSalary] = useState(false);
-  const [uploadedAvatarUrl, setUploadedAvatarUrl] = useState<string | null>(null);
+  const [uploadedAvatarUrl, setUploadedAvatarUrl] = useState<string | null>(
+    null,
+  );
   const [isImageDialogOpen, setIsImageDialogOpen] = useState(false);
 
   const profileUser: Employee | null = user;
 
-  const initials = useMemo(() =>
-    profileUser
-      ? `${(profileUser.firstNameEn || profileUser.firstName)[0] ?? ""}${(profileUser.lastNameEn || profileUser.lastName)[0] ?? ""}`.toUpperCase()
-      : "U",
-  [profileUser]);
+  const initials = useMemo(
+    () =>
+      profileUser
+        ? `${(profileUser.firstNameEn || profileUser.firstName)[0] ?? ""}${(profileUser.lastNameEn || profileUser.lastName)[0] ?? ""}`.toUpperCase()
+        : "U",
+    [profileUser],
+  );
 
-  const avatarSrc = useMemo(() =>
-    uploadedAvatarUrl ||
-    resolveProfileImage(profileUser?.profileImage, firebaseUser?.uid) ||
-    profileUser?.photo3x4Url ||
-    profileUser?.avatar ||
-    (toStr(profileUser?.gender).toLowerCase() === "male" ? "/info/man.jpg" : "/info/woman.jpg"),
-  [uploadedAvatarUrl, profileUser, firebaseUser?.uid]);
+  const avatarSrc = useMemo(
+    () =>
+      uploadedAvatarUrl ||
+      resolveProfileImage(profileUser?.profileImage, firebaseUser?.uid) ||
+      profileUser?.photo3x4Url ||
+      profileUser?.avatar ||
+      (toStr(profileUser?.gender).toLowerCase() === "male"
+        ? "/info/man.jpg"
+        : "/info/woman.jpg"),
+    [uploadedAvatarUrl, profileUser, firebaseUser?.uid],
+  );
 
   const handleAvatarUploaded = useCallback((url: string) => {
     setUploadedAvatarUrl(url);
@@ -209,40 +272,125 @@ export default function ProfilePage() {
 
   const toggleSalary = useCallback(() => setShowSalary((v) => !v), []);
 
-  const employmentFields = useMemo<InfoField[]>(() => [
-    { label: "ລະຫັດພະນັກງານ", value: toStr(profileUser?.employeeId), icon: User },
-    { label: "ອີເມວ", value: toStr(profileUser?.email), icon: Mail },
-    { label: "ເບີໂທ", value: toStr(profileUser?.tel || profileUser?.phone), icon: Phone },
-    { label: "ຕຳແໜ່ງວຽກ", value: toStr(profileUser?.jobTitle || profileUser?.position), icon: Briefcase },
-    { label: "ພະແນກ", value: formatDepartment(profileUser?.department), icon: Layers },
-    { label: "ສະຖານທີ່ທຳວຽກ", value: toStr(profileUser?.workLocation), icon: Building },
-    { label: "ປະເພດພະນັກງານ", value: toStr(profileUser?.employeeType), icon: IdCard },
-  ], [profileUser]);
+  const employmentFields = useMemo<InfoField[]>(
+    () => [
+      {
+        label: "ລະຫັດພະນັກງານ",
+        value: toStr(profileUser?.employeeId),
+        icon: User,
+      },
+      { label: "ອີເມວ", value: toStr(profileUser?.email), icon: Mail },
+      {
+        label: "ເບີໂທ",
+        value: toStr(profileUser?.tel || profileUser?.phone),
+        icon: Phone,
+      },
+      {
+        label: "ຕຳແໜ່ງວຽກ",
+        value: toStr(profileUser?.jobTitle || profileUser?.position),
+        icon: Briefcase,
+      },
+      {
+        label: "ພະແນກ",
+        value: formatDepartment(profileUser?.department),
+        icon: Layers,
+      },
+      {
+        label: "ສະຖານທີ່ທຳວຽກ",
+        value: toStr(profileUser?.workLocation),
+        icon: Building,
+      },
+      {
+        label: "ປະເພດພະນັກງານ",
+        value: toStr(
+          profileUser?.employeeType
+            ? translateEmployeeType(profileUser.employeeType)
+            : undefined,
+        ),
+        icon: IdCard,
+      },
+    ],
+    [profileUser],
+  );
 
-  const salaryDisplay = useMemo(() =>
-    profileUser?.salary ? toStr(NumberFormatter.NoZero(profileUser.salary)) + " ກີບ" : "-",
-  [profileUser?.salary]);
+  const salaryDisplay = useMemo(
+    () =>
+      profileUser?.salary
+        ? toStr(NumberFormatter.NoZero(profileUser.salary)) + " ກີບ"
+        : "-",
+    [profileUser?.salary],
+  );
 
-  const personalFields = useMemo<InfoField[]>(() => [
-    { label: "ຊື່ (ພາສາອັງກິດ)", value: `${profileUser?.firstNameEn || profileUser?.firstName} ${profileUser?.lastNameEn || profileUser?.lastName}`, icon: User },
-    { label: "ຊື່ (ພາສາລາວ)", value: profileUser?.firstNameLo && profileUser?.lastNameLo ? `${profileUser.firstNameLo} ${profileUser.lastNameLo}` : "-", icon: User },
-    { label: "ວັນເກີດ", value: profileUser?.dateOfBirth ? formatDateLao(new Date(profileUser.dateOfBirth)) : "-", icon: Calendar },
-    { label: "ເພດ", value: toStr(profileUser?.gender), icon: User },
-    { label: "ກຸ່ມເລືອດ", value: toStr(profileUser?.bloodType), icon: Heart },
-    { label: "ສະຖານະ", value: toStr(profileUser?.maritalStatus), icon: Users },
-    { label: "ສາສະໜາ", value: toStr(profileUser?.religion), icon: User },
-    { label: "ຊາດ", value: toStr(profileUser?.ethnicity), icon: User },
-  ], [profileUser]);
+  const personalFields = useMemo<InfoField[]>(
+    () => [
+      {
+        label: "ຊື່ (ພາສາອັງກິດ)",
+        value: `${profileUser?.firstNameEn || profileUser?.firstName} ${profileUser?.lastNameEn || profileUser?.lastName}`,
+        icon: User,
+      },
+      {
+        label: "ຊື່ (ພາສາລາວ)",
+        value:
+          profileUser?.firstNameLo && profileUser?.lastNameLo
+            ? `${profileUser.firstNameLo} ${profileUser.lastNameLo}`
+            : "-",
+        icon: User,
+      },
+      {
+        label: "ວັນເກີດ",
+        value: profileUser?.dateOfBirth
+          ? formatDateLao(new Date(profileUser.dateOfBirth))
+          : "-",
+        icon: Calendar,
+      },
+      { label: "ເພດ", value: toStr(profileUser?.gender), icon: User },
+      { label: "ກຸ່ມເລືອດ", value: toStr(profileUser?.bloodType), icon: Heart },
+      {
+        label: "ສະຖານະ",
+        value: toStr(profileUser?.maritalStatus),
+        icon: Users,
+      },
+      { label: "ສາສະໜາ", value: toStr(profileUser?.religion), icon: User },
+      { label: "ຊາດ", value: toStr(profileUser?.ethnicity), icon: User },
+    ],
+    [profileUser],
+  );
 
-  const originFields = useMemo<InfoField[]>(() => [
-    { label: "ແຂວງເກີດ", value: toStr(profileUser?.provinceOfBirth), icon: MapPin },
-    { label: "ເມືອງເກີດ", value: toStr(profileUser?.cityOfBirth), icon: MapPin },
-    { label: "ສະຖານທີ່ເກີດ", value: toStr(profileUser?.placeOfBirth), icon: MapPin },
-    { label: "ຈຳນວນສະມາຊິກຄອບຄົວ", value: toStr(profileUser?.numberOfFamilyMembers), icon: Users },
-    { label: "ຕິດຕໍ່ສຸກເສີນ", value: toStr(profileUser?.emergencyContactNumber), icon: Phone },
-  ], [profileUser]);
+  const originFields = useMemo<InfoField[]>(
+    () => [
+      {
+        label: "ແຂວງເກີດ",
+        value: toStr(profileUser?.provinceOfBirth),
+        icon: MapPin,
+      },
+      {
+        label: "ເມືອງເກີດ",
+        value: toStr(profileUser?.cityOfBirth),
+        icon: MapPin,
+      },
+      {
+        label: "ສະຖານທີ່ເກີດ",
+        value: toStr(profileUser?.placeOfBirth),
+        icon: MapPin,
+      },
+      {
+        label: "ຈຳນວນສະມາຊິກຄອບຄົວ",
+        value: toStr(profileUser?.numberOfFamilyMembers),
+        icon: Users,
+      },
+      {
+        label: "ຕິດຕໍ່ສຸກເສີນ",
+        value: toStr(profileUser?.emergencyContactNumber),
+        icon: Phone,
+      },
+    ],
+    [profileUser],
+  );
 
-  const educationFields = useMemo(() => buildEducationFields(profileUser), [profileUser]);
+  const educationFields = useMemo(
+    () => buildEducationFields(profileUser),
+    [profileUser],
+  );
 
   if (!profileUser) {
     return <ProfileSkeleton />;
@@ -252,9 +400,25 @@ export default function ProfilePage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-foreground text-2xl font-bold">ຂໍ້ມູນສ່ວນຕົວ</h1>
-        <p className="text-muted-foreground">ເບິ່ງແລະຮ້ອງຂໍການອັບເດດຂໍ້ມູນສ່ວນຕົວຂອງທ່ານ</p>
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-foreground text-2xl font-bold break-words">
+            ຂໍ້ມູນສ່ວນຕົວ
+          </h1>
+          <p className="text-muted-foreground break-words">
+            ເບິ່ງແລະຮ້ອງຂໍການອັບເດດຂໍ້ມູນສ່ວນຕົວຂອງທ່ານ
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => router.push("/dashboard/profile/edit")}
+          className="hidden shrink-0 items-center gap-2 md:flex"
+        >
+          <Pencil className="h-4 w-4" />
+          ແກ້ໄຂ
+        </Button>
       </div>
 
       {/* Profile card */}
@@ -262,12 +426,20 @@ export default function ProfilePage() {
         <CardContent className="pt-6">
           <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-start">
             <div className="relative h-24 w-24">
-              <Suspense fallback={
-                <Avatar className="h-24 w-24">
-                  <AvatarImage src={avatarSrc} alt={fullNameEn} className="object-cover" />
-                  <AvatarFallback className="bg-primary text-primary-foreground text-2xl">{initials}</AvatarFallback>
-                </Avatar>
-              }>
+              <Suspense
+                fallback={
+                  <Avatar className="h-24 w-24">
+                    <AvatarImage
+                      src={avatarSrc}
+                      alt={fullNameEn}
+                      className="object-cover"
+                    />
+                    <AvatarFallback className="bg-primary text-primary-foreground text-2xl">
+                      {initials}
+                    </AvatarFallback>
+                  </Avatar>
+                }
+              >
                 <ImageDialog
                   open={isImageDialogOpen}
                   onOpenChange={setIsImageDialogOpen}
@@ -280,8 +452,14 @@ export default function ProfilePage() {
                       aria-label="View profile image"
                     >
                       <Avatar className="h-24 w-24 cursor-zoom-in">
-                        <AvatarImage src={avatarSrc} alt={fullNameEn} className="object-cover" />
-                        <AvatarFallback className="bg-primary text-primary-foreground text-2xl">{initials}</AvatarFallback>
+                        <AvatarImage
+                          src={avatarSrc}
+                          alt={fullNameEn}
+                          className="object-cover"
+                        />
+                        <AvatarFallback className="bg-primary text-primary-foreground text-2xl">
+                          {initials}
+                        </AvatarFallback>
                       </Avatar>
                     </button>
                   }
@@ -298,25 +476,44 @@ export default function ProfilePage() {
               </div>
             </div>
             <div className="text-center sm:text-left">
-              <h2 className="text-foreground text-xl font-semibold">{fullNameEn}</h2>
+              <h2 className="text-foreground text-xl font-semibold">
+                {fullNameEn}
+              </h2>
               {profileUser.firstNameLo && profileUser.lastNameLo && (
                 <p className="text-foreground/80 text-lg">
                   {profileUser.firstNameLo} {profileUser.lastNameLo}
                 </p>
               )}
               <p className="text-muted-foreground">
-                {toStr(profileUser.jobTitle || profileUser.position)}
+                {toStr(
+                  translateJobTitle(profileUser.jobTitle) ||
+                    profileUser.position,
+                )}
               </p>
               <p className="text-muted-foreground mt-1 text-sm">
                 {toStr(profileUser.workLocation || profileUser.department)}
               </p>
               <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
-                <Badge variant="secondary">{toStr(profileUser.employeeId)}</Badge>
+                <Badge variant="secondary">
+                  {toStr(profileUser.employeeId)}
+                </Badge>
                 {profileUser.employeeType && (
-                  <Badge variant="outline">{toStr(profileUser.employeeType)}</Badge>
+                  <Badge variant="outline">
+                    {toStr(profileUser.employeeType)}
+                  </Badge>
                 )}
               </div>
             </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => router.push("/dashboard/profile/edit")}
+              className="flex shrink-0 items-center md:hidden"
+            >
+              <Pencil className="h-4 w-4" />
+              ແກ້ໄຂ
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -325,7 +522,9 @@ export default function ProfilePage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">ຂໍ້ມູນການຈ້າງງານ</CardTitle>
-          <CardDescription>ບາງຟິວລິດຈຳເປັນຕ້ອງຮັບການອະນຸມັດຈາກ HR ເພື່ອອັບເດດ</CardDescription>
+          <CardDescription>
+            ບາງຟິວລິດຈຳເປັນຕ້ອງຮັບການອະນຸມັດຈາກ HR ເພື່ອອັບເດດ
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-1">
@@ -347,7 +546,11 @@ export default function ProfilePage() {
                       onClick={toggleSalary}
                       className="text-muted-foreground hover:text-foreground transition-colors"
                     >
-                      {showSalary ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                      {showSalary ? (
+                        <EyeOff className="h-3.5 w-3.5" />
+                      ) : (
+                        <Eye className="h-3.5 w-3.5" />
+                      )}
                     </button>
                   </div>
                 </div>
@@ -383,7 +586,9 @@ export default function ProfilePage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">ການສຶກສາ & ວິຊາການ</CardTitle>
-          <CardDescription>ພາບພື້ນຖານການສຶກສາແລະໃບຮັບຮອງວິຊາການຂອງທ່ານ</CardDescription>
+          <CardDescription>
+            ພາບພື້ນຖານການສຶກສາແລະໃບຮັບຮອງວິຊາການຂອງທ່ານ
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <InfoGrid fields={educationFields} />

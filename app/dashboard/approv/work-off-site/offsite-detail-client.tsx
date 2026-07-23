@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { doc, getDoc, updateDoc, type DocumentData } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
+import { logAudit } from "@/services/audit-log";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -243,6 +244,7 @@ export default function OffsiteDetailClient() {
       user?.uid ||
       "";
     const now = new Date().toISOString();
+    const decision = action === "approve" ? "approved" : "rejected";
 
     setIsProcessing(true);
     try {
@@ -251,7 +253,6 @@ export default function OffsiteDetailClient() {
       const approvalIndex = record.approvals.findIndex(
         (ap) => ap.role === approvalRole,
       );
-      const decision = action === "approve" ? "approved" : "rejected";
 
       const payload: Record<string, unknown> = {
         updatedAt: now,
@@ -286,12 +287,37 @@ export default function OffsiteDetailClient() {
         doc(db, "workOutside", record.id),
         payload as DocumentData,
       );
+      await logAudit({
+        action: decision === "approved" ? "offsite.request.approve" : "offsite.request.reject",
+        actorUid: user?.uid || user?.id || "",
+        actorName: reviewedBy,
+        actorRoleUuid: user?.rolesUid ?? "",
+        actorRoleName: user?.rolesName,
+        targetType: "workOutside",
+        targetId: record.id,
+        targetName: record.requester?.fullNameLo || record.requester?.fullNameEn,
+        before: { status: record.status, approvals: record.approvals },
+        after: payload,
+        reason: decision === "rejected" ? rejectReason.trim() || undefined : undefined,
+        status: "SUCCESS",
+      });
       await queryClient.invalidateQueries({ queryKey: ["workOutside", id] });
       toast.success(action === "approve" ? "ອະນຸມັດສຳເລັດ" : "ປະຕິເສດສຳເລັດ");
       setAction(null);
       setConfirmed(false);
       setRejectReason("");
-    } catch {
+    } catch (err) {
+      await logAudit({
+        action: decision === "approved" ? "offsite.request.approve" : "offsite.request.reject",
+        actorUid: user?.uid || user?.id || "",
+        actorName: reviewedBy,
+        actorRoleUuid: user?.rolesUid ?? "",
+        actorRoleName: user?.rolesName,
+        targetType: "workOutside",
+        targetId: record.id,
+        status: "FAILED",
+        errorMessage: err instanceof Error ? err.message : String(err),
+      });
       toast.error("ເກີດຂໍ້ຜິດພາດ ກະລຸນາລອງໃໝ່");
     } finally {
       setIsProcessing(false);

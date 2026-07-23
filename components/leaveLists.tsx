@@ -188,6 +188,43 @@ function remainingLeaveDays(leave: LeaveData, todayStr: string): number {
   return Math.max(0, remaining)
 }
 
+// A morning-half and an afternoon-half leave for the same person on the same single day
+// are really one full-day leave — merge them into one entry instead of showing two cards.
+function mergeFullDayLeaves(data: LeaveData[], todayStr: string): LeaveData[] {
+  const isSingleDayHalf = (leave: LeaveData, period: "morning" | "afternoon") =>
+    leave.startDate === todayStr &&
+    leave.endDate === todayStr &&
+    leave.duration === 0.5 &&
+    leave.startPeriod === period &&
+    leave.endPeriod === period
+
+  const morningHalves = data.filter((l) => isSingleDayHalf(l, "morning"))
+  const afternoonHalves = data.filter((l) => isSingleDayHalf(l, "afternoon"))
+  const consumed = new Set<LeaveData>()
+  const merged: LeaveData[] = []
+
+  for (const morning of morningHalves) {
+    const key = morning.leaveUserUuid || morning.name
+    const afternoon = afternoonHalves.find(
+      (a) => !consumed.has(a) && (a.leaveUserUuid || a.name) === key,
+    )
+    if (!afternoon) continue
+    consumed.add(morning)
+    consumed.add(afternoon)
+    merged.push({
+      ...morning,
+      endPeriod: "afternoon",
+      duration: (morning.duration ?? 0.5) + (afternoon.duration ?? 0.5),
+      reason:
+        morning.reason && afternoon.reason && morning.reason !== afternoon.reason
+          ? `${morning.reason} / ${afternoon.reason}`
+          : morning.reason || afternoon.reason,
+    })
+  }
+
+  return [...merged, ...data.filter((l) => !consumed.has(l))]
+}
+
 // ToDay Component
 export function ToDay({ data }: { data: LeaveData[] }) {
   const todayStr = new Date().toISOString().split("T")[0]
@@ -380,21 +417,25 @@ export function TodayLeaveSection() {
   const { data: todayLeaveRequests = [], isLoading } =
     useTodayLeavesByWorkLocation(workLocationUuid);
   const todayStr = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
-  const leaveDataToday: LeaveData[] = todayLeaveRequests.map((r) => ({
-    name: r.leaveUserName ?? "",
-    department: r.departmentNameLo ?? r.departmentNameEn ?? "",
-    successor: r.successorNameLo ?? r.successorNameEn ?? "",
-    startDate: r.startDate,
-    endDate: r.endDate,
-    startPeriod: r.startPeriod,
-    endPeriod: r.endPeriod,
-    duration: r.duration,
-    reason: r.reason,
-    position: r.jobTitle ?? "",
-    note: r.doc ?? "",
-    type: { id: r.policyId ?? "", name: r.policyName ?? r.type },
-    leaveImage: r.leaveImage || null,
-  }));
+  const leaveDataToday: LeaveData[] = mergeFullDayLeaves(
+    todayLeaveRequests.map((r) => ({
+      leaveUserUuid: r.leaveUserUuid,
+      name: r.leaveUserName ?? "",
+      department: r.departmentNameLo ?? r.departmentNameEn ?? "",
+      successor: r.successorNameLo ?? r.successorNameEn ?? "",
+      startDate: r.startDate,
+      endDate: r.endDate,
+      startPeriod: r.startPeriod,
+      endPeriod: r.endPeriod,
+      duration: r.duration,
+      reason: r.reason,
+      position: r.jobTitle ?? "",
+      note: r.doc ?? "",
+      type: { id: r.policyId ?? "", name: r.policyName ?? r.type },
+      leaveImage: r.leaveImage || null,
+    })),
+    todayStr,
+  );
 
   return (
     <div>

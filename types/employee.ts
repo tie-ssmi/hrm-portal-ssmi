@@ -60,6 +60,7 @@ export interface LeaveType {
 }
 
 export interface LeaveData {
+  leaveUserUuid?: string;
   name: string;
   departmentUid ?: string;
   department ?: string;

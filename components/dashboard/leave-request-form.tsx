@@ -90,6 +90,15 @@ type LeaveTypeOption = {
 
 type DocUploadChoice = "now" | "later" | "skip" | null;
 
+function getVientianeDateStr(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Vientiane",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
 function calcDuration(
   startDate?: Date,
   startPeriod: Period = "morning",
@@ -224,6 +233,7 @@ export default function LeaveRequestForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [docUploadChoice, setDocUploadChoice] = useState<DocUploadChoice>(null);
   const [docFile, setDocFile] = useState<File | null>(null);
+  const [isCopySending, setIsCopySending] = useState(false);
 
   const annualRemaining = leaveBalance.annual - leaveBalance.annualUsed;
   const sickRemaining = leaveBalance.sick - leaveBalance.sickUsed;
@@ -505,6 +515,46 @@ export default function LeaveRequestForm() {
     }
   }
 
+  const handleCopyAutoSend = async () => {
+    if (!selectedLeave) return;
+    setIsCopySending(true);
+    try {
+      const {
+        id: _id,
+        status: _status,
+        createdAt: _createdAt,
+        approvals: _approvals,
+        requiredApprovers: _requiredApprovers,
+        reviewedBy: _reviewedBy,
+        reviewedAt: _reviewedAt,
+        ...rest
+      } = selectedLeave;
+
+      const newDuration = calcDuration(
+        new Date(selectedLeave.startDate),
+        "afternoon",
+        new Date(selectedLeave.endDate),
+        "afternoon",
+        holidaySet,
+      );
+
+      await submitLeaveRequest({
+        ...rest,
+        startPeriod: "afternoon",
+        endPeriod: "afternoon",
+        duration: newDuration ?? undefined,
+      });
+      await refetchMyCurrentLeaves();
+      toast.success("ສົ່ງຄໍາຮ້ອງຂໍລາຕອນບ່າຍສໍາເລັດ");
+      setSelectedLeave(null);
+    } catch (err) {
+      toast.error("ບໍ່ສາມາດສົ່ງຄໍາຮ້ອງຂໍໄດ້");
+      console.error(err);
+    } finally {
+      setIsCopySending(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!leaveStartDate || !leaveEndDate) {
@@ -561,47 +611,50 @@ export default function LeaveRequestForm() {
         docLink = await getDownloadURL(snapshot.ref);
       }
 
-      await submitLeaveRequest({
-        leaveUserUuid: loggedInUserUuid || undefined,
-        leaveImage: user?.profileImage || user?.photo3x4Url || null,
-        leaveUserName: createdBy,
-        species: "owner",
-        createdByUid: loggedInUserUuid || undefined,
-        type: selectedPolicy?.requestType || "annual",
-        policyUuid: selectedPolicy?.policyUuid,
-        policyId: selectedPolicy?.policyId || undefined,
-        policyName: selectedPolicy?.policyName || selectedPolicy?.label,
-        createdBy,
-        startDate: format(leaveStartDate, "yyyy-MM-dd"),
-        startPeriod,
-        endDate: format(leaveEndDate, "yyyy-MM-dd"),
-        endPeriod,
-        duration: duration ?? undefined,
-        reason: leaveReason,
-        departmentUid: departmentUuid || dept?.uuid,
-        departmentNameLo: dept?.department,
-        departmentNameEn: dept?.title,
-        successorUid: selectedSuccessor?.uid,
-        successorNameLo: selectedSuccessor
-          ? [selectedSuccessor.firstNameLo, selectedSuccessor.lastNameLo]
-              .filter(Boolean)
-              .join(" ")
-          : undefined,
-        successorNameEn: selectedSuccessor
-          ? [selectedSuccessor.firstNameEn, selectedSuccessor.lastNameEn]
-              .filter(Boolean)
-              .join(" ")
-          : undefined,
-        jobTitle: user?.jobTitle || user?.position,
-        workLocationUid: workLocationUuid,
-        docStatus:
-          docUploadChoice === "now"
-            ? "now"
-            : docUploadChoice === "later"
-              ? "later"
-              : null,
-        docLink,
-      }, isHousekeeper ? { autoApproveDeptHead: true } : undefined);
+      await submitLeaveRequest(
+        {
+          leaveUserUuid: loggedInUserUuid || undefined,
+          leaveImage: user?.profileImage || user?.photo3x4Url || null,
+          leaveUserName: createdBy,
+          species: "owner",
+          createdByUid: loggedInUserUuid || undefined,
+          type: selectedPolicy?.requestType || "annual",
+          policyUuid: selectedPolicy?.policyUuid,
+          policyId: selectedPolicy?.policyId || undefined,
+          policyName: selectedPolicy?.policyName || selectedPolicy?.label,
+          createdBy,
+          startDate: format(leaveStartDate, "yyyy-MM-dd"),
+          startPeriod,
+          endDate: format(leaveEndDate, "yyyy-MM-dd"),
+          endPeriod,
+          duration: duration ?? undefined,
+          reason: leaveReason,
+          departmentUid: departmentUuid || dept?.uuid,
+          departmentNameLo: dept?.department,
+          departmentNameEn: dept?.title,
+          successorUid: selectedSuccessor?.uid,
+          successorNameLo: selectedSuccessor
+            ? [selectedSuccessor.firstNameLo, selectedSuccessor.lastNameLo]
+                .filter(Boolean)
+                .join(" ")
+            : undefined,
+          successorNameEn: selectedSuccessor
+            ? [selectedSuccessor.firstNameEn, selectedSuccessor.lastNameEn]
+                .filter(Boolean)
+                .join(" ")
+            : undefined,
+          jobTitle: user?.jobTitle || user?.position,
+          workLocationUid: workLocationUuid,
+          docStatus:
+            docUploadChoice === "now"
+              ? "now"
+              : docUploadChoice === "later"
+                ? "later"
+                : null,
+          docLink,
+        },
+        isHousekeeper ? { autoApproveDeptHead: true } : undefined,
+      );
       await refetchMyCurrentLeaves();
       toast.success("ສົ່ງຄໍາຮ້ອງຂໍສໍາເລັດ");
       setSelectedPolicyValue(leaveTypeOptions[0]?.value || "annual");
@@ -1085,7 +1138,16 @@ export default function LeaveRequestForm() {
               {selectedLeave?.policyName || selectedLeave?.type}
             </DialogTitle>
           </DialogHeader>
-          {selectedLeave && (
+          {selectedLeave && (() => {
+            const hasAfternoonContinuation = myCurrentLeaveRequests.some(
+              (r) =>
+                r.id !== selectedLeave.id &&
+                r.startDate === selectedLeave.startDate &&
+                r.endDate === selectedLeave.endDate &&
+                r.startPeriod === "afternoon" &&
+                r.endPeriod === "afternoon",
+            );
+            return (
             <div className="space-y-3 text-sm">
               <div className="flex justify-between items-center">
                 <span className="text-muted-foreground">ສະຖານະ</span>
@@ -1134,7 +1196,10 @@ export default function LeaveRequestForm() {
                 <span className="text-muted-foreground">ວັນທີຍື່ນ</span>
                 <span>
                   {selectedLeave.createdAt?.includes("T")
-                    ? format(new Date(selectedLeave.createdAt), "dd/MM/yyyy HH:mm")
+                    ? format(
+                        new Date(selectedLeave.createdAt),
+                        "dd/MM/yyyy HH:mm",
+                      )
                     : selectedLeave.createdAt}
                 </span>
               </div>
@@ -1180,8 +1245,29 @@ export default function LeaveRequestForm() {
                     </div>
                   </>
                 )}
+
+              {selectedLeave.status === "approved" &&
+                selectedLeave.duration === 0.5 &&
+                selectedLeave.endPeriod === "morning" &&
+                selectedLeave.endDate === getVientianeDateStr() &&
+                !hasAfternoonContinuation && (
+                  <Button
+                    type="button"
+                    className="w-full"
+                    disabled={isCopySending}
+                    onClick={handleCopyAutoSend}
+                  >
+                    {isCopySending ? (
+                      <Spinner className="mr-2" />
+                    ) : (
+                      <Send className="w-4 h-4 mr-2" />
+                    )}
+                    ຂໍລາຕອນບ່າຍຕໍ່ (ອັດຕະໂນມັດ)
+                  </Button>
+                )}
             </div>
-          )}
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </>

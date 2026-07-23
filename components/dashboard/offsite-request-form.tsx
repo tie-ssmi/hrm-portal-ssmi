@@ -74,6 +74,7 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useAuth } from "@/lib/auth-context";
 import { db, storage } from "@/lib/firebase";
 import { cn } from "@/lib/utils";
+import { logAudit } from "@/services/audit-log";
 import type {
   ActivityCode,
   TeammateEntry,
@@ -714,10 +715,25 @@ export default function OffsiteRequestForm({
       };
 
       if (isEditMode && initialData) {
-        await updateDoc(
-          doc(db, "workOutside", initialData.id),
-          stripUndefined(payload),
+        const cleanPayload = stripUndefined(payload);
+        const initialDataRecord = initialData as unknown as Record<string, unknown>;
+        const before = Object.fromEntries(
+          Object.keys(cleanPayload).map((key) => [key, initialDataRecord[key]]),
         );
+        await updateDoc(doc(db, "workOutside", initialData.id), cleanPayload);
+        await logAudit({
+          action: "offsite.request.update",
+          actorUid: user.uid ?? user.id ?? "",
+          actorName: fullNameEn,
+          actorRoleUuid: user.rolesUid ?? "",
+          actorRoleName: user.rolesName,
+          targetType: "workOutside",
+          targetId: initialData.id,
+          targetName: fullNameLo || fullNameEn,
+          before,
+          after: cleanPayload,
+          status: "SUCCESS",
+        });
         toast.success(`ແກ້ໄຂສຳເລັດ — ${initialData.requestNo}`);
       } else {
         const requestNo = generateRequestNo();
@@ -735,20 +751,30 @@ export default function OffsiteRequestForm({
               { role: "departmentHead", decision: "pending" },
               { role: "hr", decision: "pending" },
             ];
-        await addDoc(
-          collection(db, "workOutside"),
-          stripUndefined({
-            ...payload,
-            requestNo,
-            status: "pending",
-            requiredApprovers,
-            approvals,
-            rejectReason: null,
-            createdAt: now,
-            createdBy: fullNameEn,
-            createdByUid: user.uid,
-          }),
-        );
+        const createPayload = stripUndefined({
+          ...payload,
+          requestNo,
+          status: "pending",
+          requiredApprovers,
+          approvals,
+          rejectReason: null,
+          createdAt: now,
+          createdBy: fullNameEn,
+          createdByUid: user.uid,
+        });
+        const docRef = await addDoc(collection(db, "workOutside"), createPayload);
+        await logAudit({
+          action: "offsite.request.create",
+          actorUid: user.uid ?? user.id ?? "",
+          actorName: fullNameEn,
+          actorRoleUuid: user.rolesUid ?? "",
+          actorRoleName: user.rolesName,
+          targetType: "workOutside",
+          targetId: docRef.id,
+          targetName: fullNameLo || fullNameEn,
+          after: createPayload,
+          status: "SUCCESS",
+        });
         toast.success(`ສົ່ງຄຳຂໍສຳເລັດ — ${requestNo}`);
       }
 
@@ -756,6 +782,18 @@ export default function OffsiteRequestForm({
       resetForm();
     } catch (err) {
       console.error(err);
+      await logAudit({
+        action: isEditMode ? "offsite.request.update" : "offsite.request.create",
+        actorUid: user.uid ?? user.id ?? "",
+        actorName:
+          `${user.firstNameEn ?? user.firstName ?? ""} ${user.lastNameEn ?? user.lastName ?? ""}`.trim(),
+        actorRoleUuid: user.rolesUid ?? "",
+        actorRoleName: user.rolesName,
+        targetType: "workOutside",
+        targetId: initialData?.id ?? "",
+        status: "FAILED",
+        errorMessage: err instanceof Error ? err.message : String(err),
+      });
       toast.error("ເກີດຂໍ້ຜິດພາດ ກະລຸນາລອງໃໝ່");
     } finally {
       setIsSubmitting(false);

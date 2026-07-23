@@ -46,6 +46,7 @@ import type { OffsiteRequestDoc } from "@/types/workOutside";
 
 // ** services
 import { fetchLeavesForApproval, updateLeaveApproval } from "@/services/leaves";
+import { logAudit } from "@/services/audit-log";
 
 export default function ApprovePage() {
   return <ApprovePageContent />;
@@ -336,11 +337,37 @@ function ApprovePageContent() {
       }
 
       await updateDoc(doc(db, "workOutside", pendingOffsiteItem.id), payload as DocumentData);
+
+      await logAudit({
+        action: decision === "approved" ? "offsite.request.approve" : "offsite.request.reject",
+        actorUid: loggedInUserUuid,
+        actorName: reviewedBy,
+        actorRoleUuid: user?.rolesUid ?? "",
+        actorRoleName: user?.rolesName,
+        targetType: "workOutside",
+        targetId: pendingOffsiteItem.id,
+        targetName: fullRecord?.requester.fullNameLo || fullRecord?.requester.fullNameEn,
+        before: { status: fullRecord?.status, approvals: fullRecord?.approvals },
+        after: payload,
+        status: "SUCCESS",
+      });
+
       await queryClient.invalidateQueries({ queryKey: offsiteQueryKey });
       toast.success(
         offsiteAction === "approve" ? "ອະນຸມັດສຳເລັດ" : "ປະຕິເສດສຳເລັດ",
       );
-    } catch {
+    } catch (error) {
+      await logAudit({
+        action: offsiteAction === "approve" ? "offsite.request.approve" : "offsite.request.reject",
+        actorUid: loggedInUserUuid,
+        actorName: reviewedBy,
+        actorRoleUuid: user?.rolesUid ?? "",
+        actorRoleName: user?.rolesName,
+        targetType: "workOutside",
+        targetId: pendingOffsiteItem.id,
+        status: "FAILED",
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
       toast.error("ເກີດຂໍ້ຜິດພາດ ກະລຸນາລອງໃໝ່");
     } finally {
       setIsProcessingOffsite(false);
@@ -376,6 +403,8 @@ function ApprovePageContent() {
         decision: "approved",
         reviewedBy,
         reviewedByUid: loggedInUserUuid,
+        actorRoleUuid: user?.rolesUid,
+        actorRoleName: user?.rolesName,
       });
       await queryClient.invalidateQueries({ queryKey: leaveQueryKey });
       toast.success("ອະນຸມັດສຳເລັດ");

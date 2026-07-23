@@ -47,6 +47,12 @@ export interface EducationEntry {
   major?: string;
 }
 
+export interface DocEntry {
+  name: string;
+  url: string;
+  addAt: string;
+}
+
 export interface Employee {
   id: string;
   email: string;
@@ -93,6 +99,10 @@ export interface Employee {
   salary?: string;
   profileImage?: string;
   photo3x4Url?: string;
+  idCardPhotoUrl?: string;
+  criminalRecordUrl?: string;
+  declarationUrl?: string;
+  docs?: DocEntry[];
   createdAt?: any;
 }
 
@@ -315,4 +325,54 @@ export interface HRMContextType {
   isWithinGeofence: (lat: number, lng: number) => boolean;
   distanceToOffice: (lat: number, lng: number) => number | null;
   geoFenceStatus: "loading" | "found" | "no_coordinates" | "not_found";
+}
+
+export interface AuditLog {
+  id: string; // Firestore doc id
+
+  // Which system wrote this entry — stamped server-side in logAuditEvent, not
+  // client-supplied. This app is always "portal"; other values are reserved
+  // for other systems (e.g. the separate admin project) that may write to the
+  // same auditLogs collection in the future.
+  systemType: string;
+
+  // "domain.entity.action" — e.g. "leave.request.approve", "auth.forceLogout.trigger"
+  action: string;
+
+  // Actor (ຜູ້ກະທຳ)
+  actorUid: string;
+  actorName: string;
+  actorRoleUuid: string;
+  actorRoleName?: string;
+
+  // Target / resource affected
+  targetType: string; // "employees" | "leaves" | "workOutside" | "systemSettings" ...
+  targetId: string;
+  targetName?: string;
+
+  // Change tracking — always present (stamped {} server-side when an action
+  // has no natural prior/new state, e.g. login/logout, so every stored entry
+  // has both fields rather than sometimes omitting them).
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+  changedFields?: string[];
+
+  // Intent + outcome
+  reason?: string;
+  status: "SUCCESS" | "FAILED";
+  errorMessage?: string;
+
+  // Technical context — only what's obtainable from a static-export client app;
+  // ipAddress/requestMethod stay undefined unless a future Cloud Function populates them.
+  ipAddress?: string;
+  userAgent?: string;
+  requestUrl?: string;
+  requestMethod?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+
+  // Multi-tenancy — unused today (single-tenant SSMI portal) but reserved for
+  // if the app ever splits by company/branch.
+  companyId?: string;
+  branchId?: string;
+
+  createdAt: string; // ISO 8601
 }

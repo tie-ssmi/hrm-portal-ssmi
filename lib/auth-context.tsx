@@ -16,8 +16,24 @@ import { doc, getDoc } from 'firebase/firestore'
 import type { AuthCredential } from 'firebase/auth'
 import type { AuthContextType, Employee } from './types'
 import { queryClient } from './query-client'
+import { logAudit } from '@/services/audit-log'
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
+
+function clearAllClientStorage() {
+  if (typeof document !== 'undefined') {
+    document.cookie.split(';').forEach((entry) => {
+      const name = entry.split('=')[0]?.trim()
+      if (name) {
+        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`
+      }
+    })
+  }
+  if (typeof window !== 'undefined') {
+    localStorage.clear()
+    sessionStorage.clear()
+  }
+}
 
 let employeesModule: typeof import('./employees') | null = null
 async function getEmployeesModule() {
@@ -114,18 +130,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     pendingGoogleEmailRef.current = null
   }, [])
 
+  // Full sign-out: used for manual logout, inactivity timeout, and admin
+  // force-logout alike, so every exit path clears the same session data.
+  const performFullSignOut = useCallback(async () => {
+    clearPendingGoogleLink()
+
+    try {
+      const { Capacitor } = await import('@capacitor/core')
+      if (Capacitor.isNativePlatform()) {
+        const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication')
+        await FirebaseAuthentication.signOut()
+      }
+    } catch (error) {
+      console.error('Native sign-out error:', error)
+    }
+
+    await signOut(auth)
+    queryClient.clear()
+    clearAllClientStorage()
+  }, [clearPendingGoogleLink])
+
   // Listen for auth state changes
   useEffect(() => {
     const INACTIVE_MAX_MS = 2 * 24 * 60 * 60 * 1000 // 2 days inactivity
     const ACTIVE_KEY = 'ssmi_last_active'
 
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      // TEMP DEBUG — remove once the login/force-logout issue is confirmed fixed
+      const debugMark = (reason: string, extra?: Record<string, unknown>) => {
+        if (typeof window !== 'undefined') {
+          ;(window as any).__authDebug = { reason, at: new Date().toISOString(), ...extra }
+        }
+      }
       try {
         if (fbUser) {
           const stored = localStorage.getItem(ACTIVE_KEY)
           if (stored && Date.now() - new Date(stored).getTime() > INACTIVE_MAX_MS) {
-            localStorage.removeItem(ACTIVE_KEY)
-            await signOut(auth)
+            debugMark('inactive-timeout', { stored })
+            await logAudit({
+              action: 'auth.session.expire',
+              actorUid: fbUser.uid,
+              actorName: fbUser.displayName || fbUser.email || fbUser.uid,
+              actorRoleUuid: '',
+              targetType: 'employees',
+              targetId: fbUser.uid,
+              reason: '2-day inactivity timeout',
+              status: 'SUCCESS',
+            })
+            await performFullSignOut()
             setFirebaseUser(null)
             setUser(null)
             setIsLoading(false)
@@ -138,14 +190,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               const forceSnap = await getDoc(doc(db, 'adminSettings', 'forceLogout'))
               const triggeredAt = forceSnap.data()?.triggeredAt as string | undefined
               if (triggeredAt && new Date(stored).getTime() < new Date(triggeredAt).getTime()) {
-                localStorage.removeItem(ACTIVE_KEY)
-                await signOut(auth)
+                debugMark('force-logout', { stored, triggeredAt })
+                // The admin who triggered this writes adminSettings/forceLogout from
+                // outside this app (Admin SDK), so we can't attribute the actor —
+                // this logs the affected session being torn down, not who triggered it.
+                await logAudit({
+                  action: 'auth.forceLogout.trigger',
+                  actorUid: fbUser.uid,
+                  actorName: fbUser.displayName || fbUser.email || fbUser.uid,
+                  actorRoleUuid: '',
+                  targetType: 'employees',
+                  targetId: fbUser.uid,
+                  reason: 'adminSettings/forceLogout.triggeredAt newer than last active session',
+                  status: 'SUCCESS',
+                })
+                await performFullSignOut()
                 setFirebaseUser(null)
                 setUser(null)
                 setIsLoading(false)
                 return
               }
-            } catch {
+            } catch (forceLogoutError) {
+              debugMark('force-logout-check-failed', { error: String(forceLogoutError) })
               // ຖ້າ Firestore ບໍ່ໄດ້ — ຜ່ານຕໍ່ (ບໍ່ block login)
             }
           }
@@ -154,12 +220,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           localStorage.setItem(ACTIVE_KEY, new Date().toISOString())
           setFirebaseUser(fbUser)
           const employeeData = await firebaseUserToEmployee(fbUser)
+          debugMark('signed-in', { uid: fbUser.uid, hasEmployeeData: !!employeeData })
           setUser(employeeData)
         } else {
+          debugMark('no-firebase-user')
           setFirebaseUser(null)
           setUser(null)
         }
       } catch (error) {
+        debugMark('error', { error: String(error) })
         console.error('Auth state change error:', error)
         setFirebaseUser(null)
         setUser(null)
@@ -169,7 +238,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
 
     return () => unsubscribe()
-  }, [])
+  }, [performFullSignOut])
 
   const completeGoogleLink = useCallback(async (email: string, password: string, credential: AuthCredential) => {
     await signInWithEmailAndPassword(auth, email, password)
@@ -189,13 +258,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    await logAudit({
+      action: 'auth.login',
+      actorUid: auth.currentUser.uid,
+      actorName: auth.currentUser.displayName || email,
+      actorRoleUuid: employeeData.rolesUid ?? '',
+      actorRoleName: employeeData.rolesName,
+      targetType: 'employees',
+      targetId: auth.currentUser.uid,
+      reason: 'Google account linked to existing email/password account',
+      status: 'SUCCESS',
+    })
+
     return { success: true }
   }, [])
 
   const login = useCallback(async (email: string, password: string): Promise<boolean> => {
     setIsLoading(true)
     try {
-      await signInWithEmailAndPassword(auth, email, password)
+      const result = await signInWithEmailAndPassword(auth, email, password)
+      // Role isn't resolved yet at this point (that happens in the onAuthStateChanged
+      // listener) — logged with an empty actorRoleUuid rather than duplicating that fetch.
+      await logAudit({
+        action: 'auth.login',
+        actorUid: result.user.uid,
+        actorName: result.user.displayName || result.user.email || email,
+        actorRoleUuid: '',
+        targetType: 'employees',
+        targetId: result.user.uid,
+        status: 'SUCCESS',
+      })
       return true
     } catch (error) {
       console.error('Login error:', error)
@@ -238,12 +330,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      const { GoogleAuthProvider, signInWithPopup } = await import('firebase/auth')
-      const googleProvider = new GoogleAuthProvider()
-      const result = await signInWithPopup(auth, googleProvider)
+      const { GoogleAuthProvider, signInWithPopup, signInWithCredential } = await import('firebase/auth')
+      const { Capacitor } = await import('@capacitor/core')
+
+      let result: Awaited<ReturnType<typeof signInWithCredential>>
+
+      if (Capacitor.isNativePlatform()) {
+        // Native platforms (Android/iOS) can't use signInWithPopup — WebView
+        // has no real popup support and Google blocks OAuth in embedded
+        // WebViews (disallowed_useragent). Use the native Google Sign-In SDK
+        // via the plugin, then hand the resulting tokens to the JS SDK.
+        const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication')
+        const nativeResult = await FirebaseAuthentication.signInWithGoogle()
+        const idToken = nativeResult.credential?.idToken
+        const accessToken = nativeResult.credential?.accessToken
+
+        if (!idToken) {
+          setIsLoading(false)
+          return { success: false, error: 'Google sign-in failed. Please try again.' }
+        }
+
+        const credential = GoogleAuthProvider.credential(idToken, accessToken)
+        result = await signInWithCredential(auth, credential)
+      } else {
+        const googleProvider = new GoogleAuthProvider()
+        result = await signInWithPopup(auth, googleProvider)
+      }
+
       const employeeData = await resolveEmployeeForFirebaseUser(result.user)
 
       if (!employeeData) {
+        // Still authenticated at this point (Firebase created the session before
+        // we discovered they're not a registered employee) — log while we still can.
+        await logAudit({
+          action: 'auth.login',
+          actorUid: result.user.uid,
+          actorName: result.user.displayName || result.user.email || '',
+          actorRoleUuid: '',
+          targetType: 'employees',
+          targetId: result.user.uid,
+          reason: 'Google account not registered as an employee',
+          status: 'FAILED',
+          errorMessage: 'This Google account is not allowed',
+        })
         clearPendingGoogleLink()
         await signOut(auth)
         setIsLoading(false)
@@ -268,6 +397,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
+      await logAudit({
+        action: 'auth.login',
+        actorUid: result.user.uid,
+        actorName: result.user.displayName || result.user.email || '',
+        actorRoleUuid: employeeData.rolesUid ?? '',
+        actorRoleName: employeeData.rolesName,
+        targetType: 'employees',
+        targetId: result.user.uid,
+        status: 'SUCCESS',
+      })
       clearPendingGoogleLink()
       return { success: true }
     } catch (error: any) {
@@ -371,14 +510,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     try {
-      clearPendingGoogleLink()
-      localStorage.removeItem('ssmi_last_active')
-      await signOut(auth)
-      queryClient.clear()
+      // Must log before performFullSignOut — the security rule requires the
+      // writer to still be authenticated (actorUid == request.auth.uid).
+      if (auth.currentUser) {
+        await logAudit({
+          action: 'auth.logout',
+          actorUid: auth.currentUser.uid,
+          actorName: [user?.firstNameLo || user?.firstName, user?.lastNameLo || user?.lastName]
+            .filter(Boolean).join(' ') || auth.currentUser.displayName || auth.currentUser.email || '',
+          actorRoleUuid: user?.rolesUid ?? '',
+          actorRoleName: user?.rolesName,
+          targetType: 'employees',
+          targetId: auth.currentUser.uid,
+          status: 'SUCCESS',
+        })
+      }
+      await performFullSignOut()
     } catch (error) {
       console.error('Logout error:', error)
     }
-  }, [clearPendingGoogleLink])
+  }, [user, performFullSignOut])
 
   const updateProfile = useCallback((updates: Partial<Employee>) => {
     setUser(prev => prev ? { ...prev, ...updates } : null)
