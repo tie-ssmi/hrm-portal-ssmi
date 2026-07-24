@@ -471,6 +471,12 @@ export default function ProfilePage() {
                     uid={firebaseUser?.uid || profileUser.id || ""}
                     className="border-background h-9 w-9 border-2 bg-black/70"
                     onUploaded={handleAvatarUploaded}
+                    actor={{
+                      name: fullNameEn,
+                      roleUuid: profileUser.rolesUid,
+                      roleName: profileUser.rolesName,
+                      workLocation: profileUser.workLocation,
+                    }}
                   />
                 </Suspense>
               </div>

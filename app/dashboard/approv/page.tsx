@@ -46,7 +46,7 @@ import type { OffsiteRequestDoc } from "@/types/workOutside";
 
 // ** services
 import { fetchLeavesForApproval, updateLeaveApproval } from "@/services/leaves";
-import { logAudit } from "@/services/audit-log";
+import { logAudit, extractWorkLocationLog } from "@/services/audit-log";
 
 export default function ApprovePage() {
   return <ApprovePageContent />;
@@ -344,6 +344,7 @@ function ApprovePageContent() {
         actorName: reviewedBy,
         actorRoleUuid: user?.rolesUid ?? "",
         actorRoleName: user?.rolesName,
+        workLocation: extractWorkLocationLog(user?.workLocation),
         targetType: "workOutside",
         targetId: pendingOffsiteItem.id,
         targetName: fullRecord?.requester.fullNameLo || fullRecord?.requester.fullNameEn,
@@ -363,6 +364,7 @@ function ApprovePageContent() {
         actorName: reviewedBy,
         actorRoleUuid: user?.rolesUid ?? "",
         actorRoleName: user?.rolesName,
+        workLocation: extractWorkLocationLog(user?.workLocation),
         targetType: "workOutside",
         targetId: pendingOffsiteItem.id,
         status: "FAILED",
@@ -405,6 +407,7 @@ function ApprovePageContent() {
         reviewedByUid: loggedInUserUuid,
         actorRoleUuid: user?.rolesUid,
         actorRoleName: user?.rolesName,
+        workLocation: extractWorkLocationLog(user?.workLocation),
       });
       await queryClient.invalidateQueries({ queryKey: leaveQueryKey });
       toast.success("ອະນຸມັດສຳເລັດ");

@@ -48,6 +48,7 @@ import type { LeaveApprovalStep, LeaveApproverRole } from "@/lib/types";
 
 // ** services
 import { fetchLeaveById, updateLeaveApproval } from "@/services/leaves";
+import { extractWorkLocationLog } from "@/services/audit-log";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -262,6 +263,7 @@ export default function LeaveDetailClient({ leaveId }: { leaveId?: string }) {
         reviewedByUid,
         actorRoleUuid: user?.rolesUid,
         actorRoleName: user?.rolesName,
+        workLocation: extractWorkLocationLog(user?.workLocation),
       });
       await queryClient.invalidateQueries({ queryKey: ["leave", id] });
       await queryClient.invalidateQueries({ queryKey: ["leaves"] });
@@ -288,6 +290,7 @@ export default function LeaveDetailClient({ leaveId }: { leaveId?: string }) {
         rejectReason: rejectReason.trim() || undefined,
         actorRoleUuid: user?.rolesUid,
         actorRoleName: user?.rolesName,
+        workLocation: extractWorkLocationLog(user?.workLocation),
       });
       await queryClient.invalidateQueries({ queryKey: ["leave", id] });
       await queryClient.invalidateQueries({ queryKey: ["leaves"] });

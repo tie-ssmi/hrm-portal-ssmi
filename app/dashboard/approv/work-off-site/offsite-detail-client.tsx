@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { doc, getDoc, updateDoc, type DocumentData } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
-import { logAudit } from "@/services/audit-log";
+import { logAudit, extractWorkLocationLog } from "@/services/audit-log";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -293,6 +293,7 @@ export default function OffsiteDetailClient() {
         actorName: reviewedBy,
         actorRoleUuid: user?.rolesUid ?? "",
         actorRoleName: user?.rolesName,
+        workLocation: extractWorkLocationLog(user?.workLocation),
         targetType: "workOutside",
         targetId: record.id,
         targetName: record.requester?.fullNameLo || record.requester?.fullNameEn,
@@ -313,6 +314,7 @@ export default function OffsiteDetailClient() {
         actorName: reviewedBy,
         actorRoleUuid: user?.rolesUid ?? "",
         actorRoleName: user?.rolesName,
+        workLocation: extractWorkLocationLog(user?.workLocation),
         targetType: "workOutside",
         targetId: record.id,
         status: "FAILED",

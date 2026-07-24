@@ -74,7 +74,7 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useAuth } from "@/lib/auth-context";
 import { db, storage } from "@/lib/firebase";
 import { cn } from "@/lib/utils";
-import { logAudit } from "@/services/audit-log";
+import { logAudit, extractWorkLocationLog } from "@/services/audit-log";
 import type {
   ActivityCode,
   TeammateEntry,
@@ -727,6 +727,7 @@ export default function OffsiteRequestForm({
           actorName: fullNameEn,
           actorRoleUuid: user.rolesUid ?? "",
           actorRoleName: user.rolesName,
+          workLocation: extractWorkLocationLog(user.workLocation),
           targetType: "workOutside",
           targetId: initialData.id,
           targetName: fullNameLo || fullNameEn,
@@ -769,6 +770,7 @@ export default function OffsiteRequestForm({
           actorName: fullNameEn,
           actorRoleUuid: user.rolesUid ?? "",
           actorRoleName: user.rolesName,
+          workLocation: extractWorkLocationLog(user.workLocation),
           targetType: "workOutside",
           targetId: docRef.id,
           targetName: fullNameLo || fullNameEn,
@@ -789,6 +791,7 @@ export default function OffsiteRequestForm({
           `${user.firstNameEn ?? user.firstName ?? ""} ${user.lastNameEn ?? user.lastName ?? ""}`.trim(),
         actorRoleUuid: user.rolesUid ?? "",
         actorRoleName: user.rolesName,
+        workLocation: extractWorkLocationLog(user.workLocation),
         targetType: "workOutside",
         targetId: initialData?.id ?? "",
         status: "FAILED",

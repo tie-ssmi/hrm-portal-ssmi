@@ -107,7 +107,7 @@ import "driver.js/dist/driver.css";
 // ** config / utils / types / hooks
 import { useAuth } from "@/lib/auth-context";
 import { db } from "@/lib/firebase";
-import { logAudit } from "@/services/audit-log";
+import { logAudit, extractWorkLocationLog } from "@/services/audit-log";
 import {
   useUpcomingLeaves,
   usePendingDocLeaves,
@@ -248,6 +248,7 @@ function FormsPageContent() {
         actorName: fullName,
         actorRoleUuid: user.rolesUid ?? "",
         actorRoleName: user.rolesName,
+        workLocation: extractWorkLocationLog(user.workLocation),
         targetType: "workOutside",
         targetId: cancelTarget.id,
         targetName: cancelTarget.requestNo,
@@ -265,6 +266,7 @@ function FormsPageContent() {
         actorName: fullName,
         actorRoleUuid: user.rolesUid ?? "",
         actorRoleName: user.rolesName,
+        workLocation: extractWorkLocationLog(user.workLocation),
         targetType: "workOutside",
         targetId: cancelTarget.id,
         status: "FAILED",

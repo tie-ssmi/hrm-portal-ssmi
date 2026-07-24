@@ -74,6 +74,7 @@ import { cn } from "@/lib/utils";
 import { getLeaveApproverRuleText } from "@/services/leave-approval";
 import { fetchOfficialHolidays } from "@/services/officialHolidays";
 import { fetchPoliciesForGender } from "@/services/policies";
+import { fetchLeaveBalancesForUserMonth } from "@/services/leave-balances";
 import { getEmployees } from "@/services/employees";
 import FileUpload from "@/components/fileUpload";
 
@@ -97,6 +98,12 @@ function getVientianeDateStr(): string {
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
+}
+
+// "MM-YYYY" — matches the leaveBalances doc id format ({month}_{uid}_{policyUuid})
+function getVientianeMonthKey(): string {
+  const [year, month] = getVientianeDateStr().split("-");
+  return `${month}-${year}`;
 }
 
 function calcDuration(
@@ -273,6 +280,27 @@ export default function LeaveRequestForm() {
     queryFn: () => fetchPoliciesForGender(user?.gender),
   });
 
+  const currentMonthKey = useMemo(() => getVientianeMonthKey(), []);
+
+  const { data: monthlyLeaveBalances = [] } = useQuery({
+    queryKey: ["leaveBalances", loggedInUserUuid, currentMonthKey],
+    queryFn: () => fetchLeaveBalancesForUserMonth(loggedInUserUuid, currentMonthKey),
+    enabled: !!loggedInUserUuid,
+  });
+
+  // Keyed by both policyUuid and policyId — services/policies.ts sets
+  // PolicyRecord.uuid to the Firestore *document id*, which may or may not be
+  // the same value as leaveBalances.policyUuid depending on how the policies
+  // collection was seeded, so we match against whichever one lines up.
+  const leaveBalanceByPolicyUuid = useMemo(() => {
+    const map = new Map<string, (typeof monthlyLeaveBalances)[number]>();
+    for (const b of monthlyLeaveBalances) {
+      if (b.policyUuid) map.set(b.policyUuid, b);
+      if (b.policyId) map.set(b.policyId, b);
+    }
+    return map;
+  }, [monthlyLeaveBalances]);
+
   const {
     data: myCurrentLeaveRequests = [],
     refetch: refetchMyCurrentLeaves,
@@ -360,6 +388,27 @@ export default function LeaveRequestForm() {
         const value = p.uuid || p.id;
         if (seen.has(value)) return null;
         seen.add(value);
+
+        // Monthly accrual balance takes over the label (and can hide the
+        // option entirely) when this policy has one for the current month —
+        // otherwise fall back to the static policy-limit label as before.
+        const monthlyBalance =
+          (p.uuid && leaveBalanceByPolicyUuid.get(p.uuid)) ||
+          leaveBalanceByPolicyUuid.get(p.id) ||
+          undefined;
+        if (monthlyBalance) {
+          if (monthlyBalance.haveThisMonth <= 0) return null;
+          return {
+            value,
+            requestType: p.requestType,
+            policyUuid: p.uuid,
+            policyId: p.id,
+            policyName: p.name,
+            label: `${monthlyBalance.policyName}(${monthlyBalance.haveThisMonth} ວັນ)`,
+            documentRequired: p.documentRequired,
+          };
+        }
+
         const baseLabel = p.name?.trim() || p.requestType;
         const limitLabel = formatPolicyLimit(p.limitDay, p.limitType);
         return {
@@ -379,6 +428,7 @@ export default function LeaveRequestForm() {
     leaveBalance.annualUsed,
     leaveBalance.personalUsed,
     leaveBalance.sickUsed,
+    leaveBalanceByPolicyUuid,
     personalRemaining,
     policyRecords,
     sickRemaining,
@@ -1138,136 +1188,146 @@ export default function LeaveRequestForm() {
               {selectedLeave?.policyName || selectedLeave?.type}
             </DialogTitle>
           </DialogHeader>
-          {selectedLeave && (() => {
-            const hasAfternoonContinuation = myCurrentLeaveRequests.some(
-              (r) =>
-                r.id !== selectedLeave.id &&
-                r.startDate === selectedLeave.startDate &&
-                r.endDate === selectedLeave.endDate &&
-                r.startPeriod === "afternoon" &&
-                r.endPeriod === "afternoon",
-            );
-            return (
-            <div className="space-y-3 text-sm">
-              <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">ສະຖານະ</span>
-                <Badge
-                  variant={getStatusVariant(selectedLeave.status)}
-                  className="flex items-center gap-1"
-                >
-                  {getStatusIcon(selectedLeave.status)}
-                  {selectedLeave.status}
-                </Badge>
-              </div>
-              <Separator />
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-0.5">
-                  <p className="text-xs text-muted-foreground">ວັນເລີ່ມຕົ້ນ</p>
-                  <p className="font-medium">
-                    {format(new Date(selectedLeave.startDate), "dd MMM yyyy")}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {selectedLeave.startPeriod === "morning"
-                      ? "ຕອນເຊົ້າ"
-                      : "ຕອນບ່າຍ"}
-                  </p>
-                </div>
-                <div className="space-y-0.5">
-                  <p className="text-xs text-muted-foreground">ວັນສິ້ນສຸດ</p>
-                  <p className="font-medium">
-                    {format(new Date(selectedLeave.endDate), "dd MMM yyyy")}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {selectedLeave.endPeriod === "morning"
-                      ? "ຕອນເຊົ້າ"
-                      : "ຕອນບ່າຍ"}
-                  </p>
-                </div>
-              </div>
-              {selectedLeave.duration !== undefined && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">ຈຳນວນ</span>
-                  <Badge variant="secondary">
-                    {formatDuration(selectedLeave.duration)}
-                  </Badge>
-                </div>
-              )}
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">ວັນທີຍື່ນ</span>
-                <span>
-                  {selectedLeave.createdAt?.includes("T")
-                    ? format(
-                        new Date(selectedLeave.createdAt),
-                        "dd/MM/yyyy HH:mm",
-                      )
-                    : selectedLeave.createdAt}
-                </span>
-              </div>
-              <Separator />
-              <div>
-                <p className="text-xs text-muted-foreground mb-1">ເຫດຜົນ</p>
-                <p>{selectedLeave.reason}</p>
-                {selectedLeave.species === "instead" && (
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    ແທນດ້ວຍ: {selectedLeave.createdBy}
-                  </p>
-                )}
-              </div>
-              {selectedLeave.approvals &&
-                selectedLeave.approvals.length > 0 && (
-                  <>
-                    <Separator />
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-2">
-                        ການອານຸມັດ
+          {selectedLeave &&
+            (() => {
+              const hasAfternoonContinuation = myCurrentLeaveRequests.some(
+                (r) =>
+                  r.id !== selectedLeave.id &&
+                  r.startDate === selectedLeave.startDate &&
+                  r.endDate === selectedLeave.endDate &&
+                  r.startPeriod === "afternoon" &&
+                  r.endPeriod === "afternoon",
+              );
+              return (
+                <div className="space-y-3 text-sm">
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">ສະຖານະ</span>
+                    <Badge
+                      variant={getStatusVariant(selectedLeave.status)}
+                      className="flex items-center gap-1"
+                    >
+                      {getStatusIcon(selectedLeave.status)}
+                      {selectedLeave.status}
+                    </Badge>
+                  </div>
+                  <Separator />
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-0.5">
+                      <p className="text-xs text-muted-foreground">
+                        ວັນເລີ່ມຕົ້ນ
                       </p>
-                      <div className="space-y-1.5">
-                        {selectedLeave.approvals
-                          .filter(Boolean)
-                          .map((approval, i) => (
-                            <div
-                              key={i}
-                              className="flex items-center justify-between"
-                            >
-                              <span className="text-xs capitalize">
-                                {approval.role}
-                              </span>
-                              <Badge
-                                variant={getStatusVariant(approval.decision)}
-                                className="flex items-center gap-1 text-xs"
-                              >
-                                {getStatusIcon(approval.decision)}
-                                {approval.decision}
-                              </Badge>
-                            </div>
-                          ))}
-                      </div>
+                      <p className="font-medium">
+                        {format(
+                          new Date(selectedLeave.startDate),
+                          "dd MMM yyyy",
+                        )}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {selectedLeave.startPeriod === "morning"
+                          ? "ຕອນເຊົ້າ"
+                          : "ຕອນບ່າຍ"}
+                      </p>
                     </div>
-                  </>
-                )}
-
-              {selectedLeave.status === "approved" &&
-                selectedLeave.duration === 0.5 &&
-                selectedLeave.endPeriod === "morning" &&
-                selectedLeave.endDate === getVientianeDateStr() &&
-                !hasAfternoonContinuation && (
-                  <Button
-                    type="button"
-                    className="w-full"
-                    disabled={isCopySending}
-                    onClick={handleCopyAutoSend}
-                  >
-                    {isCopySending ? (
-                      <Spinner className="mr-2" />
-                    ) : (
-                      <Send className="w-4 h-4 mr-2" />
+                    <div className="space-y-0.5">
+                      <p className="text-xs text-muted-foreground">
+                        ວັນສິ້ນສຸດ
+                      </p>
+                      <p className="font-medium">
+                        {format(new Date(selectedLeave.endDate), "dd MMM yyyy")}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {selectedLeave.endPeriod === "morning"
+                          ? "ຕອນເຊົ້າ"
+                          : "ຕອນບ່າຍ"}
+                      </p>
+                    </div>
+                  </div>
+                  {selectedLeave.duration !== undefined && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">ຈຳນວນ</span>
+                      <Badge variant="secondary">
+                        {formatDuration(selectedLeave.duration)}
+                      </Badge>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">ວັນທີຍື່ນ</span>
+                    <span>
+                      {selectedLeave.createdAt?.includes("T")
+                        ? format(
+                            new Date(selectedLeave.createdAt),
+                            "dd/MM/yyyy HH:mm",
+                          )
+                        : selectedLeave.createdAt}
+                    </span>
+                  </div>
+                  <Separator />
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">ເຫດຜົນ</p>
+                    <p>{selectedLeave.reason}</p>
+                    {selectedLeave.species === "instead" && (
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        ແທນດ້ວຍ: {selectedLeave.createdBy}
+                      </p>
                     )}
-                    ຂໍລາຕອນບ່າຍຕໍ່ (ອັດຕະໂນມັດ)
-                  </Button>
-                )}
-            </div>
-            );
-          })()}
+                  </div>
+                  {selectedLeave.approvals &&
+                    selectedLeave.approvals.length > 0 && (
+                      <>
+                        <Separator />
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-2">
+                            ການອານຸມັດ
+                          </p>
+                          <div className="space-y-1.5">
+                            {selectedLeave.approvals
+                              .filter(Boolean)
+                              .map((approval, i) => (
+                                <div
+                                  key={i}
+                                  className="flex items-center justify-between"
+                                >
+                                  <span className="text-xs capitalize">
+                                    {approval.role}
+                                  </span>
+                                  <Badge
+                                    variant={getStatusVariant(
+                                      approval.decision,
+                                    )}
+                                    className="flex items-center gap-1 text-xs"
+                                  >
+                                    {getStatusIcon(approval.decision)}
+                                    {approval.decision}
+                                  </Badge>
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                  {selectedLeave.status === "approved" &&
+                    selectedLeave.duration === 0.5 &&
+                    selectedLeave.endPeriod === "morning" &&
+                    selectedLeave.endDate === getVientianeDateStr() &&
+                    !hasAfternoonContinuation && (
+                      <Button
+                        type="button"
+                        className="w-full"
+                        disabled={isCopySending}
+                        onClick={handleCopyAutoSend}
+                      >
+                        {isCopySending ? (
+                          <Spinner className="mr-2" />
+                        ) : (
+                          <Send className="w-4 h-4 mr-2" />
+                        )}
+                        ຂໍລາຕອນບ່າຍຕໍ່ (ອັດຕະໂນມັດ)
+                      </Button>
+                    )}
+                </div>
+              );
+            })()}
         </DialogContent>
       </Dialog>
     </>

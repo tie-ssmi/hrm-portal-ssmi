@@ -455,6 +455,7 @@ export default function EditProfilePage() {
             .join(" ") || undefined,
         roleUuid: user?.rolesUid,
         roleName: user?.rolesName,
+        workLocation: user?.workLocation,
       });
       updateProfile(updates);
       toast.success("ອັບເດດຂໍ້ມູນສ່ວນຕົວສໍາເລັດ");

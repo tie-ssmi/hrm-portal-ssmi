@@ -253,6 +253,21 @@ export interface PolicyRecord {
   documentRequired?: "yes" | "option" | "no";
 }
 
+// Per-employee, per-policy, per-month accrual ledger — doc id is
+// "{month}_{uid}_{policyUuid}" where month is "MM-YYYY".
+export interface LeaveBalanceRecord {
+  id: string;
+  uid: string;
+  policyId: string;
+  policyUuid: string;
+  policyName: string;
+  month: string; // "MM-YYYY"
+  entitlement: number;
+  haveLastMonth: number;
+  haveThisMonth: number;
+  usedThisMonth: number;
+}
+
 export interface LateRecord {
   date: string;
   minutes: number;
@@ -344,6 +359,11 @@ export interface AuditLog {
   actorName: string;
   actorRoleUuid: string;
   actorRoleName?: string;
+  workLocation?: {
+    code?: string;
+    nameLo?: string;
+    uuid?: string;
+  };
 
   // Target / resource affected
   targetType: string; // "employees" | "leaves" | "workOutside" | "systemSettings" ...

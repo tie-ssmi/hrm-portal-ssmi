@@ -178,6 +178,17 @@ service cloud.firestore {
     }
 
     // ==========================================================
+    // leaveBalance (singular — collection name, not "leaveBalances") —
+    // per-employee, per-policy, per-month accrual ledger. Populated
+    // externally (createdBy/updatedBy: "system"), same pattern as
+    // adminSettings/policies — this app only ever reads it.
+    // ==========================================================
+    match /leaveBalance/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ==========================================================
     // attendance
     // Tightened: read = own records OR admin/headOfDep (was: any signed-in user)
     // ==========================================================
@@ -343,6 +354,6 @@ service cloud.firestore {
     // ==========================================================
     match /{document=**} {
       allow read, write: if false;
-    }
+    }leaveBalances 
   }
 }

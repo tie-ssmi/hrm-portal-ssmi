@@ -14,6 +14,7 @@ import {
 import { fetchServerTime } from '@/lib/server-time'
 import { fetchTodayLeaveStatus, type DayLeaveStatus } from '@/services/leaves'
 import { fetchActiveTripForUser } from '@/services/trip'
+import { getDeviceInfo } from '@/lib/device'
 
 export type { DayLeaveStatus }
 
@@ -144,6 +145,7 @@ export function useCheckIn() {
       if (!user.uuid) throw new Error('User uuid is missing. Unable to update attendance.')
 
       const serverTime = await fetchServerTime(user.uuid)
+      const device = await getDeviceInfo()
 
       let status = serverTime.status as CheckInServerStatus
       if (isOffsite) {
@@ -173,6 +175,8 @@ export function useCheckIn() {
         note: null,
         checkInImageURL,
         isOffsite,
+        deviceLocalId: device.localId,
+        deviceFingerprint: device.fingerprint,
       })
 
       return {
@@ -216,6 +220,7 @@ export function useCheckOut() {
       if (!user.uuid) throw new Error('User uuid is missing. Unable to update attendance.')
 
       const serverTime = await fetchServerTime(user.uuid)
+      const device = await getDeviceInfo()
 
       const checkOutImageURL = imageFile
         ? await uploadAttendanceImage(imageFile, user.uuid, 'checkOut')
@@ -235,6 +240,8 @@ export function useCheckOut() {
         department: toDepartmentPayload(user.department),
         workLocation: toWorkLocationPayload(user.workLocation),
         checkOutImageURL,
+        deviceLocalId: device.localId,
+        deviceFingerprint: device.fingerprint,
       })
 
       return {

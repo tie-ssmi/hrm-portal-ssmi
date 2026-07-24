@@ -270,6 +270,31 @@ function haversineMeters(lat1, lng1, lat2, lng2) {
         Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
+// ກັນ "ຢືມເຄື່ອງກັນ punch" — ອຸປະກອນດຽວກັນ (localId ຫຼື fingerprint) ຫ້າມໃຊ້
+// check-in/check-out ໃຫ້ຫຼາຍກວ່າໜຶ່ງບັນຊີ ໃນມື້ດຽວກັນ. ບໍ່ blockບັນຊີດຽວກັນ
+// ທີ່ໃຊ້ເຄື່ອງດຽວກັນຊ້ຳ (ນັ້ນຖືກ handle ຢູ່ແລ້ວທາງ client ດ້ວຍ merge write).
+async function assertDeviceNotUsedByOtherAccount(isoDate, userUuid, deviceLocalId, deviceFingerprint, field, errorMessage) {
+    if (!deviceLocalId && !deviceFingerprint)
+        return;
+    const queries = [];
+    if (deviceLocalId) {
+        queries.push(admin.firestore().collection('attendance')
+            .where('dateKey', '==', isoDate)
+            .where('deviceLocalId', '==', deviceLocalId)
+            .get());
+    }
+    if (deviceFingerprint) {
+        queries.push(admin.firestore().collection('attendance')
+            .where('dateKey', '==', isoDate)
+            .where('deviceFingerprint', '==', deviceFingerprint)
+            .get());
+    }
+    const snaps = await Promise.all(queries);
+    const usedByOtherAccount = snaps.some((snap) => snap.docs.some((doc) => doc.data().userUuid !== userUuid && doc.data()[field]));
+    if (usedByOtherAccount) {
+        throw new https_1.HttpsError('failed-precondition', errorMessage);
+    }
+}
 exports.recordCheckIn = (0, https_1.onCall)({ region: 'asia-southeast1', cors: callableCorsOrigins, invoker: 'public' }, async (request) => {
     var _a, _b, _c, _d;
     if (!request.auth) {
@@ -291,6 +316,8 @@ exports.recordCheckIn = (0, https_1.onCall)({ region: 'asia-southeast1', cors: c
     if (dayLeaveStatus === 'blocked') {
         throw new https_1.HttpsError('failed-precondition', 'ທ່ານມີວັນລາພັກທີ່ໄດ້ຮັບອະນຸມັດໃນວັນນີ້ ບໍ່ສາມາດ Check-In ໄດ້');
     }
+    // ກັນອຸປະກອນດຽວກັນ check-in ແທນຫຼາຍບັນຊີ (ຢືມມືຖືກັນ punch)
+    await assertDeviceNotUsedByOtherAccount(isoDate, data.userUuid, data.deviceLocalId, data.deviceFingerprint, 'checkInTime', 'ອຸປະກອນນີ້ຖືກໃຊ້ Check-In ມື້ນີ້ແລ້ວດ້ວຍບັນຊີອື່ນ ❌');
     const status = computeCheckInStatus(toMinuteOfDay(parseInt(hourStr, 10), parseInt(minuteStr, 10)), dayLeaveStatus === 'morning_leave', data.isOffsite);
     // ກວດ Geofence — ດຶງ coordinates ຫ້ອງການຈາກ Firestore (client ປອມບໍ່ໄດ້)
     if (!data.isOffsite && data.location != null) {
@@ -317,7 +344,7 @@ exports.recordCheckIn = (0, https_1.onCall)({ region: 'asia-southeast1', cors: c
     await admin.firestore()
         .collection('attendance')
         .doc(attendanceId)
-        .set(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ _id: attendanceId, uid: (_c = data.uid) !== null && _c !== void 0 ? _c : data.userUuid, userUuid: data.userUuid, date, dateKey: isoDate, checkInTime: checkTime, status }, (dayLeaveStatus === 'morning_leave' ? { morningLeaveDay: true } : {})), (data.location ? { location: { lat: data.location.lat, lng: data.location.lng } } : {})), (data.fullNameEn != null ? { fullNameEn: data.fullNameEn } : {})), (data.fullNameLo != null ? { fullNameLo: data.fullNameLo } : {})), (data.jobTitle != null ? { jobTitle: data.jobTitle } : {})), (data.employeeImage != null ? { employeeImage: data.employeeImage } : {})), (data.note != null ? { note: data.note } : {})), (data.department ? { department: data.department } : {})), (data.workLocation ? { workLocation: data.workLocation } : {})), (data.checkInImageURL ? { checkInImageURL: data.checkInImageURL } : {})), (data.isOffsite ? { isOffsite: true } : {})), { updatedAt: new Date().toISOString(), updatedBy: (_d = data.updatedBy) !== null && _d !== void 0 ? _d : data.userUuid }), { merge: true });
+        .set(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ _id: attendanceId, uid: (_c = data.uid) !== null && _c !== void 0 ? _c : data.userUuid, userUuid: data.userUuid, date, dateKey: isoDate, checkInTime: checkTime, status }, (dayLeaveStatus === 'morning_leave' ? { morningLeaveDay: true } : {})), (data.location ? { location: { lat: data.location.lat, lng: data.location.lng } } : {})), (data.fullNameEn != null ? { fullNameEn: data.fullNameEn } : {})), (data.fullNameLo != null ? { fullNameLo: data.fullNameLo } : {})), (data.jobTitle != null ? { jobTitle: data.jobTitle } : {})), (data.employeeImage != null ? { employeeImage: data.employeeImage } : {})), (data.note != null ? { note: data.note } : {})), (data.department ? { department: data.department } : {})), (data.workLocation ? { workLocation: data.workLocation } : {})), (data.checkInImageURL ? { checkInImageURL: data.checkInImageURL } : {})), (data.isOffsite ? { isOffsite: true } : {})), (data.deviceLocalId ? { deviceLocalId: data.deviceLocalId } : {})), (data.deviceFingerprint ? { deviceFingerprint: data.deviceFingerprint } : {})), { updatedAt: new Date().toISOString(), updatedBy: (_d = data.updatedBy) !== null && _d !== void 0 ? _d : data.userUuid }), { merge: true });
     return { attendanceId, date, isoDate, checkTime, status };
 });
 // =========================================================================
@@ -336,8 +363,10 @@ exports.recordCheckOut = (0, https_1.onCall)({ region: 'asia-southeast1', cors: 
     if (data.uid && data.uid !== request.auth.uid) {
         throw new https_1.HttpsError('permission-denied', 'Cannot check out as another user');
     }
-    const { date, checkTime } = getVientianeParts();
+    const { date, isoDate, checkTime } = getVientianeParts();
     const attendanceId = `${data.userUuid}_${date}`;
+    // ກັນອຸປະກອນດຽວກັນ check-out ແທນຫຼາຍບັນຊີ (ຢືມມືຖືກັນ punch)
+    await assertDeviceNotUsedByOtherAccount(isoDate, data.userUuid, data.deviceLocalId, data.deviceFingerprint, 'checkOutTime', 'ອຸປະກອນນີ້ຖືກໃຊ້ Check-Out ມື້ນີ້ແລ້ວດ້ວຍບັນຊີອື່ນ ❌');
     // ອ່ານ checkInTime ທີ່ມີຢູ່ເພື່ອຄຳນວນ workHours
     const existing = await admin.firestore().collection('attendance').doc(attendanceId).get();
     const checkInTime = (_a = existing.data()) === null || _a === void 0 ? void 0 : _a.checkInTime;
@@ -351,7 +380,7 @@ exports.recordCheckOut = (0, https_1.onCall)({ region: 'asia-southeast1', cors: 
     await admin.firestore()
         .collection('attendance')
         .doc(attendanceId)
-        .set(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ checkOutTime: checkTime, workHours }, (data.fullNameEn != null ? { fullNameEn: data.fullNameEn } : {})), (data.fullNameLo != null ? { fullNameLo: data.fullNameLo } : {})), (data.jobTitle != null ? { jobTitle: data.jobTitle } : {})), (data.employeeImage != null ? { employeeImage: data.employeeImage } : {})), (data.department ? { department: data.department } : {})), (data.workLocation ? { workLocation: data.workLocation } : {})), (data.checkOutImageURL ? { checkOutImageURL: data.checkOutImageURL } : {})), (data.location ? { location: { lat: data.location.lat, lng: data.location.lng } } : {})), { updatedAt: new Date().toISOString(), updatedBy: data.userUuid }), { merge: true });
+        .set(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ checkOutTime: checkTime, workHours }, (data.fullNameEn != null ? { fullNameEn: data.fullNameEn } : {})), (data.fullNameLo != null ? { fullNameLo: data.fullNameLo } : {})), (data.jobTitle != null ? { jobTitle: data.jobTitle } : {})), (data.employeeImage != null ? { employeeImage: data.employeeImage } : {})), (data.department ? { department: data.department } : {})), (data.workLocation ? { workLocation: data.workLocation } : {})), (data.checkOutImageURL ? { checkOutImageURL: data.checkOutImageURL } : {})), (data.location ? { location: { lat: data.location.lat, lng: data.location.lng } } : {})), (data.deviceLocalId ? { deviceLocalId: data.deviceLocalId } : {})), (data.deviceFingerprint ? { deviceFingerprint: data.deviceFingerprint } : {})), { updatedAt: new Date().toISOString(), updatedBy: data.userUuid }), { merge: true });
     return { attendanceId, checkOutTime: checkTime, workHours };
 });
 exports.logAuditEvent = (0, https_1.onCall)({ region: 'asia-southeast1', cors: callableCorsOrigins, invoker: 'public' }, async (request) => {
@@ -366,7 +395,7 @@ exports.logAuditEvent = (0, https_1.onCall)({ region: 'asia-southeast1', cors: c
     const forwardedFor = request.rawRequest.headers['x-forwarded-for'];
     const ipAddress = (_c = (_b = (_a = (Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor)) === null || _a === void 0 ? void 0 : _a.split(',')[0]) === null || _b === void 0 ? void 0 : _b.trim()) !== null && _c !== void 0 ? _c : request.rawRequest.ip;
     const userAgent = request.rawRequest.headers['user-agent'];
-    const entry = Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ systemType: 'portal', action: data.action, actorUid: request.auth.uid, actorName: (_d = data.actorName) !== null && _d !== void 0 ? _d : '', actorRoleUuid: (_e = data.actorRoleUuid) !== null && _e !== void 0 ? _e : '' }, (data.actorRoleName != null ? { actorRoleName: data.actorRoleName } : {})), { targetType: data.targetType, targetId: data.targetId }), (data.targetName != null ? { targetName: data.targetName } : {})), { 
+    const entry = Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ systemType: 'portal', action: data.action, actorUid: request.auth.uid, actorName: (_d = data.actorName) !== null && _d !== void 0 ? _d : '', actorRoleUuid: (_e = data.actorRoleUuid) !== null && _e !== void 0 ? _e : '' }, (data.actorRoleName != null ? { actorRoleName: data.actorRoleName } : {})), (data.workLocation != null ? { workLocation: data.workLocation } : {})), { targetType: data.targetType, targetId: data.targetId }), (data.targetName != null ? { targetName: data.targetName } : {})), { 
         // Always present — {} when the action has no natural prior/new state
         // (e.g. login/logout) rather than omitting the field entirely.
         before: (_f = data.before) !== null && _f !== void 0 ? _f : {}, after: (_g = data.after) !== null && _g !== void 0 ? _g : {} }), (data.changedFields != null ? { changedFields: data.changedFields } : {})), (data.reason != null ? { reason: data.reason } : {})), { status: data.status }), (data.errorMessage != null ? { errorMessage: data.errorMessage } : {})), (ipAddress != null ? { ipAddress } : {})), (userAgent != null ? { userAgent } : {})), (data.requestUrl != null ? { requestUrl: data.requestUrl } : {})), (data.companyId != null ? { companyId: data.companyId } : {})), (data.branchId != null ? { branchId: data.branchId } : {})), { createdAt: new Date().toISOString() });

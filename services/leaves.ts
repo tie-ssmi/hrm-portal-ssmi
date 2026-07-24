@@ -44,10 +44,11 @@ export async function updateLeaveApproval(params: {
   rejectReason?: string
   actorRoleUuid?: string
   actorRoleName?: string
+  workLocation?: { code?: string; nameLo?: string; uuid?: string }
 }): Promise<void> {
   const {
     leaveId, approvalIndex, decision, reviewedBy, reviewedByUid, rejectReason,
-    actorRoleUuid, actorRoleName,
+    actorRoleUuid, actorRoleName, workLocation,
   } = params
   const action = decision === 'approved' ? 'leave.request.approve' : 'leave.request.reject'
   const leaveRef = doc(db, 'leaves', leaveId)
@@ -80,6 +81,7 @@ export async function updateLeaveApproval(params: {
       actorName: reviewedBy,
       actorRoleUuid: actorRoleUuid ?? '',
       actorRoleName,
+      workLocation,
       targetType: 'leaves',
       targetId: leaveId,
       targetName: data.leaveUserName,
@@ -95,6 +97,7 @@ export async function updateLeaveApproval(params: {
       actorName: reviewedBy,
       actorRoleUuid: actorRoleUuid ?? '',
       actorRoleName,
+      workLocation,
       targetType: 'leaves',
       targetId: leaveId,
       status: 'FAILED',
@@ -118,6 +121,7 @@ export async function createLeaveRequest(payload: Omit<LeaveRequest, 'id'>): Pro
       actorUid: payload.createdByUid || payload.leaveUserUuid || '',
       actorName: payload.createdBy || payload.leaveUserName || '',
       actorRoleUuid: '',
+      workLocation: payload.workLocationUid ? { uuid: payload.workLocationUid } : undefined,
       targetType: 'leaves',
       targetId: docRef.id,
       targetName: payload.leaveUserName,
@@ -132,6 +136,7 @@ export async function createLeaveRequest(payload: Omit<LeaveRequest, 'id'>): Pro
       actorUid: payload.createdByUid || payload.leaveUserUuid || '',
       actorName: payload.createdBy || payload.leaveUserName || '',
       actorRoleUuid: '',
+      workLocation: payload.workLocationUid ? { uuid: payload.workLocationUid } : undefined,
       targetType: 'leaves',
       targetId: '',
       targetName: payload.leaveUserName,
@@ -212,8 +217,11 @@ export async function attachLeaveDocument(params: {
   docLink: string
   actorUid: string
   actorName?: string
+  actorRoleUuid?: string
+  actorRoleName?: string
+  workLocation?: { code?: string; nameLo?: string; uuid?: string }
 }): Promise<void> {
-  const { leaveId, docLink, actorUid, actorName } = params
+  const { leaveId, docLink, actorUid, actorName, actorRoleUuid, actorRoleName, workLocation } = params
 
   try {
     await updateDoc(doc(db, 'leaves', leaveId), {
@@ -225,7 +233,9 @@ export async function attachLeaveDocument(params: {
       action: 'leave.request.attachDoc',
       actorUid,
       actorName: actorName ?? '',
-      actorRoleUuid: '',
+      actorRoleUuid: actorRoleUuid ?? '',
+      actorRoleName,
+      workLocation,
       targetType: 'leaves',
       targetId: leaveId,
       after: { docLink, docStatus: 'now' },
@@ -236,7 +246,9 @@ export async function attachLeaveDocument(params: {
       action: 'leave.request.attachDoc',
       actorUid,
       actorName: actorName ?? '',
-      actorRoleUuid: '',
+      actorRoleUuid: actorRoleUuid ?? '',
+      actorRoleName,
+      workLocation,
       targetType: 'leaves',
       targetId: leaveId,
       status: 'FAILED',

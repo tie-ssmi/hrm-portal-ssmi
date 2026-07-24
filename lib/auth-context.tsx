@@ -16,7 +16,7 @@ import { doc, getDoc } from 'firebase/firestore'
 import type { AuthCredential } from 'firebase/auth'
 import type { AuthContextType, Employee } from './types'
 import { queryClient } from './query-client'
-import { logAudit } from '@/services/audit-log'
+import { logAudit, extractWorkLocationLog } from '@/services/audit-log'
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
@@ -167,11 +167,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const stored = localStorage.getItem(ACTIVE_KEY)
           if (stored && Date.now() - new Date(stored).getTime() > INACTIVE_MAX_MS) {
             debugMark('inactive-timeout', { stored })
+            // Worth the extra read here — this path fires rarely (once per
+            // 2-day-inactive session), unlike login/every-app-open.
+            const expiredEmployeeData = await resolveEmployeeForFirebaseUser(fbUser).catch(() => null)
             await logAudit({
               action: 'auth.session.expire',
               actorUid: fbUser.uid,
               actorName: fbUser.displayName || fbUser.email || fbUser.uid,
-              actorRoleUuid: '',
+              actorRoleUuid: expiredEmployeeData?.rolesUid ?? '',
+              actorRoleName: expiredEmployeeData?.rolesName,
+              workLocation: extractWorkLocationLog(expiredEmployeeData?.workLocation),
               targetType: 'employees',
               targetId: fbUser.uid,
               reason: '2-day inactivity timeout',
@@ -194,11 +199,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 // The admin who triggered this writes adminSettings/forceLogout from
                 // outside this app (Admin SDK), so we can't attribute the actor —
                 // this logs the affected session being torn down, not who triggered it.
+                // Extra read is fine here too — only fires when an admin actually
+                // triggers a global force-logout, not on every app open.
+                const forcedEmployeeData = await resolveEmployeeForFirebaseUser(fbUser).catch(() => null)
                 await logAudit({
                   action: 'auth.forceLogout.trigger',
                   actorUid: fbUser.uid,
                   actorName: fbUser.displayName || fbUser.email || fbUser.uid,
-                  actorRoleUuid: '',
+                  actorRoleUuid: forcedEmployeeData?.rolesUid ?? '',
+                  actorRoleName: forcedEmployeeData?.rolesName,
+                  workLocation: extractWorkLocationLog(forcedEmployeeData?.workLocation),
                   targetType: 'employees',
                   targetId: fbUser.uid,
                   reason: 'adminSettings/forceLogout.triggeredAt newer than last active session',
@@ -264,6 +274,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       actorName: auth.currentUser.displayName || email,
       actorRoleUuid: employeeData.rolesUid ?? '',
       actorRoleName: employeeData.rolesName,
+      workLocation: extractWorkLocationLog(employeeData.workLocation),
       targetType: 'employees',
       targetId: auth.currentUser.uid,
       reason: 'Google account linked to existing email/password account',
@@ -403,6 +414,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         actorName: result.user.displayName || result.user.email || '',
         actorRoleUuid: employeeData.rolesUid ?? '',
         actorRoleName: employeeData.rolesName,
+        workLocation: extractWorkLocationLog(employeeData.workLocation),
         targetType: 'employees',
         targetId: result.user.uid,
         status: 'SUCCESS',
@@ -520,6 +532,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             .filter(Boolean).join(' ') || auth.currentUser.displayName || auth.currentUser.email || '',
           actorRoleUuid: user?.rolesUid ?? '',
           actorRoleName: user?.rolesName,
+          workLocation: extractWorkLocationLog(user?.workLocation),
           targetType: 'employees',
           targetId: auth.currentUser.uid,
           status: 'SUCCESS',

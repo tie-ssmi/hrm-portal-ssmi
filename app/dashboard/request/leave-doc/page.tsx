@@ -18,10 +18,11 @@ import { toast } from 'sonner'
 // ** config / utils / types / hooks
 import { useAuth } from '@/lib/auth-context'
 import { usePendingDocLeaves, useAttachLeaveDocument } from '@/lib/use-leave-queries'
-import type { LeaveRequest } from '@/lib/types'
+import type { Employee, LeaveRequest } from '@/lib/types'
 
 // ** services
 import { uploadLeaveDocument } from '@/services/leaves'
+import { extractWorkLocationLog } from '@/services/audit-log'
 
 // ** components
 import FileUpload from '@/components/fileUpload'
@@ -34,9 +35,11 @@ const statusLabel: Record<string, string> = {
 function PendingDocCard({
   leave,
   userUuid,
+  actor,
 }: {
   leave: LeaveRequest
   userUuid: string
+  actor: Employee | null
 }) {
   const [file, setFile] = useState<File | null>(null)
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
@@ -47,7 +50,17 @@ function PendingDocCard({
     try {
       setUploadProgress(0)
       const docLink = await uploadLeaveDocument(file, userUuid, setUploadProgress)
-      await attachDocument.mutateAsync({ leaveId: leave.id, docLink, userUuid })
+      await attachDocument.mutateAsync({
+        leaveId: leave.id,
+        docLink,
+        userUuid,
+        actorName:
+          [actor?.firstNameLo || actor?.firstName, actor?.lastNameLo || actor?.lastName]
+            .filter(Boolean).join(' ') || undefined,
+        actorRoleUuid: actor?.rolesUid,
+        actorRoleName: actor?.rolesName,
+        workLocation: extractWorkLocationLog(actor?.workLocation),
+      })
       toast.success('ສົ່ງເອກະສານສຳເລັດ')
       setFile(null)
     } catch (error) {
@@ -146,7 +159,7 @@ export default function LeaveDocPage() {
       ) : (
         <div className="space-y-3">
           {leaves.map((leave) => (
-            <PendingDocCard key={leave.id} leave={leave} userUuid={userUuid} />
+            <PendingDocCard key={leave.id} leave={leave} userUuid={userUuid} actor={user} />
           ))}
         </div>
       )}

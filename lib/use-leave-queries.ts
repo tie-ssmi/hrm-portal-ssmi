@@ -215,8 +215,20 @@ export function useAttachLeaveDocument() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ leaveId, docLink, userUuid }: { leaveId: string; docLink: string; userUuid: string }) =>
-      attachLeaveDocument({ leaveId, docLink, actorUid: userUuid }),
+    mutationFn: ({
+      leaveId, docLink, userUuid, actorName, actorRoleUuid, actorRoleName, workLocation,
+    }: {
+      leaveId: string
+      docLink: string
+      userUuid: string
+      actorName?: string
+      actorRoleUuid?: string
+      actorRoleName?: string
+      workLocation?: { code?: string; nameLo?: string; uuid?: string }
+    }) =>
+      attachLeaveDocument({
+        leaveId, docLink, actorUid: userUuid, actorName, actorRoleUuid, actorRoleName, workLocation,
+      }),
     onSuccess: (_data, { leaveId, userUuid }) => {
       if (userUuid) {
         queryClient.invalidateQueries({ queryKey: leaveKeys.pendingDoc(userUuid) })

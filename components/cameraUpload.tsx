@@ -8,12 +8,21 @@ import { toast } from 'sonner'
 import { Camera } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { updateEmployeeProfileImage } from '@/lib/employees'
+import type { Employee } from '@/lib/types'
+
+type CameraUploadActor = {
+  name?: string
+  roleUuid?: string
+  roleName?: string
+  workLocation?: Employee['workLocation']
+}
 
 type CameraUploadProps = {
   uid: string
   folder?: string
   onUploaded?: (url: string) => void
   className?: string
+  actor?: CameraUploadActor
 }
 
 export async function uploadImageFile(params: {
@@ -52,7 +61,7 @@ export async function uploadImageFile(params: {
   })
 }
 
-export default function CameraUpload({ uid, folder, onUploaded, className }: CameraUploadProps) {
+export default function CameraUpload({ uid, folder, onUploaded, className, actor }: CameraUploadProps) {
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
   const cameraInputRef = useRef<HTMLInputElement>(null)
@@ -74,7 +83,7 @@ export default function CameraUpload({ uid, folder, onUploaded, className }: Cam
         onProgress: setProgress,
       })
 
-      await updateEmployeeProfileImage(uid, url)
+      await updateEmployeeProfileImage(uid, url, actor)
       onUploaded?.(url)
       toast.success('Image uploaded successfully')
     } catch (error) {

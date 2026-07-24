@@ -1,12 +1,24 @@
 import { collection, getDocs, limit, orderBy, query, where, type QueryConstraint } from 'firebase/firestore'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import app, { db } from '@/lib/firebase'
-import type { AuditLog } from '@/lib/types'
+import type { AuditLog, WorkLocationInfo } from '@/lib/types'
 
 let _fns: ReturnType<typeof getFunctions> | null = null
 function fns() {
   if (!_fns) _fns = getFunctions(app, 'asia-southeast1')
   return _fns
+}
+
+// Employee.workLocation is either a plain string (legacy data, no structured
+// info to log) or the full WorkLocationInfo object — only the latter has
+// enough to fill AuditLog.workLocation.
+export function extractWorkLocationLog(
+  workLocation: string | WorkLocationInfo | undefined | null,
+): { code?: string; nameLo?: string; uuid?: string } | undefined {
+  if (!workLocation || typeof workLocation === 'string') return undefined
+  const { code, nameLo, uuid } = workLocation
+  if (!code && !nameLo && !uuid) return undefined
+  return { code, nameLo, uuid }
 }
 
 // actorUid is accepted here for call-site convenience (matches AuditLog shape)

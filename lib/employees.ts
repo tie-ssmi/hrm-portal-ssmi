@@ -1,9 +1,14 @@
 import { collection, doc, getDoc, getDocs, query, updateDoc, where, type DocumentReference, type DocumentData } from 'firebase/firestore'
 import { db } from './firebase'
 import type { Employee, RolePermissions } from './types'
-import { logAudit } from '@/services/audit-log'
+import { logAudit, extractWorkLocationLog } from '@/services/audit-log'
 
-type ProfileEditActor = { name?: string; roleUuid?: string; roleName?: string }
+type ProfileEditActor = {
+  name?: string
+  roleUuid?: string
+  roleName?: string
+  workLocation?: Employee['workLocation']
+}
 
 // Some employee docs use uid as the doc ID directly; older ones store uid as a
 // field on a doc keyed by something else. Resolves both, returning the doc's
@@ -143,6 +148,7 @@ export async function updateEmployeeProfileImage(
       actorName: actor?.name ?? '',
       actorRoleUuid: actor?.roleUuid ?? '',
       actorRoleName: actor?.roleName,
+      workLocation: extractWorkLocationLog(actor?.workLocation),
       targetType: 'employees',
       targetId: uid,
       before: status === 'SUCCESS' ? before : undefined,
@@ -180,6 +186,7 @@ export async function updateEmployeeProfile(
       actorName: actor?.name ?? '',
       actorRoleUuid: actor?.roleUuid ?? '',
       actorRoleName: actor?.roleName,
+      workLocation: extractWorkLocationLog(actor?.workLocation),
       targetType: 'employees',
       targetId: uid,
       before: status === 'SUCCESS' ? before : undefined,

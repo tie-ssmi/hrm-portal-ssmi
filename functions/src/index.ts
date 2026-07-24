@@ -311,6 +311,8 @@ type CheckInPayload = {
   note?: string | null
   updatedBy?: string
   createdBy?: string
+  deviceLocalId?: string
+  deviceFingerprint?: string
   department?: { name: string; uid: string }
   workLocation?: { code?: string; name: string; uid?: string }
 }
@@ -324,8 +326,51 @@ type CheckOutPayload = {
   fullNameLo?: string
   jobTitle?: string
   employeeImage?: string
+  deviceLocalId?: string
+  deviceFingerprint?: string
   department?: { name: string; uid: string }
   workLocation?: { code?: string; name: string; uid?: string }
+}
+
+// ກັນ "ຢືມເຄື່ອງກັນ punch" — ອຸປະກອນດຽວກັນ (localId ຫຼື fingerprint) ຫ້າມໃຊ້
+// check-in/check-out ໃຫ້ຫຼາຍກວ່າໜຶ່ງບັນຊີ ໃນມື້ດຽວກັນ. ບໍ່ blockບັນຊີດຽວກັນ
+// ທີ່ໃຊ້ເຄື່ອງດຽວກັນຊ້ຳ (ນັ້ນຖືກ handle ຢູ່ແລ້ວທາງ client ດ້ວຍ merge write).
+async function assertDeviceNotUsedByOtherAccount(
+  isoDate: string,
+  userUuid: string,
+  deviceLocalId: string | undefined,
+  deviceFingerprint: string | undefined,
+  field: 'checkInTime' | 'checkOutTime',
+  errorMessage: string,
+): Promise<void> {
+  if (!deviceLocalId && !deviceFingerprint) return
+
+  const queries: Promise<admin.firestore.QuerySnapshot>[] = []
+  if (deviceLocalId) {
+    queries.push(
+      admin.firestore().collection('attendance')
+        .where('dateKey', '==', isoDate)
+        .where('deviceLocalId', '==', deviceLocalId)
+        .get()
+    )
+  }
+  if (deviceFingerprint) {
+    queries.push(
+      admin.firestore().collection('attendance')
+        .where('dateKey', '==', isoDate)
+        .where('deviceFingerprint', '==', deviceFingerprint)
+        .get()
+    )
+  }
+
+  const snaps = await Promise.all(queries)
+  const usedByOtherAccount = snaps.some((snap) =>
+    snap.docs.some((doc) => doc.data().userUuid !== userUuid && doc.data()[field])
+  )
+
+  if (usedByOtherAccount) {
+    throw new HttpsError('failed-precondition', errorMessage)
+  }
 }
 
 export const recordCheckIn = onCall(
@@ -355,6 +400,16 @@ export const recordCheckIn = onCall(
     if (dayLeaveStatus === 'blocked') {
       throw new HttpsError('failed-precondition', 'ທ່ານມີວັນລາພັກທີ່ໄດ້ຮັບອະນຸມັດໃນວັນນີ້ ບໍ່ສາມາດ Check-In ໄດ້')
     }
+
+    // ກັນອຸປະກອນດຽວກັນ check-in ແທນຫຼາຍບັນຊີ (ຢືມມືຖືກັນ punch)
+    await assertDeviceNotUsedByOtherAccount(
+      isoDate,
+      data.userUuid,
+      data.deviceLocalId,
+      data.deviceFingerprint,
+      'checkInTime',
+      'ອຸປະກອນນີ້ຖືກໃຊ້ Check-In ມື້ນີ້ແລ້ວດ້ວຍບັນຊີອື່ນ ❌',
+    )
 
     const status = computeCheckInStatus(
       toMinuteOfDay(parseInt(hourStr, 10), parseInt(minuteStr, 10)),
@@ -415,6 +470,8 @@ export const recordCheckIn = onCall(
           ...(data.workLocation ? { workLocation: data.workLocation } : {}),
           ...(data.checkInImageURL ? { checkInImageURL: data.checkInImageURL } : {}),
           ...(data.isOffsite ? { isOffsite: true } : {}),
+          ...(data.deviceLocalId ? { deviceLocalId: data.deviceLocalId } : {}),
+          ...(data.deviceFingerprint ? { deviceFingerprint: data.deviceFingerprint } : {}),
           updatedAt: new Date().toISOString(),
           updatedBy: data.updatedBy ?? data.userUuid,
         },
@@ -447,8 +504,18 @@ export const recordCheckOut = onCall(
       throw new HttpsError('permission-denied', 'Cannot check out as another user')
     }
 
-    const { date, checkTime } = getVientianeParts()
+    const { date, isoDate, checkTime } = getVientianeParts()
     const attendanceId = `${data.userUuid}_${date}`
+
+    // ກັນອຸປະກອນດຽວກັນ check-out ແທນຫຼາຍບັນຊີ (ຢືມມືຖືກັນ punch)
+    await assertDeviceNotUsedByOtherAccount(
+      isoDate,
+      data.userUuid,
+      data.deviceLocalId,
+      data.deviceFingerprint,
+      'checkOutTime',
+      'ອຸປະກອນນີ້ຖືກໃຊ້ Check-Out ມື້ນີ້ແລ້ວດ້ວຍບັນຊີອື່ນ ❌',
+    )
 
     // ອ່ານ checkInTime ທີ່ມີຢູ່ເພື່ອຄຳນວນ workHours
     const existing = await admin.firestore().collection('attendance').doc(attendanceId).get()
@@ -476,6 +543,8 @@ export const recordCheckOut = onCall(
           ...(data.workLocation ? { workLocation: data.workLocation } : {}),
           ...(data.checkOutImageURL ? { checkOutImageURL: data.checkOutImageURL } : {}),
           ...(data.location ? { location: { lat: data.location.lat, lng: data.location.lng } } : {}),
+          ...(data.deviceLocalId ? { deviceLocalId: data.deviceLocalId } : {}),
+          ...(data.deviceFingerprint ? { deviceFingerprint: data.deviceFingerprint } : {}),
           updatedAt: new Date().toISOString(),
           updatedBy: data.userUuid,
         },
@@ -497,6 +566,7 @@ type AuditLogPayload = {
   actorName?: string
   actorRoleUuid?: string
   actorRoleName?: string
+  workLocation?: { code?: string; nameLo?: string; uuid?: string }
   targetType: string
   targetId: string
   targetName?: string
@@ -536,6 +606,7 @@ export const logAuditEvent = onCall(
       actorName: data.actorName ?? '',
       actorRoleUuid: data.actorRoleUuid ?? '',
       ...(data.actorRoleName != null ? { actorRoleName: data.actorRoleName } : {}),
+      ...(data.workLocation != null ? { workLocation: data.workLocation } : {}),
       targetType: data.targetType,
       targetId: data.targetId,
       ...(data.targetName != null ? { targetName: data.targetName } : {}),

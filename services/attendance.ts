@@ -45,6 +45,8 @@ type UpdateCheckInTimeParams = {
   updatedBy?: string
   checkInImageURL?: string
   isOffsite?: boolean
+  deviceLocalId?: string
+  deviceFingerprint?: string
   department?: {
     name: string
     uid: string
@@ -68,6 +70,8 @@ type UpdateCheckOutTimeParams = {
   jobTitle?: string
   employeeImage?: string
   checkOutImageURL?: string
+  deviceLocalId?: string
+  deviceFingerprint?: string
   department?: {
     name: string
     uid: string
@@ -266,11 +270,13 @@ export async function updateAttendanceCheckOutTime({
   department,
   workLocation,
   checkOutImageURL,
+  deviceLocalId,
+  deviceFingerprint,
 }: UpdateCheckOutTimeParams): Promise<string> {
   const fn = httpsCallable<Omit<UpdateCheckOutTimeParams, 'date' | 'checkOutTime' | 'workHours'>, { attendanceId: string }>(
     fns(), 'recordCheckOut'
   )
-  const result = await fn({ userUuid, uid, location, fullNameEn, fullNameLo, jobTitle, employeeImage, department, workLocation, checkOutImageURL })
+  const result = await fn({ userUuid, uid, location, fullNameEn, fullNameLo, jobTitle, employeeImage, department, workLocation, checkOutImageURL, deviceLocalId, deviceFingerprint })
   return result.data.attendanceId
 }
 
