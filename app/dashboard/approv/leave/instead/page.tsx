@@ -193,10 +193,22 @@ export default function InsteadLeaveRequestForm() {
     enabled: !!loggedInUserUuid,
   })
 
+  const isHousekeeper = user?.rolePermissions?.housekeeper === true
+  const isLPB = user?.rolePermissions?.LPB === true
+  const filterByDepartment = isHousekeeper || isLPB
+
   const { data: employeesData = [] } = useQuery({
-    queryKey: ['employees', departmentUuid ?? null],
-    queryFn: () => getEmployees({ departmentUuid }),
-    enabled: !!departmentUuid,
+    queryKey: [
+      'employees',
+      filterByDepartment ? departmentUuid : null,
+      workLocationUuid ?? null,
+    ],
+    queryFn: () =>
+      getEmployees({
+        ...(filterByDepartment ? { departmentUuid } : {}),
+        workLocationUuid,
+      }),
+    enabled: !!workLocationUuid,
   })
 
   const empKey = (emp: typeof employeesData[number]) => emp.uid || emp.id || ''
