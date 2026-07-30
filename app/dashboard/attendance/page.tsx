@@ -87,8 +87,8 @@ const LiveClock = memo(function LiveClock() {
   }, []);
 
   return (
-    <Card className="bg-primary text-primary-foreground">
-      <CardContent className="pt-6">
+    <Card className="bg-primary text-primary-foreground mb-2 py-2">
+      <CardContent className="pt-2">
         <div className="text-center">
           <p className="text-sm opacity-80">ເວລາປະຈຸບັນ</p>
           <p className="mt-1 text-4xl font-bold">
@@ -102,6 +102,10 @@ const LiveClock = memo(function LiveClock() {
     </Card>
   );
 });
+
+// GPS accuracy (meters) worse than this shows a plain-language warning —
+// below it, the raw number isn't shown at all (meaningless to non-technical users).
+const GPS_ACCURACY_WARNING_METERS = 100;
 
 const LocationCard = memo(function LocationCard({
   location,
@@ -118,8 +122,22 @@ const LocationCard = memo(function LocationCard({
   officeDistance: number | null;
   onRefresh: () => void;
 }) {
+  const hasPoorAccuracy =
+    !!location &&
+    !location.error &&
+    location.accuracy > GPS_ACCURACY_WARNING_METERS;
+
+  // Normal case (inside office, GPS accuracy fine) → badge alone is enough.
+  // Only surface the technical breakdown when there's something to explain.
+  const showDetails =
+    geoFenceStatus === "loading" ||
+    geoFenceStatus === "no_coordinates" ||
+    geoFenceStatus === "not_found" ||
+    !isWithinOffice ||
+    hasPoorAccuracy;
+
   return (
-    <Card>
+    <Card className="mb-2">
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-base">
           <MapPin className="h-4 w-4" />
@@ -160,7 +178,7 @@ const LocationCard = memo(function LocationCard({
           )}
         </div>
 
-        {location && !location.error && (
+        {location && !location.error && showDetails && (
           <div className="mt-3 space-y-2">
             {geoFenceStatus === "loading" && (
               <p className="text-muted-foreground text-xs">
@@ -197,9 +215,12 @@ const LocationCard = memo(function LocationCard({
                 </div>
               </>
             )}
-            <p className="text-muted-foreground text-xs">
-              ຄວາມແມ່ນຍໍາ GPS: {Math.round(location.accuracy)} ແມັດ
-            </p>
+            {hasPoorAccuracy && (
+              <p className="text-xs text-amber-600">
+                ສັນຍານ GPS ບໍ່ແມ່ນຍໍາ ({Math.round(location.accuracy)} ແມັດ) —
+                ລອງອອກໄປບ່ອນໂລ່ງແຈ້ງ ຫຼື ດຶງຂໍ້ມູນຕຳແໜ່ງໃໝ່
+              </p>
+            )}
           </div>
         )}
 
@@ -223,7 +244,7 @@ const DailySummaryCard = memo(function DailySummaryCard({
   onIsOffsiteChange: (v: boolean) => void;
 }) {
   return (
-    <Card>
+    <Card className="mb-2">
       <CardHeader>
         <CardTitle className="text-base">ສະຫຼຸບປະຈຳວັນ</CardTitle>
       </CardHeader>
@@ -507,6 +528,17 @@ export default function AttendancePage() {
   );
   const pendingResolveRef = useRef<((file: File | null) => void) | null>(null);
 
+  // Guards the camera-capture / GPS-fetch window in handleAttendance, where
+  // checkInMutation.isPending / checkOutMutation.isPending are still false
+  // (mutateAsync hasn't been called yet) so the buttons alone don't block a
+  // second tap. submittingRef blocks re-entrancy synchronously (state updates
+  // are async); submittingType drives the disabled/spinner UI for whichever
+  // button is actually in flight.
+  const submittingRef = useRef<"checkIn" | "checkOut" | null>(null);
+  const [submittingType, setSubmittingType] = useState<
+    "checkIn" | "checkOut" | null
+  >(null);
+
   // Refs keep handleAttendance stable across mutation isPending state changes
   const checkInMutRef = useRef(checkInMutation);
   checkInMutRef.current = checkInMutation;
@@ -618,6 +650,7 @@ export default function AttendancePage() {
 
   const handleAttendance = useCallback(
     async (type: "checkIn" | "checkOut") => {
+      if (submittingRef.current) return;
       if (!user) {
         toast.error("ບໍ່ເຫັນຂໍ້ມູນຜູ້ໃຊ້. ກະລຸນາເຂົ້າລະບົບອີກຄັ້ງ.");
         return;
@@ -631,15 +664,18 @@ export default function AttendancePage() {
         return;
       }
 
+      submittingRef.current = type;
+      setSubmittingType(type);
+
       const mutation =
         type === "checkIn" ? checkInMutRef.current : checkOutMutRef.current;
       const successMsg = isOffsite
         ? type === "checkIn"
-          ? "ເຂົ້າວຽກນອກສຳເລັດ"
-          : "ອອກວຽກນອກສຳເລັດ"
+          ? "ເຂົ້າການ ນອກສຳເລັດ"
+          : "ອອກການ ນອກສຳເລັດ"
         : type === "checkIn"
           ? "ເຂົ້າການສຳເລັດແລ້ວ"
-          : "ອອກຈາກການສຳເລັດແລ້ວ";
+          : "ອອກການສຳເລັດແລ້ວ";
 
       try {
         if (isOffsite) {
@@ -680,6 +716,9 @@ export default function AttendancePage() {
               : "ເກີດຂໍ້ຜິດພາດ. ກະລຸນາລອງໃໝ່.";
         }
         toast.error(msg);
+      } finally {
+        submittingRef.current = null;
+        setSubmittingType(null);
       }
     },
     [
@@ -708,7 +747,9 @@ export default function AttendancePage() {
   }, [location, officeDistance, geoFenceStatus]);
 
   const weeklyHistory = useMemo(() => {
-    const weekStart = startOfWeek(isoDateToLocalDate(todayIso), { weekStartsOn: 1 });
+    const weekStart = startOfWeek(isoDateToLocalDate(todayIso), {
+      weekStartsOn: 1,
+    });
     const weekStartIso = format(weekStart, "yyyy-MM-dd");
     const weekEndIso = format(addDays(weekStart, 6), "yyyy-MM-dd");
     return attendanceHistory
@@ -736,30 +777,12 @@ export default function AttendancePage() {
       </div>
 
       <LiveClock />
-
-      <LocationCard
-        location={location}
-        isLoadingLocation={isLoadingLocation}
-        isWithinOffice={isWithinOffice}
-        geoFenceStatus={geoFenceStatus}
-        officeDistance={officeDistance}
-        onRefresh={getLocation}
-      />
-
       <DailySummaryCard
         todayAttendance={todayAttendance}
         isLoadingHistory={isLoadingHistory}
         isOffsite={isOffsite}
         onIsOffsiteChange={setIsOffsite}
       />
-
-      <CameraCapture
-        open={cameraOpen}
-        onOpenChange={handleCameraClose}
-        onCapture={handleCameraCapture}
-        title={cameraType === "checkIn" ? "ຖ່າຍຮູບເຂົ້າວຽກ" : "ຖ່າຍຮູບອອກວຽກ"}
-      />
-
       {/* Leave status banner */}
       {todayLeaveStatus === "blocked" && (
         <div className="border-destructive/30 bg-destructive/5 flex items-start gap-2 rounded-lg border p-3">
@@ -808,7 +831,7 @@ export default function AttendancePage() {
           <Skeleton className="h-16 w-full rounded-lg" />
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="mb-2 space-y-2">
           <div className="grid grid-cols-2 gap-4">
             <Button
               size="lg"
@@ -817,12 +840,13 @@ export default function AttendancePage() {
               disabled={
                 isBlockedDay.blocked ||
                 isLoadingLeaveStatus ||
+                submittingType !== null ||
                 checkInMutation.isPending ||
                 !!todayAttendance?.checkIn ||
                 (!isOffsite && !isWithinOffice)
               }
             >
-              {checkInMutation.isPending ? (
+              {checkInMutation.isPending || submittingType === "checkIn" ? (
                 <Spinner className="mr-2" />
               ) : (
                 <LogIn className="mr-2 h-5 w-5" />
@@ -836,13 +860,14 @@ export default function AttendancePage() {
               className="h-16 text-lg"
               onClick={() => handleAttendance("checkOut")}
               disabled={
+                submittingType !== null ||
                 checkOutMutation.isPending ||
                 !todayAttendance?.checkIn ||
                 !!todayAttendance?.checkOut ||
                 (!isOffsite && !isWithinOffice)
               }
             >
-              {checkOutMutation.isPending ? (
+              {checkOutMutation.isPending || submittingType === "checkOut" ? (
                 <Spinner className="mr-2" />
               ) : (
                 <LogOut className="mr-2 h-5 w-5" />
@@ -852,6 +877,22 @@ export default function AttendancePage() {
           </div>
         </div>
       )}
+
+      <LocationCard
+        location={location}
+        isLoadingLocation={isLoadingLocation}
+        isWithinOffice={isWithinOffice}
+        geoFenceStatus={geoFenceStatus}
+        officeDistance={officeDistance}
+        onRefresh={getLocation}
+      />
+
+      <CameraCapture
+        open={cameraOpen}
+        onOpenChange={handleCameraClose}
+        onCapture={handleCameraCapture}
+        title={cameraType === "checkIn" ? "ຖ່າຍຮູບເຂົ້າວຽກ" : "ຖ່າຍຮູບອອກວຽກ"}
+      />
 
       <WeeklyHistoryCard
         weeklyHistory={weeklyHistory}
