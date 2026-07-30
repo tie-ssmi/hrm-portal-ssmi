@@ -17,6 +17,7 @@ import type { AuthCredential } from 'firebase/auth'
 import type { AuthContextType, Employee } from './types'
 import { queryClient } from './query-client'
 import { logAudit, extractWorkLocationLog } from '@/services/audit-log'
+import { snapshotDeviceId, restoreDeviceId } from './device'
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
@@ -30,8 +31,13 @@ function clearAllClientStorage() {
     })
   }
   if (typeof window !== 'undefined') {
+    // device_id identifies the physical device, not this account — must survive
+    // logout or buddy-punch detection (functions/src/index.ts) silently breaks for
+    // the next person who logs in on this device.
+    const deviceId = snapshotDeviceId()
     localStorage.clear()
     sessionStorage.clear()
+    restoreDeviceId(deviceId)
   }
 }
 

@@ -47,7 +47,7 @@ import {
   TodayOffsiteSection,
 } from "@/components/leaveLists";
 import { formatDayDateLao, formatMonthYearLao } from "@/components/laoDate";
-
+import WeatherWidget from "@/components/WeatherWidget";
 // ** third party
 import { useQuery } from "@tanstack/react-query";
 import { collection, getDocs, query, where } from "firebase/firestore";
@@ -308,11 +308,16 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col gap-1">
-        <h1 className="text-foreground text-2xl font-bold">
-          ຍີນດີຕ້ອນຮັບ, {user?.firstNameLo}
-        </h1>
-        <p className="text-muted-foreground">{formatDayDateLao(new Date())}</p>
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-foreground text-2xl font-bold">
+            ຍີນດີຕ້ອນຮັບ, {user?.firstNameLo}
+          </h1>
+          <p className="text-muted-foreground">
+            {formatDayDateLao(new Date())}
+          </p>
+        </div>
+        <WeatherWidget />
       </div>
 
       {/* Today's Status */}

@@ -23,6 +23,22 @@ function getLocalDeviceId(): string {
   return id
 }
 
+// device_id identifies the physical device, not the logged-in account — a blanket
+// localStorage.clear() on logout (lib/auth-context.tsx) must not wipe it, or the very
+// next login on that device looks "new" and buddy-punch detection silently stops
+// working (worst on iOS, which has no fingerprint fallback — see isIOSUserAgent in
+// functions/src/index.ts). Call snapshotDeviceId() before clearing storage and
+// restoreDeviceId() with its result right after.
+export function snapshotDeviceId(): string | null {
+  if (typeof window === 'undefined') return null
+  return window.localStorage.getItem(DEVICE_ID_KEY)
+}
+
+export function restoreDeviceId(id: string | null): void {
+  if (typeof window === 'undefined' || !id) return
+  window.localStorage.setItem(DEVICE_ID_KEY, id)
+}
+
 let fingerprintPromise: Promise<string> | null = null
 
 // Cached for the lifetime of the tab — FingerprintJS agent load is not free,
