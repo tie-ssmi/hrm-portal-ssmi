@@ -8,18 +8,9 @@
     "start": "next start",
     "deploy": "node scripts/build.js prod && firebase deploy --only hosting:hrm-portal-ssmi",
     "deploy_dev": "node scripts/build.js staging && node -e \"try{require('fs').unlinkSync('.firebase/hosting.b3V0.cache')}catch(e){}\" && firebase --project hrm-dev-24dff deploy --only hosting:hrm-dev-24dff",
-    "get_apk": "pnpm build && npx cap sync android && cd android && gradlew.bat assembleDebug && cd .. && copy android\\app\\build\\outputs\\apk\\debug\\app-debug.apk SSMI-HRM.apk",
-    "android": "pnpm build && npx cap sync android && npx cap run android",
-    "ios": "npx cap run ios",
     "lint": "eslint ."
   },
   "dependencies": {
-    "@capacitor-firebase/authentication": "^8.3.0",
-    "@capacitor/android": "^8.3.0",
-    "@capacitor/cli": "^8.3.0",
-    "@capacitor/core": "^8.3.0",
-    "@capacitor/ios": "^8.3.0",
-    "@capawesome/capacitor-file-picker": "^8.0.3",
     "@fingerprintjs/fingerprintjs": "^5.2.0",
     "@hookform/resolvers": "^3.9.1",
     "@lottiefiles/dotlottie-react": "^0.18.7",
@@ -81,7 +72,6 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@capacitor/assets": "^3.0.5",
     "@tailwindcss/postcss": "^4.2.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",

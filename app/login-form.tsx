@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
+import type { GoogleLoginOutcome } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
@@ -14,7 +15,16 @@ type AuthStep = 'idle' | 'setup-password' | 'link-google' | 'forgot-password'
 
 export default function LoginForm() {
   const router = useRouter()
-  const { login, loginWithGoogle, setupPasswordForCurrentUser, resetPassword, isLoading, isAuthenticated } = useAuth()
+  const {
+    login,
+    loginWithGoogle,
+    googleRedirectOutcome,
+    clearGoogleRedirectOutcome,
+    setupPasswordForCurrentUser,
+    resetPassword,
+    isLoading,
+    isAuthenticated,
+  } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -22,11 +32,50 @@ export default function LoginForm() {
   const [successMsg, setSuccessMsg] = useState('')
   const [authStep, setAuthStep] = useState<AuthStep>('idle')
 
+  const applyGoogleResult = (result: GoogleLoginOutcome) => {
+    if (result.success) {
+      setAuthStep('idle')
+      router.push('/dashboard')
+      return
+    }
+
+    if (result.requiresPasswordSetup) {
+      setAuthStep('setup-password')
+      setEmail(result.email ?? '')
+      setPassword('')
+      setShowPassword(false)
+      setError(result.error ?? 'Set a password to enable email sign-in for this account.')
+      return
+    }
+
+    if (result.requiresPasswordLink) {
+      setAuthStep('link-google')
+      setEmail(result.email ?? email)
+      setPassword('')
+      setShowPassword(false)
+      setError(result.error ?? 'Enter your password to link Google sign-in with this account.')
+      return
+    }
+
+    setError(result.error ?? 'Google sign-in failed. Please try again.')
+  }
+
   useEffect(() => {
     if (isAuthenticated && authStep === 'idle') {
       router.push('/dashboard')
     }
   }, [authStep, isAuthenticated, router])
+
+  // Picks up the outcome of a Google sign-in that completed via full-page
+  // redirect (iOS standalone PWA — see shouldUseGoogleRedirect in
+  // lib/auth-context.tsx) instead of a popup, since this component remounted
+  // fresh after the page reloaded and has no local result to react to.
+  useEffect(() => {
+    if (!googleRedirectOutcome) return
+    applyGoogleResult(googleRedirectOutcome)
+    clearGoogleRedirectOutcome()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [googleRedirectOutcome])
 
   if (isAuthenticated && authStep === 'idle') {
     return null
@@ -60,32 +109,7 @@ export default function LoginForm() {
     }
 
     const result = await loginWithGoogle(authStep === 'link-google' ? password : undefined)
-
-    if (result.success) {
-      setAuthStep('idle')
-      router.push('/dashboard')
-      return
-    }
-
-    if (result.requiresPasswordSetup) {
-      setAuthStep('setup-password')
-      setEmail(result.email ?? '')
-      setPassword('')
-      setShowPassword(false)
-      setError(result.error ?? 'Set a password to enable email sign-in for this account.')
-      return
-    }
-
-    if (result.requiresPasswordLink) {
-      setAuthStep('link-google')
-      setEmail(result.email ?? email)
-      setPassword('')
-      setShowPassword(false)
-      setError(result.error ?? 'Enter your password to link Google sign-in with this account.')
-      return
-    }
-
-    setError(result.error ?? 'Google sign-in failed. Please try again.')
+    applyGoogleResult(result)
   }
 
   const handlePasswordSetup = async (e: React.FormEvent) => {

@@ -2,8 +2,6 @@
 
 import { Upload } from 'lucide-react'
 import { toast } from 'sonner'
-import { Capacitor } from '@capacitor/core'
-import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 interface FileUploadProps {
@@ -15,12 +13,6 @@ interface FileUploadProps {
 }
 
 const DEFAULT_ALLOWED = ['application/pdf', 'image/jpeg', 'image/png']
-
-async function base64ToFile(base64: string, name: string, mimeType: string): Promise<File> {
-  const res = await fetch(`data:${mimeType};base64,${base64}`)
-  const blob = await res.blob()
-  return new File([blob], name, { type: mimeType })
-}
 
 export default function FileUpload({
   file,
@@ -48,23 +40,6 @@ export default function FileUpload({
     if (validate(selected)) onFileSelect(selected)
   }
 
-  const handleNativeClick = async () => {
-    try {
-      const { FilePicker } = await import('@capawesome/capacitor-file-picker')
-      const result = await FilePicker.pickFiles({ types: allowedMimes, limit: 1, readData: true })
-      const picked = result.files[0]
-      if (!picked?.data) return
-      const f = await base64ToFile(picked.data, picked.name, picked.mimeType)
-      if (validate(f)) onFileSelect(f)
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      if (!msg.toLowerCase().includes('cancel')) {
-        console.error('[FileUpload] FilePicker error:', err)
-        toast.error('ເກີດຂໍ້ຜິດພາດ: ' + msg)
-      }
-    }
-  }
-
   const areaClass = cn(
     'relative w-full h-auto flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-5 transition-colors bg-background',
     file ? 'border-primary bg-primary/5' : 'border-input',
@@ -87,25 +62,9 @@ export default function FileUpload({
     </>
   )
 
-  // Native Capacitor app → use native file picker plugin
-  if (Capacitor.isNativePlatform()) {
-    return (
-      <div className={cn('relative', className)}>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={handleNativeClick}
-          className={areaClass}
-        >
-          {content}
-        </Button>
-      </div>
-    )
-  }
-
-  // Web / mobile browser → transparent <input> covers the outer div.
-  // No `accept` attr: Android Chrome blocks the picker when accept has mixed MIME types
-  // (same Android intent issue as Capacitor WebView). JS validation filters after selection.
+  // Transparent <input> covers the outer div.
+  // No `accept` attr: Android Chrome blocks the picker when accept has mixed MIME types.
+  // JS validation filters after selection.
   return (
     <div className={cn('relative', className)}>
       <input

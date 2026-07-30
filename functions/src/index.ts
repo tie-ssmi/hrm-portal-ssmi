@@ -107,9 +107,7 @@ const callableCorsOrigins: Array<string | RegExp> = [
   "http://localhost:3000",
   "http://127.0.0.1:3000",
   "https://hrmapp.ssmilaos.com", // Production web app
-  "https://demohrm.ssmilaos.com", // Android Capacitor WebView / staging
-  "capacitor://localhost", // iOS Capacitor WebView
-  "ionic://localhost",
+  "https://demohrm.ssmilaos.com", // Staging
   /^https:\/\/.*\.web\.app$/,
   /^https:\/\/.*\.firebaseapp\.com$/,
 ];

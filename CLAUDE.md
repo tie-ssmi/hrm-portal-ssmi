@@ -19,17 +19,13 @@ pnpm deploy_dev       # Build + deploy to Firebase Hosting (staging: ssmi-hrm-de
 npm run build         # Compile TypeScript → lib/
 npm run serve         # Build + start Firebase emulator
 npm run deploy        # Deploy Cloud Functions to Firebase
-
-# Mobile (Capacitor)
-pnpm build && npx cap sync android && npx cap open android
-pnpm build && npx cap sync ios && npx cap open ios
 ```
 
 ## Architecture
 
-**Stack:** Next.js (App Router, static export) + React 19 + TypeScript + Tailwind CSS v4 + Firebase + Capacitor
+**Stack:** Next.js (App Router, static export) + React 19 + TypeScript + Tailwind CSS v4 + Firebase
 
-The app is a multi-platform HRM portal (web PWA + Android/iOS). Next.js builds to static files in `out/` which are served via Firebase Hosting. Server-side logic lives entirely in Firebase Cloud Functions (`functions/`), not Next.js API routes.
+The app is a web PWA (installable via "Add to Home Screen"; no native Android/iOS app — Capacitor was removed). Next.js builds to static files in `out/` which are served via Firebase Hosting. Server-side logic lives entirely in Firebase Cloud Functions (`functions/`), not Next.js API routes.
 
 ### Layer Structure
 
@@ -112,6 +108,8 @@ Data fetched for approvers is scoped by `workLocationUid` (always) + `department
 
 - **Auto-logout:** 2-day inactivity via `ssmi_last_active` key in `localStorage`. Checked on every `onAuthStateChanged` in `lib/auth-context.tsx`. Updated on every app open. Manual logout clears the key.
 - Firebase Auth uses `browserLocalPersistence` by default (session survives page refresh indefinitely unless inactive for 2+ days).
+- **Google sign-in:** uses `signInWithPopup` everywhere except iOS standalone PWA (home-screen installed), which uses `signInWithRedirect` instead — `window.open()` popups don't reliably work in iOS's standalone WebKit mode. See `shouldUseGoogleRedirect` in `lib/auth-context.tsx`; the redirect outcome is picked up via `getRedirectResult()` on mount and surfaced through context as `googleRedirectOutcome` (consumed by `app/login-form.tsx`).
+- `device_id` (`lib/device.ts`, used for buddy-punch detection in `recordCheckIn`/`recordCheckOut`) must survive logout — `clearAllClientStorage` in `lib/auth-context.tsx` snapshots and restores it around `localStorage.clear()`.
 
 ### Firebase Collections (Firestore)
 
@@ -138,6 +136,8 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
 NEXT_PUBLIC_FIREBASE_APP_ID
 NEXT_PUBLIC_VAPID_PUBLIC_KEY    # Web push (client)
 VAPID_PRIVATE_KEY                # Web push (Cloud Functions only)
+NEXT_PUBLIC_RECAPTCHA_SITE_KEY   # App Check (reCAPTCHA v3) — see lib/firebase.ts
+NEXT_PUBLIC_APPCHECK_DEBUG_TOKEN # Optional, local/dev only — bypasses reCAPTCHA for App Check
 ```
 
 `NEXT_PUBLIC_DEPLOY_TARGET` is set automatically by `scripts/build.js` during `pnpm deploy` / `pnpm deploy_dev`.

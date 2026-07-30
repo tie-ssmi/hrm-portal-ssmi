@@ -281,19 +281,28 @@ export interface GeoFence {
   name: string;
 }
 
+export interface GoogleLoginOutcome {
+  success: boolean;
+  error?: string;
+  requiresPasswordLink?: boolean;
+  requiresPasswordSetup?: boolean;
+  email?: string;
+}
+
 export interface AuthContextType {
   user: Employee | null;
   firebaseUser: FirebaseUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<boolean>;
-  loginWithGoogle: (linkPassword?: string) => Promise<{
-    success: boolean;
-    error?: string;
-    requiresPasswordLink?: boolean;
-    requiresPasswordSetup?: boolean;
-    email?: string;
-  }>;
+  loginWithGoogle: (linkPassword?: string) => Promise<GoogleLoginOutcome>;
+  // Populated when Google sign-in completes via a full-page redirect (iOS
+  // standalone PWA — see shouldUseGoogleRedirect in auth-context.tsx) instead
+  // of a popup, since the outcome can't be returned directly from a button
+  // click handler after the page reloads. LoginForm applies it the same way
+  // it applies loginWithGoogle's return value, then clears it.
+  googleRedirectOutcome: GoogleLoginOutcome | null;
+  clearGoogleRedirectOutcome: () => void;
   setupPasswordForCurrentUser: (
     password: string,
   ) => Promise<{ success: boolean; error?: string }>;

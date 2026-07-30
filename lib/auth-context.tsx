@@ -13,13 +13,36 @@ import {
 import { auth } from './firebase-auth'
 import { db } from './firebase'
 import { doc, getDoc } from 'firebase/firestore'
-import type { AuthCredential } from 'firebase/auth'
-import type { AuthContextType, Employee } from './types'
+import type { AuthCredential, UserCredential } from 'firebase/auth'
+import type { AuthContextType, Employee, GoogleLoginOutcome } from './types'
 import { queryClient } from './query-client'
 import { logAudit, extractWorkLocationLog } from '@/services/audit-log'
 import { snapshotDeviceId, restoreDeviceId } from './device'
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
+
+function isIOSDevice(): boolean {
+  if (typeof navigator === 'undefined') return false
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    // iPadOS 13+ reports as "MacIntel" but is touch-capable — real Macs aren't.
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+}
+
+function isStandaloneDisplayMode(): boolean {
+  if (typeof window === 'undefined') return false
+  return window.matchMedia('(display-mode: standalone)').matches ||
+    (window.navigator as unknown as { standalone?: boolean }).standalone === true
+}
+
+// signInWithPopup depends on window.open() keeping a live `opener` link back to
+// this page so the popup can hand the auth result back. iOS Safari's standalone
+// (home-screen) mode can't guarantee that — the popup either fails to open or
+// bounces the user into a disconnected Safari tab, and the sign-in hangs.
+// signInWithRedirect avoids popups entirely; getRedirectResult() (mount effect
+// in AuthProvider) picks the result back up once the page reloads.
+function shouldUseGoogleRedirect(): boolean {
+  return isIOSDevice() && isStandaloneDisplayMode()
+}
 
 function clearAllClientStorage() {
   if (typeof document !== 'undefined') {
@@ -130,27 +153,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
   const pendingGoogleCredentialRef = useRef<AuthCredential | null>(null)
   const pendingGoogleEmailRef = useRef<string | null>(null)
+  const [googleRedirectOutcome, setGoogleRedirectOutcome] = useState<GoogleLoginOutcome | null>(null)
 
   const clearPendingGoogleLink = useCallback(() => {
     pendingGoogleCredentialRef.current = null
     pendingGoogleEmailRef.current = null
   }, [])
 
+  const clearGoogleRedirectOutcome = useCallback(() => setGoogleRedirectOutcome(null), [])
+
   // Full sign-out: used for manual logout, inactivity timeout, and admin
   // force-logout alike, so every exit path clears the same session data.
   const performFullSignOut = useCallback(async () => {
     clearPendingGoogleLink()
-
-    try {
-      const { Capacitor } = await import('@capacitor/core')
-      if (Capacitor.isNativePlatform()) {
-        const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication')
-        await FirebaseAuthentication.signOut()
-      }
-    } catch (error) {
-      console.error('Native sign-out error:', error)
-    }
-
     await signOut(auth)
     queryClient.clear()
     clearAllClientStorage()
@@ -313,13 +328,129 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const loginWithGoogle = useCallback(async (linkPassword?: string): Promise<{
-    success: boolean
-    error?: string
-    requiresPasswordLink?: boolean
-    requiresPasswordSetup?: boolean
-    email?: string
-  }> => {
+  // Shared by the popup path (loginWithGoogle) and the redirect path (mount
+  // effect below) — both end up with a UserCredential that needs the same
+  // "is this actually a registered employee" gate.
+  const processGoogleCredentialResult = useCallback(async (
+    result: UserCredential
+  ): Promise<GoogleLoginOutcome> => {
+    const employeeData = await resolveEmployeeForFirebaseUser(result.user)
+
+    if (!employeeData) {
+      // Still authenticated at this point (Firebase created the session before
+      // we discovered they're not a registered employee) — log while we still can.
+      await logAudit({
+        action: 'auth.login',
+        actorUid: result.user.uid,
+        actorName: result.user.displayName || result.user.email || '',
+        actorRoleUuid: '',
+        targetType: 'employees',
+        targetId: result.user.uid,
+        reason: 'Google account not registered as an employee',
+        status: 'FAILED',
+        errorMessage: 'This Google account is not allowed',
+      })
+      clearPendingGoogleLink()
+      await signOut(auth)
+      setIsLoading(false)
+      return {
+        success: false,
+        error: 'This Google account is not allowed. Please contact HR.',
+      }
+    }
+
+    const hasPasswordProvider = result.user.providerData.some(
+      (provider) => provider.providerId === 'password'
+    )
+
+    if (!hasPasswordProvider && result.user.email) {
+      clearPendingGoogleLink()
+      setIsLoading(false)
+      return {
+        success: false,
+        requiresPasswordSetup: true,
+        email: result.user.email,
+        error: 'Set a password to enable email and password login for this account.',
+      }
+    }
+
+    await logAudit({
+      action: 'auth.login',
+      actorUid: result.user.uid,
+      actorName: result.user.displayName || result.user.email || '',
+      actorRoleUuid: employeeData.rolesUid ?? '',
+      actorRoleName: employeeData.rolesName,
+      workLocation: extractWorkLocationLog(employeeData.workLocation),
+      targetType: 'employees',
+      targetId: result.user.uid,
+      status: 'SUCCESS',
+    })
+    clearPendingGoogleLink()
+    return { success: true }
+  }, [clearPendingGoogleLink])
+
+  // Shared error handling for both the popup path and the redirect path —
+  // getRedirectResult() throws the same error shapes signInWithPopup does.
+  const handleGoogleSignInError = useCallback(async (
+    error: any,
+    linkPassword?: string
+  ): Promise<GoogleLoginOutcome> => {
+    if (error?.code === 'auth/popup-closed-by-user') {
+      setIsLoading(false)
+      return { success: false }
+    }
+
+    if (error?.code === 'auth/account-exists-with-different-credential') {
+      const { GoogleAuthProvider } = await import('firebase/auth')
+      const email = error?.customData?.email as string | undefined
+      const pendingCredential = GoogleAuthProvider.credentialFromError(error)
+
+      if (!email || !pendingCredential) {
+        clearPendingGoogleLink()
+        setIsLoading(false)
+        return { success: false, error: 'Unable to link this Google account. Please contact HR.' }
+      }
+
+      pendingGoogleCredentialRef.current = pendingCredential
+      pendingGoogleEmailRef.current = email
+
+      if (!linkPassword) {
+        setIsLoading(false)
+        return {
+          success: false,
+          requiresPasswordLink: true,
+          email,
+          error: 'Please enter your account password to link Google sign-in.',
+        }
+      }
+
+      try {
+        const linkResult = await completeGoogleLink(email, linkPassword, pendingCredential)
+
+        if (!linkResult.success) {
+          setIsLoading(false)
+          return linkResult
+        }
+
+        clearPendingGoogleLink()
+        return linkResult
+      } catch (linkError: any) {
+        console.error('Google link error:', linkError)
+        setIsLoading(false)
+        if (linkError?.code === 'auth/wrong-password' || linkError?.code === 'auth/invalid-credential') {
+          return { success: false, error: 'Incorrect password. Please try again.' }
+        }
+        return { success: false, error: 'Unable to link Google account. Please try again.' }
+      }
+    }
+
+    console.error('Google login error:', error)
+    clearPendingGoogleLink()
+    setIsLoading(false)
+    return { success: false, error: 'Google sign-in failed. Please try again.' }
+  }, [clearPendingGoogleLink, completeGoogleLink])
+
+  const loginWithGoogle = useCallback(async (linkPassword?: string): Promise<GoogleLoginOutcome> => {
     setIsLoading(true)
     try {
       if (linkPassword && pendingGoogleCredentialRef.current && pendingGoogleEmailRef.current) {
@@ -347,142 +478,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      const { GoogleAuthProvider, signInWithPopup, signInWithCredential } = await import('firebase/auth')
-      const { Capacitor } = await import('@capacitor/core')
+      const { GoogleAuthProvider, signInWithPopup, signInWithRedirect } = await import('firebase/auth')
+      const googleProvider = new GoogleAuthProvider()
 
-      let result: Awaited<ReturnType<typeof signInWithCredential>>
-
-      if (Capacitor.isNativePlatform()) {
-        // Native platforms (Android/iOS) can't use signInWithPopup — WebView
-        // has no real popup support and Google blocks OAuth in embedded
-        // WebViews (disallowed_useragent). Use the native Google Sign-In SDK
-        // via the plugin, then hand the resulting tokens to the JS SDK.
-        const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication')
-        const nativeResult = await FirebaseAuthentication.signInWithGoogle()
-        const idToken = nativeResult.credential?.idToken
-        const accessToken = nativeResult.credential?.accessToken
-
-        if (!idToken) {
-          setIsLoading(false)
-          return { success: false, error: 'Google sign-in failed. Please try again.' }
-        }
-
-        const credential = GoogleAuthProvider.credential(idToken, accessToken)
-        result = await signInWithCredential(auth, credential)
-      } else {
-        const googleProvider = new GoogleAuthProvider()
-        result = await signInWithPopup(auth, googleProvider)
-      }
-
-      const employeeData = await resolveEmployeeForFirebaseUser(result.user)
-
-      if (!employeeData) {
-        // Still authenticated at this point (Firebase created the session before
-        // we discovered they're not a registered employee) — log while we still can.
-        await logAudit({
-          action: 'auth.login',
-          actorUid: result.user.uid,
-          actorName: result.user.displayName || result.user.email || '',
-          actorRoleUuid: '',
-          targetType: 'employees',
-          targetId: result.user.uid,
-          reason: 'Google account not registered as an employee',
-          status: 'FAILED',
-          errorMessage: 'This Google account is not allowed',
-        })
-        clearPendingGoogleLink()
-        await signOut(auth)
-        setIsLoading(false)
-        return {
-          success: false,
-          error: 'This Google account is not allowed. Please contact HR.',
-        }
-      }
-
-      const hasPasswordProvider = result.user.providerData.some(
-        (provider) => provider.providerId === 'password'
-      )
-
-      if (!hasPasswordProvider && result.user.email) {
-        clearPendingGoogleLink()
-        setIsLoading(false)
-        return {
-          success: false,
-          requiresPasswordSetup: true,
-          email: result.user.email,
-          error: 'Set a password to enable email and password login for this account.',
-        }
-      }
-
-      await logAudit({
-        action: 'auth.login',
-        actorUid: result.user.uid,
-        actorName: result.user.displayName || result.user.email || '',
-        actorRoleUuid: employeeData.rolesUid ?? '',
-        actorRoleName: employeeData.rolesName,
-        workLocation: extractWorkLocationLog(employeeData.workLocation),
-        targetType: 'employees',
-        targetId: result.user.uid,
-        status: 'SUCCESS',
-      })
-      clearPendingGoogleLink()
-      return { success: true }
-    } catch (error: any) {
-      if (error?.code === 'auth/popup-closed-by-user') {
-        setIsLoading(false)
+      if (shouldUseGoogleRedirect()) {
+        // Navigates away — getRedirectResult() in the mount effect below picks
+        // the outcome back up once the page reloads. Nothing meaningful to
+        // return here in the common case.
+        await signInWithRedirect(auth, googleProvider)
         return { success: false }
       }
 
-      if (error?.code === 'auth/account-exists-with-different-credential') {
-        const { GoogleAuthProvider } = await import('firebase/auth')
-        const email = error?.customData?.email as string | undefined
-        const pendingCredential = GoogleAuthProvider.credentialFromError(error)
-
-        if (!email || !pendingCredential) {
-          clearPendingGoogleLink()
-          setIsLoading(false)
-          return { success: false, error: 'Unable to link this Google account. Please contact HR.' }
-        }
-
-        pendingGoogleCredentialRef.current = pendingCredential
-        pendingGoogleEmailRef.current = email
-
-        if (!linkPassword) {
-          setIsLoading(false)
-          return {
-            success: false,
-            requiresPasswordLink: true,
-            email,
-            error: 'Please enter your account password to link Google sign-in.',
-          }
-        }
-
-        try {
-          const linkResult = await completeGoogleLink(email, linkPassword, pendingCredential)
-
-          if (!linkResult.success) {
-            setIsLoading(false)
-            return linkResult
-          }
-
-          clearPendingGoogleLink()
-          return linkResult
-        } catch (linkError: any) {
-          console.error('Google link error:', linkError)
-          setIsLoading(false)
-          if (linkError?.code === 'auth/wrong-password' || linkError?.code === 'auth/invalid-credential') {
-            return { success: false, error: 'Incorrect password. Please try again.' }
-          }
-          return { success: false, error: 'Unable to link Google account. Please try again.' }
-        }
-      }
-
-      console.error('Google login error:', error)
-      clearPendingGoogleLink()
-      setIsLoading(false)
-      return { success: false, error: 'Google sign-in failed. Please try again.' }
+      const result = await signInWithPopup(auth, googleProvider)
+      return await processGoogleCredentialResult(result)
+    } catch (error: any) {
+      return await handleGoogleSignInError(error, linkPassword)
     }
-  }, [clearPendingGoogleLink, completeGoogleLink])
+  }, [clearPendingGoogleLink, completeGoogleLink, processGoogleCredentialResult, handleGoogleSignInError])
+
+  // Completes the sign-in started by signInWithRedirect (shouldUseGoogleRedirect)
+  // once the page reloads after the OAuth round-trip. Resolves to null on a
+  // normal page load — cheap local check, no network round-trip.
+  useEffect(() => {
+    let active = true
+    ;(async () => {
+      try {
+        const { getRedirectResult } = await import('firebase/auth')
+        const result = await getRedirectResult(auth)
+        if (!result || !active) return
+        const outcome = await processGoogleCredentialResult(result)
+        if (active) setGoogleRedirectOutcome(outcome)
+      } catch (error) {
+        if (!active) return
+        const outcome = await handleGoogleSignInError(error)
+        setGoogleRedirectOutcome(outcome)
+      }
+    })()
+    return () => { active = false }
+  }, [processGoogleCredentialResult, handleGoogleSignInError])
 
   const setupPasswordForCurrentUser = useCallback(async (password: string): Promise<{ success: boolean; error?: string }> => {
     setIsLoading(true)
@@ -562,6 +595,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isLoading,
       login,
       loginWithGoogle,
+      googleRedirectOutcome,
+      clearGoogleRedirectOutcome,
       setupPasswordForCurrentUser,
       resetPassword,
       logout,

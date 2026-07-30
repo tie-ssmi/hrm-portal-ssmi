@@ -1,6 +1,6 @@
 # SSMI HRM Portal
 
-A Human Resource Management (HRM) web and mobile application built with **Next.js**, **Firebase**, and **Capacitor**. It supports employee self-service features such as attendance tracking, leave requests, work off-site requests, and approvals.
+A Human Resource Management (HRM) web application (installable PWA) built with **Next.js** and **Firebase**. It supports employee self-service features such as attendance tracking, leave requests, work off-site requests, and approvals.
 
 ---
 
@@ -15,7 +15,6 @@ A Human Resource Management (HRM) web and mobile application built with **Next.j
 | Forms | React Hook Form + Zod |
 | Data Fetching | TanStack Query v5 |
 | Backend / Auth | Firebase (Firestore, Auth, Storage, Hosting) |
-| Mobile | Capacitor (Android & iOS) |
 | Charts | Recharts |
 | Package Manager | pnpm |
 
@@ -99,28 +98,6 @@ pnpm deploy_dev
 
 ---
 
-## Mobile (Capacitor)
-
-The app is also packaged as a native mobile app using Capacitor.
-
-### Android
-
-```bash
-pnpm build
-npx cap sync android
-npx cap open android
-```
-
-### iOS
-
-```bash
-pnpm build
-npx cap sync ios
-npx cap open ios
-```
-
----
-
 ## Project Structure
 
 ```
@@ -143,10 +120,7 @@ hrm-portal-ssmi/
 ├── services/               # Firebase data services
 ├── hooks/                  # Custom React hooks
 ├── lib/                    # Utilities and query client
-├── android/                # Capacitor Android project
-├── ios/                    # Capacitor iOS project
-├── firebase.json           # Firebase configuration
-└── capacitor.config.ts     # Capacitor configuration
+└── firebase.json           # Firebase configuration
 ```
 
 ---
