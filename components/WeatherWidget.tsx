@@ -7,20 +7,25 @@ import { useEffect, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useHRM } from "@/lib/hrm-context";
 
-// ພິກັດຫຼວງພະບາງ — ປ່ຽນຕາມທີ່ຕັ້ງບໍລິສັດໄດ້ເລີຍ
-const LAT = 19.8845;
-const LNG = 102.1348;
+// Fallback ເມື່ອຫ້ອງການຂອງຜູ້ໃຊ້ຍັງບໍ່ໄດ້ຕັ້ງຄ່າພິກັດ GPS (ພິກັດຫຼວງພະບາງ) —
+// ຕາມປົກກະຕິຈະໃຊ້ພິກັດຫ້ອງການຈິງຈາກ HRMContext.geoFence ແທນ, ອັນນີ້ຄືແຄ່ default.
+const FALLBACK_LAT = 19.8845;
+const FALLBACK_LNG = 102.1348;
 
 // ອຸນຫະພູມ (°C) ຕ່ຳກວ່ານີ້ຈະສະແດງຄຳເຕືອນອາກາດໜາວ
 const COLD_THRESHOLD = 15;
 
-const WEATHER_URL =
-  "https://api.open-meteo.com/v1/forecast" +
-  `?latitude=${LAT}&longitude=${LNG}` +
-  "&current=temperature_2m,rain,precipitation,weather_code" +
-  "&daily=precipitation_probability_max,temperature_2m_max,temperature_2m_min" +
-  "&timezone=Asia/Vientiane&forecast_days=1";
+function buildWeatherUrl(lat: number, lng: number): string {
+  return (
+    "https://api.open-meteo.com/v1/forecast" +
+    `?latitude=${lat}&longitude=${lng}` +
+    "&current=temperature_2m,rain,precipitation,weather_code" +
+    "&daily=precipitation_probability_max,temperature_2m_max,temperature_2m_min" +
+    "&timezone=Asia/Vientiane&forecast_days=1"
+  );
+}
 
 interface OpenMeteoResponse {
   current: {
@@ -61,6 +66,10 @@ function describeWeather(code: number): { icon: string; label: string } {
 }
 
 export default function WeatherWidget() {
+  const { geoFence } = useHRM();
+  const lat = geoFence?.lat ?? FALLBACK_LAT;
+  const lng = geoFence?.lng ?? FALLBACK_LNG;
+
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -69,7 +78,7 @@ export default function WeatherWidget() {
 
     async function load() {
       try {
-        const res = await fetch(WEATHER_URL);
+        const res = await fetch(buildWeatherUrl(lat, lng));
         if (!res.ok) throw new Error("ດຶງຂໍ້ມູນອາກາດບໍ່ສຳເລັດ");
         const data: OpenMeteoResponse = await res.json();
 
@@ -97,7 +106,7 @@ export default function WeatherWidget() {
       active = false;
       clearInterval(timer);
     };
-  }, []);
+  }, [lat, lng]);
 
   if (error) {
     return (

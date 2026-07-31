@@ -380,7 +380,7 @@ export default function DashboardPage() {
                 <DollarSign className="text-destructive h-5 w-5" />
               </div>
               <div>
-                <p className="text-muted-foreground text-xs">ຄ່າປັນ</p>
+                <p className="text-muted-foreground text-xs">ຄ່າປັບ</p>
                 <p className="text-foreground text-xl font-bold">
                   {computedTotalFines.toLocaleString()} ₭
                 </p>

@@ -324,6 +324,7 @@ export function HRMProvider({ children }: { children: ReactNode }) {
     isWithinGeofence,
     distanceToOffice,
     geoFenceStatus,
+    geoFence,
   }), [
     todayAttendance,
     attendanceHistory,
@@ -337,6 +338,7 @@ export function HRMProvider({ children }: { children: ReactNode }) {
     isWithinGeofence,
     distanceToOffice,
     geoFenceStatus,
+    geoFence,
   ])
 
   return (

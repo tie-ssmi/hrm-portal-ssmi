@@ -349,6 +349,10 @@ export interface HRMContextType {
   isWithinGeofence: (lat: number, lng: number) => boolean;
   distanceToOffice: (lat: number, lng: number) => number | null;
   geoFenceStatus: "loading" | "found" | "no_coordinates" | "not_found";
+  // The signed-in user's work location coordinates, when configured — null
+  // while loading or when the work location has no GPS set (geoFenceStatus
+  // covers which). Used e.g. by WeatherWidget instead of a hardcoded city.
+  geoFence: GeoFence | null;
 }
 
 export interface AuditLog {
