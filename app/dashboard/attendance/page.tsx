@@ -508,10 +508,10 @@ export default function AttendancePage() {
   const { data: todayAttendance, isLoading: isLoadingHistory } =
     useTodayAttendance(user?.uuid);
   const { data: attendanceHistory = [] } = useAttendanceHistory(user?.uuid);
-  const { data: holidays = [] } = useOfficialHolidays();
+  const { data: holidays = [], isLoading: isLoadingHolidays } = useOfficialHolidays();
   const { data: todayLeaveStatus = "none", isLoading: isLoadingLeaveStatus } =
     useTodayLeaveStatus(user?.uuid, todayIso);
-  const { data: todayTrip = null } = useTodayTrip(user?.uuid, todayIso);
+  const { data: todayTrip = null, isLoading: isLoadingTrip } = useTodayTrip(user?.uuid, todayIso);
   const checkInMutation = useCheckIn();
   const checkOutMutation = useCheckOut();
 
@@ -655,8 +655,11 @@ export default function AttendancePage() {
         toast.error("ບໍ່ເຫັນຂໍ້ມູນຜູ້ໃຊ້. ກະລຸນາເຂົ້າລະບົບອີກຄັ້ງ.");
         return;
       }
-      if (type === "checkIn" && isLoadingLeaveStatus) {
-        toast.error("ກຳລັງກວດສອບສະຖານະລາພັກ. ກະລຸນາລໍຖ້າ ແລ້ວລອງໃໝ່.");
+      if (
+        type === "checkIn" &&
+        (isLoadingLeaveStatus || isLoadingHolidays || isLoadingTrip)
+      ) {
+        toast.error("ກຳລັງກວດສອບຂໍ້ມູນ. ກະລຸນາລໍຖ້າ ແລ້ວລອງໃໝ່.");
         return;
       }
       if (type === "checkIn" && isBlockedDay.blocked) {
@@ -726,6 +729,8 @@ export default function AttendancePage() {
       isOffsite,
       isBlockedDay,
       isLoadingLeaveStatus,
+      isLoadingHolidays,
+      isLoadingTrip,
       getLocation,
       getValidatedLocation,
       captureImage,
@@ -840,13 +845,19 @@ export default function AttendancePage() {
               disabled={
                 isBlockedDay.blocked ||
                 isLoadingLeaveStatus ||
+                isLoadingHolidays ||
+                isLoadingTrip ||
                 submittingType !== null ||
                 checkInMutation.isPending ||
                 !!todayAttendance?.checkIn ||
                 (!isOffsite && !isWithinOffice)
               }
             >
-              {checkInMutation.isPending || submittingType === "checkIn" || isLoadingLeaveStatus ? (
+              {checkInMutation.isPending ||
+              submittingType === "checkIn" ||
+              isLoadingLeaveStatus ||
+              isLoadingHolidays ||
+              isLoadingTrip ? (
                 <Spinner className="mr-2" />
               ) : (
                 <LogIn className="mr-2 h-5 w-5" />
