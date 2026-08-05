@@ -123,7 +123,12 @@ export interface AttendanceRecord {
     | "not_check_in"
     | "not_checked_in"
     | "trip";
-  location?: {
+  checkInLocation?: {
+    lat: number;
+    lng: number;
+    address?: string;
+  };
+  checkOutLocation?: {
     lat: number;
     lng: number;
     address?: string;

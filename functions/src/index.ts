@@ -1,6 +1,7 @@
 import * as admin from "firebase-admin";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
+import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import webpush from "web-push";
 
 if (admin.apps.length === 0) {
@@ -318,6 +319,185 @@ export const checkAttendanceAt814 = onSchedule(
 );
 
 // =========================================================================
+// 🔔 4b. ແຈ້ງເຕືອນ APPROVER ເມື່ອມີໃບລາພັກ / ຄຳຂໍອອກນອກສະຖານທີ່ໃໝ່
+// (real server push — ໄດ້ຮັບເຖິງແມ່ນປິດແອັບ, ຕ່າງຈາກ client-side Notification
+// ໃນ NotificationProvider.tsx ທີ່ໄດ້ຮັບສະເພາະຕອນເປີດແທັບຄ້າງໄວ້)
+// =========================================================================
+
+async function sendPushToEmployeeDocs(
+  employeeDocs: FirebaseFirestore.DocumentSnapshot[],
+  payload: string,
+  tag: string,
+): Promise<number> {
+  const db = admin.firestore();
+  let notified = 0;
+
+  for (let i = 0; i < employeeDocs.length; i += PUSH_BATCH_SIZE) {
+    const batchDocs = employeeDocs.slice(i, i + PUSH_BATCH_SIZE);
+    const results = await Promise.all(
+      batchDocs.map(async (empDoc) => {
+        const subscription = empDoc.data()?.pushSubscription;
+        if (!subscription) return false;
+
+        return webpush
+          .sendNotification(subscription, payload)
+          .then(() => true)
+          .catch(async (err: any) => {
+            if (err.statusCode === 410 || err.statusCode === 404) {
+              await db
+                .collection("employees")
+                .doc(empDoc.id)
+                .update({
+                  pushSubscription: admin.firestore.FieldValue.delete(),
+                });
+              console.warn(`[${tag}]: removed stale subscription for ${empDoc.id}`);
+            } else {
+              console.error(`[${tag}]: failed to notify ${empDoc.id}:`, err);
+            }
+            return false;
+          });
+      }),
+    );
+    notified += results.filter(Boolean).length;
+  }
+
+  return notified;
+}
+
+type LeaveCreatedDoc = {
+  status?: string;
+  leaveUserUuid?: string;
+  leaveUserName?: string;
+  reason?: string;
+  workLocationUid?: string;
+  departmentUid?: string;
+};
+
+export const notifyNewLeaveRequest = onDocumentCreated(
+  { document: "leaves/{leaveId}", region: "asia-southeast1" },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const leave = snap.data() as LeaveCreatedDoc;
+
+    if (leave.status !== "pending" || !leave.workLocationUid) return;
+
+    const db = admin.firestore();
+    const [branchSnap, deptSnap] = await Promise.all([
+      db
+        .collection("employees")
+        .where("rolePermissions.approveBranch", "==", true)
+        .where("workLocation.uuid", "==", leave.workLocationUid)
+        .get(),
+      leave.departmentUid
+        ? db
+            .collection("employees")
+            .where("rolePermissions.approveDepartment", "==", true)
+            .where("workLocation.uuid", "==", leave.workLocationUid)
+            .where("department.uuid", "==", leave.departmentUid)
+            .get()
+        : null,
+    ]);
+
+    const seen = new Set<string>();
+    const approverDocs: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+    for (const snapshot of [branchSnap, deptSnap]) {
+      if (!snapshot) continue;
+      for (const d of snapshot.docs) {
+        if (d.id === leave.leaveUserUuid || seen.has(d.id)) continue;
+        seen.add(d.id);
+        approverDocs.push(d);
+      }
+    }
+
+    if (approverDocs.length === 0) return;
+
+    const payload = JSON.stringify({
+      title: "🔔 ມີໃບລາພັກໃໝ່!",
+      body: `ພະນັກງານ: ${leave.leaveUserName || "ບໍ່ມີຊື່"} ສົ່ງຄຳຂໍລາພັກ`,
+      icon: "/apple-icon.png",
+      badge: "/SSMI.svg",
+      url: "/dashboard/approv",
+    });
+
+    const notified = await sendPushToEmployeeDocs(approverDocs, payload, "leave-new");
+    console.log(
+      `[leave-new]: notified ${notified}/${approverDocs.length} approvers for ${event.params.leaveId}`,
+    );
+  },
+);
+
+type WorkOutsideCreatedDoc = {
+  status?: string;
+  createdByUid?: string;
+  createdBy?: string;
+  subject?: string;
+  departmentUid?: string;
+  requesterWorkLocationUid?: string;
+  requester?: { workLocation?: { uid?: string; uuid?: string; id?: string } };
+};
+
+export const notifyNewOffsiteRequest = onDocumentCreated(
+  { document: "workOutside/{requestId}", region: "asia-southeast1" },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const work = snap.data() as WorkOutsideCreatedDoc;
+
+    if (work.status !== "pending") return;
+
+    const workLocationUid =
+      work.requesterWorkLocationUid ||
+      work.requester?.workLocation?.uid ||
+      work.requester?.workLocation?.uuid ||
+      work.requester?.workLocation?.id;
+    if (!workLocationUid) return;
+
+    const db = admin.firestore();
+    const [branchSnap, deptSnap] = await Promise.all([
+      db
+        .collection("employees")
+        .where("rolePermissions.approveBranch", "==", true)
+        .where("workLocation.uuid", "==", workLocationUid)
+        .get(),
+      work.departmentUid
+        ? db
+            .collection("employees")
+            .where("rolePermissions.approveDepartment", "==", true)
+            .where("department.uuid", "==", work.departmentUid)
+            .get()
+        : null,
+    ]);
+
+    const seen = new Set<string>();
+    const approverDocs: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+    for (const snapshot of [branchSnap, deptSnap]) {
+      if (!snapshot) continue;
+      for (const d of snapshot.docs) {
+        if (d.id === work.createdByUid || seen.has(d.id)) continue;
+        seen.add(d.id);
+        approverDocs.push(d);
+      }
+    }
+
+    if (approverDocs.length === 0) return;
+
+    const payload = JSON.stringify({
+      title: "🚗 ມີຄຳຂໍອອກນອກສະຖານທີ່ໃໝ່!",
+      body: `ພະນັກງານ: ${work.createdBy || "ບໍ່ມີຊື່"} — ${work.subject || "ບໍ່ລະບຸ"}`,
+      icon: "/apple-icon.png",
+      badge: "/SSMI.svg",
+      url: "/dashboard/approv",
+    });
+
+    const notified = await sendPushToEmployeeDocs(approverDocs, payload, "offsite-new");
+    console.log(
+      `[offsite-new]: notified ${notified}/${approverDocs.length} approvers for ${event.params.requestId}`,
+    );
+  },
+);
+
+// =========================================================================
 // 📍 5. CHECK-IN ພ້ອມກວດສອບ Geofence ຢູ່ Server
 // =========================================================================
 
@@ -562,7 +742,12 @@ export const recordCheckIn = onCall(
             ? { morningLeaveDay: true }
             : {}),
           ...(data.location
-            ? { location: { lat: data.location.lat, lng: data.location.lng } }
+            ? {
+                checkInLocation: {
+                  lat: data.location.lat,
+                  lng: data.location.lng,
+                },
+              }
             : {}),
           ...(data.fullNameEn != null ? { fullNameEn: data.fullNameEn } : {}),
           ...(data.fullNameLo != null ? { fullNameLo: data.fullNameLo } : {}),
@@ -673,7 +858,12 @@ export const recordCheckOut = onCall(
             ? { checkOutImageURL: data.checkOutImageURL }
             : {}),
           ...(data.location
-            ? { location: { lat: data.location.lat, lng: data.location.lng } }
+            ? {
+                checkOutLocation: {
+                  lat: data.location.lat,
+                  lng: data.location.lng,
+                },
+              }
             : {}),
           ...(data.deviceLocalId ? { deviceLocalId: data.deviceLocalId } : {}),
           ...(data.deviceFingerprint

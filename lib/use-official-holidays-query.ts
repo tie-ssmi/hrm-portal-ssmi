@@ -11,6 +11,6 @@ export function useOfficialHolidays() {
   return useQuery({
     queryKey: holidayKeys.all,
     queryFn: fetchOfficialHolidays,
-    staleTime: 1000 * 60 * 60, // 1 hour — holidays rarely change
+    staleTime: 1000 * 60 * 60 * 24, // 1 day — holidays rarely change
   })
 }

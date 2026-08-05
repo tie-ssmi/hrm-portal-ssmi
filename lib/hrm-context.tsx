@@ -221,7 +221,7 @@ export function HRMProvider({ children }: { children: ReactNode }) {
         date: attendanceDate,
         checkOutTime,
         workHours: 8,
-        location: location || todayAttendance.location,
+        location: location || todayAttendance.checkInLocation,
         fullNameEn: `${user.firstNameEn || user.firstName} ${user.lastNameEn || user.lastName}`.trim(),
         fullNameLo: `${user.firstNameLo || ''} ${user.lastNameLo || ''}`.trim() || undefined,
         jobTitle: user.jobTitle || user.position,

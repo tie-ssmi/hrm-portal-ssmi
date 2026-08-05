@@ -846,7 +846,7 @@ export default function AttendancePage() {
                 (!isOffsite && !isWithinOffice)
               }
             >
-              {checkInMutation.isPending || submittingType === "checkIn" ? (
+              {checkInMutation.isPending || submittingType === "checkIn" || isLoadingLeaveStatus ? (
                 <Spinner className="mr-2" />
               ) : (
                 <LogIn className="mr-2 h-5 w-5" />

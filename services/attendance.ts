@@ -92,7 +92,8 @@ type AttendanceDoc = {
   checkInTime?: string | null
   checkOutTime?: string | null
   status?: AttendanceRecord['status'] | 'not_checked_in'
-  location?: AttendanceRecord['location']
+  checkInLocation?: AttendanceRecord['checkInLocation']
+  checkOutLocation?: AttendanceRecord['checkOutLocation']
   workHours?: number
   isOffsite?: boolean
   morningLeaveDay?: boolean
@@ -196,20 +197,50 @@ export async function getServerDateTimeInVientiane(): Promise<ServerDateTime> {
   return parseIsoDateAndTime(payload.datetime)
 }
 
-// Fetch attendance docs for a user, merging by userUuid AND uid.
-// System-generated not_checked_in records may only have uid (no userUuid).
-// Pass sinceIsoDate (YYYY-MM-DD) to scope results and avoid full-history scans.
-async function fetchAttendanceDocs(userUuid: string, sinceIsoDate?: string) {
-  const [byUserUuid, byUid] = await Promise.all([
-    getDocs(query(collection(db, 'attendance'), where('userUuid', '==', userUuid))),
-    getDocs(query(collection(db, 'attendance'), where('uid', '==', userUuid))),
-  ])
+function dedupeDocs(
+  a: QueryDocumentSnapshot<DocumentData>[],
+  b: QueryDocumentSnapshot<DocumentData>[],
+) {
   const seen = new Set<string>()
-  const docs = [...byUserUuid.docs, ...byUid.docs].filter(d => {
+  return [...a, ...b].filter(d => {
     if (seen.has(d.id)) return false
     seen.add(d.id)
     return true
   })
+}
+
+// Fetch attendance docs for a user, merging by userUuid AND uid.
+// System-generated not_checked_in records may only have uid (no userUuid).
+// Pass sinceIsoDate (YYYY-MM-DD) to scope results and avoid full-history scans.
+async function fetchAttendanceDocs(userUuid: string, sinceIsoDate?: string) {
+  if (sinceIsoDate) {
+    // Indexed path — requires composite indexes (userUuid+dateKey, uid+dateKey),
+    // see firestore.indexes.json. Falls back to a full scan below if those
+    // indexes haven't been deployed yet (Firestore throws failed-precondition).
+    try {
+      const [byUserUuid, byUid] = await Promise.all([
+        getDocs(query(
+          collection(db, 'attendance'),
+          where('userUuid', '==', userUuid),
+          where('dateKey', '>=', sinceIsoDate),
+        )),
+        getDocs(query(
+          collection(db, 'attendance'),
+          where('uid', '==', userUuid),
+          where('dateKey', '>=', sinceIsoDate),
+        )),
+      ])
+      return dedupeDocs(byUserUuid.docs, byUid.docs)
+    } catch {
+      // fall through to full scan
+    }
+  }
+
+  const [byUserUuid, byUid] = await Promise.all([
+    getDocs(query(collection(db, 'attendance'), where('userUuid', '==', userUuid))),
+    getDocs(query(collection(db, 'attendance'), where('uid', '==', userUuid))),
+  ])
+  const docs = dedupeDocs(byUserUuid.docs, byUid.docs)
   if (sinceIsoDate) {
     return docs.filter(d => (d.data().dateKey ?? '') >= sinceIsoDate)
   }
@@ -240,7 +271,8 @@ export async function fetchAttendanceByUserThisMonth(userUuid: string): Promise<
       checkOut: data.checkOutTime ?? undefined,
       checkOutTime: data.checkOutTime ?? null,
       status: normalizeAttendanceStatus(data.status),
-      location: data.location,
+      checkInLocation: data.checkInLocation,
+      checkOutLocation: data.checkOutLocation,
       workHours: data.workHours,
       ...(data.isOffsite ? { isOffsite: true } : {}),
       ...(data.checkInImageURL ? { checkInImageURL: data.checkInImageURL } : {}),
@@ -298,7 +330,8 @@ export async function fetchAttendanceByUser(userUuid: string): Promise<Attendanc
       checkOut: data.checkOutTime ?? undefined,
       checkOutTime: data.checkOutTime ?? null,
       status: normalizeAttendanceStatus(data.status),
-      location: data.location,
+      checkInLocation: data.checkInLocation,
+      checkOutLocation: data.checkOutLocation,
       workHours: data.workHours,
       ...(data.isOffsite ? { isOffsite: true } : {}),
       ...(data.checkInImageURL ? { checkInImageURL: data.checkInImageURL } : {}),
@@ -350,7 +383,8 @@ export async function fetchTodayCheckInAttendance(isoDate?: string): Promise<Att
       checkOutTime: data.checkOutTime,
       checkOut: data.checkOutTime || undefined,
       status: normalizeAttendanceStatus(data.status),
-      location: data.location,
+      checkInLocation: data.checkInLocation,
+      checkOutLocation: data.checkOutLocation,
       workHours: data.workHours,
       uid: data.uid,
       userUuid: data.userUuid,

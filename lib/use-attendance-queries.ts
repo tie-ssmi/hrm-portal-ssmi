@@ -197,7 +197,7 @@ export function useCheckIn() {
             date: data.attendanceDate,
             checkIn: data.checkInTime,
             status: data.status,
-            ...(variables.location ? { location: variables.location } : {}),
+            ...(variables.location ? { checkInLocation: variables.location } : {}),
           })
       )
 
@@ -263,7 +263,7 @@ export function useCheckOut() {
             ...(existing?.checkIn ? { checkIn: existing.checkIn } : {}),
             checkOut: data.checkOutTime,
             status: existing?.status ?? 'present',
-            ...(variables.location ? { location: variables.location } : {}),
+            ...(variables.location ? { checkOutLocation: variables.location } : {}),
           })
         }
       )

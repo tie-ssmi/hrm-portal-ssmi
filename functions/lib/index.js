@@ -36,10 +36,11 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.logAuditEvent = exports.recordCheckOut = exports.recordCheckIn = exports.checkAttendanceAt814 = exports.checkAttendanceAt800 = exports.getServerTime = void 0;
+exports.logAuditEvent = exports.recordCheckOut = exports.recordCheckIn = exports.notifyNewOffsiteRequest = exports.notifyNewLeaveRequest = exports.checkAttendanceAt814 = exports.checkAttendanceAt800 = exports.getServerTime = void 0;
 const admin = __importStar(require("firebase-admin"));
 const https_1 = require("firebase-functions/v2/https");
 const scheduler_1 = require("firebase-functions/v2/scheduler");
+const firestore_1 = require("firebase-functions/v2/firestore");
 const web_push_1 = __importDefault(require("web-push"));
 if (admin.apps.length === 0) {
     admin.initializeApp();
@@ -268,6 +269,144 @@ exports.checkAttendanceAt814 = (0, scheduler_1.onSchedule)({ schedule: "14 8 * *
     await sendAttendanceReminder("0814");
 });
 // =========================================================================
+// 🔔 4b. ແຈ້ງເຕືອນ APPROVER ເມື່ອມີໃບລາພັກ / ຄຳຂໍອອກນອກສະຖານທີ່ໃໝ່
+// (real server push — ໄດ້ຮັບເຖິງແມ່ນປິດແອັບ, ຕ່າງຈາກ client-side Notification
+// ໃນ NotificationProvider.tsx ທີ່ໄດ້ຮັບສະເພາະຕອນເປີດແທັບຄ້າງໄວ້)
+// =========================================================================
+async function sendPushToEmployeeDocs(employeeDocs, payload, tag) {
+    const db = admin.firestore();
+    let notified = 0;
+    for (let i = 0; i < employeeDocs.length; i += PUSH_BATCH_SIZE) {
+        const batchDocs = employeeDocs.slice(i, i + PUSH_BATCH_SIZE);
+        const results = await Promise.all(batchDocs.map(async (empDoc) => {
+            var _a;
+            const subscription = (_a = empDoc.data()) === null || _a === void 0 ? void 0 : _a.pushSubscription;
+            if (!subscription)
+                return false;
+            return web_push_1.default
+                .sendNotification(subscription, payload)
+                .then(() => true)
+                .catch(async (err) => {
+                if (err.statusCode === 410 || err.statusCode === 404) {
+                    await db
+                        .collection("employees")
+                        .doc(empDoc.id)
+                        .update({
+                        pushSubscription: admin.firestore.FieldValue.delete(),
+                    });
+                    console.warn(`[${tag}]: removed stale subscription for ${empDoc.id}`);
+                }
+                else {
+                    console.error(`[${tag}]: failed to notify ${empDoc.id}:`, err);
+                }
+                return false;
+            });
+        }));
+        notified += results.filter(Boolean).length;
+    }
+    return notified;
+}
+exports.notifyNewLeaveRequest = (0, firestore_1.onDocumentCreated)({ document: "leaves/{leaveId}", region: "asia-southeast1" }, async (event) => {
+    const snap = event.data;
+    if (!snap)
+        return;
+    const leave = snap.data();
+    if (leave.status !== "pending" || !leave.workLocationUid)
+        return;
+    const db = admin.firestore();
+    const [branchSnap, deptSnap] = await Promise.all([
+        db
+            .collection("employees")
+            .where("rolePermissions.approveBranch", "==", true)
+            .where("workLocation.uuid", "==", leave.workLocationUid)
+            .get(),
+        leave.departmentUid
+            ? db
+                .collection("employees")
+                .where("rolePermissions.approveDepartment", "==", true)
+                .where("workLocation.uuid", "==", leave.workLocationUid)
+                .where("department.uuid", "==", leave.departmentUid)
+                .get()
+            : null,
+    ]);
+    const seen = new Set();
+    const approverDocs = [];
+    for (const snapshot of [branchSnap, deptSnap]) {
+        if (!snapshot)
+            continue;
+        for (const d of snapshot.docs) {
+            if (d.id === leave.leaveUserUuid || seen.has(d.id))
+                continue;
+            seen.add(d.id);
+            approverDocs.push(d);
+        }
+    }
+    if (approverDocs.length === 0)
+        return;
+    const payload = JSON.stringify({
+        title: "🔔 ມີໃບລາພັກໃໝ່!",
+        body: `ພະນັກງານ: ${leave.leaveUserName || "ບໍ່ມີຊື່"} ສົ່ງຄຳຂໍລາພັກ`,
+        icon: "/apple-icon.png",
+        badge: "/SSMI.svg",
+        url: "/dashboard/approv",
+    });
+    const notified = await sendPushToEmployeeDocs(approverDocs, payload, "leave-new");
+    console.log(`[leave-new]: notified ${notified}/${approverDocs.length} approvers for ${event.params.leaveId}`);
+});
+exports.notifyNewOffsiteRequest = (0, firestore_1.onDocumentCreated)({ document: "workOutside/{requestId}", region: "asia-southeast1" }, async (event) => {
+    var _a, _b, _c, _d, _e, _f;
+    const snap = event.data;
+    if (!snap)
+        return;
+    const work = snap.data();
+    if (work.status !== "pending")
+        return;
+    const workLocationUid = work.requesterWorkLocationUid ||
+        ((_b = (_a = work.requester) === null || _a === void 0 ? void 0 : _a.workLocation) === null || _b === void 0 ? void 0 : _b.uid) ||
+        ((_d = (_c = work.requester) === null || _c === void 0 ? void 0 : _c.workLocation) === null || _d === void 0 ? void 0 : _d.uuid) ||
+        ((_f = (_e = work.requester) === null || _e === void 0 ? void 0 : _e.workLocation) === null || _f === void 0 ? void 0 : _f.id);
+    if (!workLocationUid)
+        return;
+    const db = admin.firestore();
+    const [branchSnap, deptSnap] = await Promise.all([
+        db
+            .collection("employees")
+            .where("rolePermissions.approveBranch", "==", true)
+            .where("workLocation.uuid", "==", workLocationUid)
+            .get(),
+        work.departmentUid
+            ? db
+                .collection("employees")
+                .where("rolePermissions.approveDepartment", "==", true)
+                .where("department.uuid", "==", work.departmentUid)
+                .get()
+            : null,
+    ]);
+    const seen = new Set();
+    const approverDocs = [];
+    for (const snapshot of [branchSnap, deptSnap]) {
+        if (!snapshot)
+            continue;
+        for (const d of snapshot.docs) {
+            if (d.id === work.createdByUid || seen.has(d.id))
+                continue;
+            seen.add(d.id);
+            approverDocs.push(d);
+        }
+    }
+    if (approverDocs.length === 0)
+        return;
+    const payload = JSON.stringify({
+        title: "🚗 ມີຄຳຂໍອອກນອກສະຖານທີ່ໃໝ່!",
+        body: `ພະນັກງານ: ${work.createdBy || "ບໍ່ມີຊື່"} — ${work.subject || "ບໍ່ລະບຸ"}`,
+        icon: "/apple-icon.png",
+        badge: "/SSMI.svg",
+        url: "/dashboard/approv",
+    });
+    const notified = await sendPushToEmployeeDocs(approverDocs, payload, "offsite-new");
+    console.log(`[offsite-new]: notified ${notified}/${approverDocs.length} approvers for ${event.params.requestId}`);
+});
+// =========================================================================
 // 📍 5. CHECK-IN ພ້ອມກວດສອບ Geofence ຢູ່ Server
 // =========================================================================
 function haversineMeters(lat1, lng1, lat2, lng2) {
@@ -394,7 +533,12 @@ exports.recordCheckIn = (0, https_1.onCall)(
         .set(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ _id: attendanceId, uid: (_c = data.uid) !== null && _c !== void 0 ? _c : data.userUuid, userUuid: data.userUuid, date, dateKey: isoDate, checkInTime: checkTime, status }, (dayLeaveStatus === "morning_leave"
         ? { morningLeaveDay: true }
         : {})), (data.location
-        ? { location: { lat: data.location.lat, lng: data.location.lng } }
+        ? {
+            checkInLocation: {
+                lat: data.location.lat,
+                lng: data.location.lng,
+            },
+        }
         : {})), (data.fullNameEn != null ? { fullNameEn: data.fullNameEn } : {})), (data.fullNameLo != null ? { fullNameLo: data.fullNameLo } : {})), (data.jobTitle != null ? { jobTitle: data.jobTitle } : {})), (data.employeeImage != null
         ? { employeeImage: data.employeeImage }
         : {})), (data.note != null ? { note: data.note } : {})), (data.department ? { department: data.department } : {})), (data.workLocation ? { workLocation: data.workLocation } : {})), (data.checkInImageURL
@@ -454,7 +598,12 @@ exports.recordCheckOut = (0, https_1.onCall)(
         : {})), (data.department ? { department: data.department } : {})), (data.workLocation ? { workLocation: data.workLocation } : {})), (data.checkOutImageURL
         ? { checkOutImageURL: data.checkOutImageURL }
         : {})), (data.location
-        ? { location: { lat: data.location.lat, lng: data.location.lng } }
+        ? {
+            checkOutLocation: {
+                lat: data.location.lat,
+                lng: data.location.lng,
+            },
+        }
         : {})), (data.deviceLocalId ? { deviceLocalId: data.deviceLocalId } : {})), (data.deviceFingerprint
         ? { deviceFingerprint: data.deviceFingerprint }
         : {})), { updatedAt: new Date().toISOString(), updatedBy: data.userUuid }), { merge: true });
