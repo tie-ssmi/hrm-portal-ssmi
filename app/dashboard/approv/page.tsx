@@ -94,23 +94,12 @@ function ApprovePageContent() {
   const { data: leaveRequests = [] } = useQuery({
     queryKey: leaveQueryKey,
     queryFn: async () => {
-      const result = await fetchLeavesForApproval({
+      return fetchLeavesForApproval({
         departmentUid: departmentUuid!,
         workLocationUid: workLocationUuid!,
         excludeUserUuid: loggedInUserUuid,
         canApproveBranch,
       });
-      // TEMP DEBUG — remove after diagnosing approveBranch visibility issue
-      console.log("[leave-approval-debug]", {
-        canApproveDept,
-        canApproveBranch,
-        departmentUuid,
-        workLocationUuid,
-        rolePermissions: user?.rolePermissions,
-        resultCount: result.length,
-        resultDepartments: result.map((r) => r.departmentUid),
-      });
-      return result;
     },
     // FIX #1: ໃຊ້ canApproveAny ທີ່ declare ຢ່າງຖືກຕ້ອງແລ້ວ
     enabled:
@@ -161,19 +150,40 @@ function ApprovePageContent() {
     queryFn: async () => {
       if (!workLocationUuid) return [];
       const coll = collection(db, "workOutside");
-      const constraints = canApproveBranch
+      const scopeConstraints = canApproveBranch
         ? [where("requester.workLocation.uuid", "==", workLocationUuid)]
         : [
             where("requester.workLocation.uuid", "==", workLocationUuid),
             where("requester.department.uuid", "==", departmentUuid),
           ];
-      const snap = await getDocs(query(coll, ...constraints));
-      // ດຶງສະເພາະ pending ຫຼື ທີ່ endDate ຢູ່ໃນເດືອນປັດຈຸບັນ
       const monthStart = new Date().toISOString().slice(0, 7) + "-01";
-      return snap.docs
-        .map((d) => ({ id: d.id, ...d.data() }) as OffsiteRequestDoc)
+
+      // ດຶງສະເພາະ pending ຫຼື ທີ່ endDate ຢູ່ໃນເດືອນປັດຈຸບັນ — scope ວັນທີ່ຢູ່ query
+      // ໂດຍກົງ (ບໍ່ດຶງທັງໝົດມາ filter ພາຍຫຼັງ), ແຍກ 2 query ແລ້ວ merge ເພາະ Firestore
+      // ບໍ່ຮອງຮັບ OR ຂ້າມ field ໃນ query ດຽວ
+      let rows: OffsiteRequestDoc[];
+      try {
+        const [pendingSnap, thisMonthSnap] = await Promise.all([
+          getDocs(query(coll, ...scopeConstraints, where("status", "==", "pending"))),
+          getDocs(query(coll, ...scopeConstraints, where("endDate", ">=", monthStart))),
+        ]);
+        const seen = new Set<string>();
+        rows = [];
+        for (const d of [...pendingSnap.docs, ...thisMonthSnap.docs]) {
+          if (seen.has(d.id)) continue;
+          seen.add(d.id);
+          rows.push({ id: d.id, ...d.data() } as OffsiteRequestDoc);
+        }
+      } catch {
+        // Composite index missing/still building — fall back to the un-scoped scan.
+        const snap = await getDocs(query(coll, ...scopeConstraints));
+        rows = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() } as OffsiteRequestDoc))
+          .filter((d) => d.status === "pending" || d.endDate >= monthStart);
+      }
+
+      return rows
         .filter((d) => d.createdByUid !== loggedInUserUuid)
-        .filter((d) => d.status === "pending" || d.endDate >= monthStart)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     },
     // FIX #1: ໃຊ້ canApproveAny ທີ່ declare ຢ່າງຖືກຕ້ອງແລ້ວ

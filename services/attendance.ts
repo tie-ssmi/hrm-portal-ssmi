@@ -315,7 +315,11 @@ export async function updateAttendanceCheckOutTime({
 export async function fetchAttendanceByUser(userUuid: string): Promise<AttendanceRecord[]> {
   if (!userUuid) return []
 
-  const docs = await fetchAttendanceDocs(userUuid)
+  // history/page.tsx only ever shows the trailing 12 months (month dropdown) +
+  // the current calendar year (year-to-date stats) — Jan 1 of last year covers
+  // both with margin, so there's no need to download the user's full tenure.
+  const sinceIsoDate = `${new Date().getFullYear() - 1}-01-01`
+  const docs = await fetchAttendanceDocs(userUuid, sinceIsoDate)
   const rows: AttendanceRecord[] = []
 
   for (const docSnapshot of docs) {
@@ -490,8 +494,10 @@ export async function fetchLateRankingForMonth(monthKey: string): Promise<LateRa
   const nextMonthStart = new Date(year, month, 1).toISOString().split('T')[0]
 
   // Try indexed query first (requires composite index on status + dateKey in Firestore console).
-  // If index missing or records pre-date the dateKey field, fall back to full status scan + JS filter.
-  let snapDocs: QueryDocumentSnapshot<DocumentData>[] = []
+  // Only fall back to a full company-wide scan if the query itself fails (e.g. the
+  // composite index isn't deployed yet) — a legitimate 0-result month (nobody was
+  // late) must NOT trigger the fallback, or every quiet month pays for a full scan.
+  let snapDocs: QueryDocumentSnapshot<DocumentData>[]
   try {
     const snap = await getDocs(
       query(
@@ -502,10 +508,9 @@ export async function fetchLateRankingForMonth(monthKey: string): Promise<LateRa
       ),
     )
     snapDocs = snap.docs
-    // If indexed query returns 0, records may use 'date' field only — fall through to fallback
-    if (snapDocs.length === 0) throw new Error('empty — try fallback')
   } catch {
-    // Fallback: fetch all late records and filter in JS (works without composite index)
+    // Composite index missing/still building — fetch all late records and filter in JS.
+    // Also catches legacy records that predate the dateKey field.
     const snap = await getDocs(
       query(collection(db, 'attendance'), where('status', '==', 'late')),
     )

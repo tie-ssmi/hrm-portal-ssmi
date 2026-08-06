@@ -1,9 +1,29 @@
-import { addDoc, collection, doc, getDoc, getDocs, query, updateDoc, where } from 'firebase/firestore'
+import { addDoc, collection, doc, getDoc, getDocs, query, updateDoc, where, type QuerySnapshot, type DocumentData } from 'firebase/firestore'
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
 import { db, storage } from '@/lib/firebase'
 import type { LeaveApprovalStep, LeaveRequest } from '@/lib/types'
 import { resolveLeaveRequestStatus } from '@/services/leave-approval'
 import { logAudit } from '@/services/audit-log'
+
+function toLeaveRows(snapshot: QuerySnapshot<DocumentData>): LeaveRequest[] {
+  return snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<LeaveRequest, 'id'>) }))
+}
+
+// Merge results of a "pending" query + a "date-bounded" query, deduping by id
+// (a request can legitimately match both). Lets each query stay scoped instead
+// of downloading the whole collection to filter status/date in JS afterward.
+function mergeLeaveRows(...groups: LeaveRequest[][]): LeaveRequest[] {
+  const seen = new Set<string>()
+  const merged: LeaveRequest[] = []
+  for (const rows of groups) {
+    for (const row of rows) {
+      if (seen.has(row.id)) continue
+      seen.add(row.id)
+      merged.push(row)
+    }
+  }
+  return merged
+}
 
 export async function uploadLeaveDocument(
   file: File,
@@ -157,28 +177,27 @@ export async function fetchLeavesForApproval(params: {
   if (!workLocationUid || (!canApproveBranch && !departmentUid)) return []
 
   const monthStart = new Date().toISOString().slice(0, 7) + '-01'
-  const leavesQuery = canApproveBranch
-    ? query(
-        collection(db, 'leaves'),
-        where('workLocationUid', '==', workLocationUid),
-      )
-    : query(
-        collection(db, 'leaves'),
-        where('departmentUid', '==', departmentUid),
-        where('workLocationUid', '==', workLocationUid),
-      )
+  const scopeFilters = canApproveBranch
+    ? [where('workLocationUid', '==', workLocationUid)]
+    : [where('departmentUid', '==', departmentUid), where('workLocationUid', '==', workLocationUid)]
 
-  const snapshot = await getDocs(leavesQuery)
-  const rows = snapshot.docs.map((doc) => ({
-    id: doc.id,
-    ...(doc.data() as Omit<LeaveRequest, 'id'>),
-  }))
+  let rows: LeaveRequest[]
+  try {
+    const [pendingSnap, thisMonthSnap] = await Promise.all([
+      getDocs(query(collection(db, 'leaves'), ...scopeFilters, where('status', '==', 'pending'))),
+      getDocs(query(collection(db, 'leaves'), ...scopeFilters, where('endDate', '>=', monthStart))),
+    ])
+    rows = mergeLeaveRows(toLeaveRows(pendingSnap), toLeaveRows(thisMonthSnap))
+  } catch {
+    // Composite index missing/still building — fall back to the un-scoped scan.
+    const snapshot = await getDocs(query(collection(db, 'leaves'), ...scopeFilters))
+    rows = toLeaveRows(snapshot).filter((row) =>
+      row.status === 'pending' || (typeof row.endDate === 'string' && row.endDate >= monthStart)
+    )
+  }
 
   return rows
-    .filter((row) =>
-      row.leaveUserUuid !== excludeUserUuid &&
-      (row.status === 'pending' || (typeof row.endDate === 'string' && row.endDate >= monthStart))
-    )
+    .filter((row) => row.leaveUserUuid !== excludeUserUuid)
     .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
 }
 
@@ -198,18 +217,23 @@ export async function fetchLeavesByUserThisYear(userUuid: string): Promise<Leave
   if (!userUuid) return []
 
   const yearStart = `${new Date().getFullYear()}-01-01`
+  const scopeFilter = where('leaveUserUuid', '==', userUuid)
 
-  const snapshot = await getDocs(
-    query(collection(db, 'leaves'), where('leaveUserUuid', '==', userUuid))
-  )
-
-  return snapshot.docs
-    .map((d) => ({ id: d.id, ...(d.data() as Omit<LeaveRequest, 'id'>) }))
-    .filter((row) =>
-      row.status === 'pending' ||
-      (typeof row.startDate === 'string' && row.startDate >= yearStart)
+  let rows: LeaveRequest[]
+  try {
+    const [pendingSnap, thisYearSnap] = await Promise.all([
+      getDocs(query(collection(db, 'leaves'), scopeFilter, where('status', '==', 'pending'))),
+      getDocs(query(collection(db, 'leaves'), scopeFilter, where('startDate', '>=', yearStart))),
+    ])
+    rows = mergeLeaveRows(toLeaveRows(pendingSnap), toLeaveRows(thisYearSnap))
+  } catch {
+    const snapshot = await getDocs(query(collection(db, 'leaves'), scopeFilter))
+    rows = toLeaveRows(snapshot).filter((row) =>
+      row.status === 'pending' || (typeof row.startDate === 'string' && row.startDate >= yearStart)
     )
-    .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
+  }
+
+  return rows.sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
 }
 
 export async function attachLeaveDocument(params: {
@@ -276,29 +300,49 @@ export async function fetchTodayLeavesByWorkLocation(workLocationUid: string): P
 
   const today = new Date().toISOString().split('T')[0]
 
-  const snapshot = await getDocs(
-    query(
-      collection(db, 'leaves'),
-      where('workLocationUid', '==', workLocationUid),
-      where('status', '==', 'approved'),
+  // A leave active today must not have ended yet — bounding on endDate excludes
+  // every already-finished leave at the query level instead of downloading the
+  // whole branch's history to filter in JS.
+  try {
+    const snapshot = await getDocs(
+      query(
+        collection(db, 'leaves'),
+        where('workLocationUid', '==', workLocationUid),
+        where('status', '==', 'approved'),
+        where('endDate', '>=', today),
+      )
     )
-  )
-
-  return snapshot.docs
-    .map(d => ({ id: d.id, ...(d.data() as Omit<LeaveRequest, 'id'>) }))
-    .filter(r => r.startDate <= today && r.endDate >= today)
+    return toLeaveRows(snapshot).filter(r => r.startDate <= today)
+  } catch {
+    const snapshot = await getDocs(
+      query(
+        collection(db, 'leaves'),
+        where('workLocationUid', '==', workLocationUid),
+        where('status', '==', 'approved'),
+      )
+    )
+    return toLeaveRows(snapshot).filter(r => r.startDate <= today && r.endDate >= today)
+  }
 }
 
 export async function fetchAllTodayLeaves(): Promise<LeaveRequest[]> {
   const today = new Date().toISOString().split('T')[0]
 
-  const snapshot = await getDocs(
-    query(collection(db, 'leaves'), where('status', '==', 'approved'))
-  )
-
-  return snapshot.docs
-    .map(d => ({ id: d.id, ...(d.data() as Omit<LeaveRequest, 'id'>) }))
-    .filter(r => r.startDate <= today && r.endDate >= today)
+  try {
+    const snapshot = await getDocs(
+      query(
+        collection(db, 'leaves'),
+        where('status', '==', 'approved'),
+        where('endDate', '>=', today),
+      )
+    )
+    return toLeaveRows(snapshot).filter(r => r.startDate <= today)
+  } catch {
+    const snapshot = await getDocs(
+      query(collection(db, 'leaves'), where('status', '==', 'approved'))
+    )
+    return toLeaveRows(snapshot).filter(r => r.startDate <= today && r.endDate >= today)
+  }
 }
 
 export async function fetchLeavesByUserUuidFromToday(userUuid: string): Promise<LeaveRequest[]> {
@@ -308,23 +352,28 @@ export async function fetchLeavesByUserUuidFromToday(userUuid: string): Promise<
 
   const now = new Date()
   const monthPrefix = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`
+  const monthStart = `${monthPrefix}-01`
+  const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString().split('T')[0]
+  const scopeFilter = where('leaveUserUuid', '==', userUuid)
 
-  const leavesQuery = query(collection(db, 'leaves'), where('leaveUserUuid', '==', userUuid))
-
-  const snapshot = await getDocs(leavesQuery)
-  const rows = snapshot.docs.map((doc) => ({
-    id: doc.id,
-    ...(doc.data() as Omit<LeaveRequest, 'id'>),
-  }))
-
-  return rows
-    .filter((row) =>
-      // 1. any date — status pending
+  let rows: LeaveRequest[]
+  try {
+    const [pendingSnap, startsThisMonthSnap, endsThisMonthSnap] = await Promise.all([
+      getDocs(query(collection(db, 'leaves'), scopeFilter, where('status', '==', 'pending'))),
+      getDocs(query(collection(db, 'leaves'), scopeFilter, where('startDate', '>=', monthStart), where('startDate', '<', nextMonthStart))),
+      getDocs(query(collection(db, 'leaves'), scopeFilter, where('endDate', '>=', monthStart), where('endDate', '<', nextMonthStart))),
+    ])
+    rows = mergeLeaveRows(toLeaveRows(pendingSnap), toLeaveRows(startsThisMonthSnap), toLeaveRows(endsThisMonthSnap))
+  } catch {
+    const snapshot = await getDocs(query(collection(db, 'leaves'), scopeFilter))
+    rows = toLeaveRows(snapshot).filter((row) =>
       row.status === 'pending' ||
-      // 2. this month — any status
       (typeof row.startDate === 'string' && row.startDate.startsWith(monthPrefix)) ||
       (typeof row.endDate === 'string' && row.endDate.startsWith(monthPrefix))
     )
+  }
+
+  return rows
     .sort((a, b) => {
       // pending always on top
       if (a.status === 'pending' && b.status !== 'pending') return -1
@@ -377,19 +426,35 @@ export async function fetchTodayLeaveStatus(
 ): Promise<DayLeaveStatus> {
   if (!userUuid) return 'none'
 
-  const snap = await getDocs(
-    query(
-      collection(db, 'leaves'),
-      where('leaveUserUuid', '==', userUuid),
-      where('status', '==', 'approved'),
-    ),
-  )
+  // A leave covering isoDate must not have ended before it — bound on endDate
+  // so this doesn't re-download the user's entire approved-leave history on
+  // every check-in attempt.
+  let leaveRows: LeaveRequest[]
+  try {
+    const snap = await getDocs(
+      query(
+        collection(db, 'leaves'),
+        where('leaveUserUuid', '==', userUuid),
+        where('status', '==', 'approved'),
+        where('endDate', '>=', isoDate),
+      ),
+    )
+    leaveRows = toLeaveRows(snap)
+  } catch {
+    const snap = await getDocs(
+      query(
+        collection(db, 'leaves'),
+        where('leaveUserUuid', '==', userUuid),
+        where('status', '==', 'approved'),
+      ),
+    )
+    leaveRows = toLeaveRows(snap)
+  }
 
   let morningCovered = false
   let afternoonCovered = false
 
-  for (const d of snap.docs) {
-    const leave = { id: d.id, ...(d.data() as Omit<LeaveRequest, 'id'>) }
+  for (const leave of leaveRows) {
     const coverage = computeDayCoverage(isoDate, leave)
     if (coverage.morning) morningCovered = true
     if (coverage.afternoon) afternoonCovered = true

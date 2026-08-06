@@ -149,6 +149,28 @@ function formatDuration(d: number): string {
   return d === 0.5 ? "0.5 ວັນ" : d === 1 ? "1 ວັນ" : `${d} ວັນ`;
 }
 
+// Synthesized "ding" — no audio asset needed. Called from a submit-button
+// click handler, so it always has a user-gesture context (AudioContext-safe
+// on Safari/iOS).
+function playSuccessSound() {
+  try {
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime + 0.15);
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.3);
+  } catch {
+    // AudioContext unavailable/blocked — silently skip, popup still shows
+  }
+}
+
 function formatPolicyLimit(
   limitDay?: number,
   limitType?: string,
@@ -241,6 +263,7 @@ export default function LeaveRequestForm() {
   const [docUploadChoice, setDocUploadChoice] = useState<DocUploadChoice>(null);
   const [docFile, setDocFile] = useState<File | null>(null);
   const [isCopySending, setIsCopySending] = useState(false);
+  const [showSuccessDialog, setShowSuccessDialog] = useState(false);
 
   const annualRemaining = leaveBalance.annual - leaveBalance.annualUsed;
   const sickRemaining = leaveBalance.sick - leaveBalance.sickUsed;
@@ -706,7 +729,8 @@ export default function LeaveRequestForm() {
         isHousekeeper ? { autoApproveDeptHead: true } : undefined,
       );
       await refetchMyCurrentLeaves();
-      toast.success("ສົ່ງຄໍາຮ້ອງຂໍສໍາເລັດ");
+      playSuccessSound();
+      setShowSuccessDialog(true);
       setSelectedPolicyValue(leaveTypeOptions[0]?.value || "annual");
       setSelectedSuccessorUid("");
       setLeaveStartDate(undefined);
@@ -1328,6 +1352,21 @@ export default function LeaveRequestForm() {
                 </div>
               );
             })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* Success popup — shown instead of a toast after a request is submitted */}
+      <Dialog open={showSuccessDialog} onOpenChange={setShowSuccessDialog}>
+        <DialogContent className="max-w-xs text-center">
+          <DialogHeader className="items-center">
+            <div className="flex items-center justify-center w-16 h-16 rounded-full bg-emerald-100">
+              <CheckCircle className="w-9 h-9 text-emerald-600" />
+            </div>
+            <DialogTitle>ສົ່ງຄໍາຮ້ອງຂໍສໍາເລັດ</DialogTitle>
+          </DialogHeader>
+          <Button onClick={() => setShowSuccessDialog(false)}>
+            ຕົກລົງ
+          </Button>
         </DialogContent>
       </Dialog>
     </>
