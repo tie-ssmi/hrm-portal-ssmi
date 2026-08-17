@@ -108,6 +108,45 @@ export async function fetchEmployeeByEmail(email: string): Promise<Partial<Emplo
   }
 }
 
+// Source of truth for "which role does this uid hold" — reads the
+// Cloud-Function-maintained userRoles mirror (see functions/src/index.ts,
+// syncEmployeeMirrors) rather than employees/{uid}.rolesUid directly, since
+// firestore.rules no longer trusts that field for permission resolution.
+export async function fetchUserRoleId(uid: string): Promise<string | null> {
+  try {
+    const snap = await getDoc(doc(db, 'userRoles', uid))
+    if (!snap.exists()) return null
+    const roleId = snap.data().roleId
+    return typeof roleId === 'string' ? roleId : null
+  } catch (error) {
+    console.error('Error fetching userRoles doc:', error)
+    return null
+  }
+}
+
+export type EmployeeCompensation = {
+  uid: string
+  currency: string
+  current?: { baseSalary?: number; effectiveFrom?: string }
+}
+
+// Reads the employeeCompensation mirror (see functions/src/index.ts,
+// syncEmployeeMirrors) instead of employees/{uid}.salary — that field is
+// still written by the admin repo but is no longer where the portal reads
+// pay data from, since firestore.rules can't scope read access per-field on
+// a document that other coworkers can legitimately read for its other
+// fields (name, department, tel, ...).
+export async function fetchEmployeeCompensation(uid: string): Promise<EmployeeCompensation | null> {
+  try {
+    const snap = await getDoc(doc(db, 'employeeCompensation', uid))
+    if (!snap.exists()) return null
+    return snap.data() as EmployeeCompensation
+  } catch (error) {
+    console.error('Error fetching employeeCompensation doc:', error)
+    return null
+  }
+}
+
 export async function fetchRoleByUid(rolesUid: string): Promise<RolePermissions | null> {
   try {
     const roleSnap = await getDoc(doc(db, 'roles', rolesUid))

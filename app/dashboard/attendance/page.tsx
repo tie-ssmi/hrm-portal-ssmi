@@ -56,7 +56,8 @@ import {
   useTodayTrip,
 } from "@/lib/use-attendance-queries";
 import { useOfficialHolidays } from "@/lib/use-official-holidays-query";
-import { getVientianeIsoDate } from "@/lib/server-time";
+import { appliesToLocation } from "@/services/officialHolidays";
+import { getVientianeIsoDate, getVientianeHourMinute } from "@/lib/server-time";
 import type { AttendanceRecord } from "@/lib/types";
 
 type LocationState = {
@@ -494,6 +495,48 @@ const OffsiteDetailDialog = memo(function OffsiteDetailDialog({
   );
 });
 
+const EarlyCheckOutDialog = memo(function EarlyCheckOutDialog({
+  open,
+  isSubmitting,
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  isSubmitting: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-amber-500" />
+            ຢືນຢັນອອກວຽກກ່ອນເວລາ
+          </DialogTitle>
+        </DialogHeader>
+        <p className="text-muted-foreground text-sm">
+          ຕອນນີ້ຍັງບໍ່ທັນຮອດ 17:00 ນ. ທ່ານແນ່ໃຈບໍ່ວ່າຕ້ອງການອອກວຽກ?
+        </p>
+        <div className="mt-2 flex gap-2">
+          <Button
+            variant="outline"
+            className="flex-1"
+            onClick={onCancel}
+            disabled={isSubmitting}
+          >
+            ຍົກເລີກ
+          </Button>
+          <Button className="flex-1" onClick={onConfirm} disabled={isSubmitting}>
+            {isSubmitting ? <Spinner className="mr-2" /> : null}
+            ຢືນຢັນອອກວຽກ
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+});
+
 // --- Main page ---
 
 export default function AttendancePage() {
@@ -504,6 +547,10 @@ export default function AttendancePage() {
   // Must use Vientiane time, not the browser's local timezone, since leave/attendance
   // dates are all anchored to Asia/Vientiane regardless of the viewer's device.
   const todayIso = getVientianeIsoDate();
+  const workLocationUuid =
+    typeof user?.workLocation === "object" && user.workLocation !== null
+      ? (user.workLocation as { uuid?: string }).uuid
+      : undefined;
 
   const { data: todayAttendance, isLoading: isLoadingHistory } =
     useTodayAttendance(user?.uuid);
@@ -521,6 +568,8 @@ export default function AttendancePage() {
   const [offsiteDetail, setOffsiteDetail] = useState<AttendanceRecord | null>(
     null,
   );
+  const [showEarlyCheckOutConfirm, setShowEarlyCheckOutConfirm] =
+    useState(false);
 
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraType, setCameraType] = useState<"checkIn" | "checkOut">(
@@ -630,7 +679,17 @@ export default function AttendancePage() {
         blocked: true,
         reason: "ວັນນີ້ເປັນວັນພັກທ້າຍອາທິດ ບໍ່ສາມາດ Check-In ໄດ້",
       };
-    const holiday = holidays.find((h) => h.date === todayIso);
+    // Range + scope aware (not just h.date, the legacy single-day field) —
+    // a multi-day holiday (e.g. a 3-day Pi Mai Lao entry) must block every
+    // day in its range, not only its first day, and only for employees at
+    // an in-scope work location.
+    const holiday = holidays.find(
+      (h) =>
+        h.status !== "cancelled" &&
+        h.startDate <= todayIso &&
+        todayIso <= h.endDate &&
+        appliesToLocation(h.scope, workLocationUuid),
+    );
     if (holiday)
       return { blocked: true, reason: `ວັນນີ້ເປັນວັນພັກ: ${holiday.name}` };
     if (todayLeaveStatus === "blocked")
@@ -646,7 +705,7 @@ export default function AttendancePage() {
           "ທ່ານກຳລັງໄປທັດສະນະ/ວຽກນອກສະຖານທີ່ເປັນກຸ່ມ ບໍ່ສາມາດ Check-In ໄດ້",
       };
     return { blocked: false, reason: "" };
-  }, [holidays, todayIso, todayLeaveStatus, todayTrip]);
+  }, [holidays, todayIso, todayLeaveStatus, todayTrip, workLocationUuid]);
 
   const handleAttendance = useCallback(
     async (type: "checkIn" | "checkOut") => {
@@ -736,6 +795,20 @@ export default function AttendancePage() {
       captureImage,
     ],
   );
+
+  const handleCheckOutClick = useCallback(() => {
+    const { hour } = getVientianeHourMinute();
+    if (hour < 17) {
+      setShowEarlyCheckOutConfirm(true);
+      return;
+    }
+    handleAttendance("checkOut");
+  }, [handleAttendance]);
+
+  const handleConfirmEarlyCheckOut = useCallback(() => {
+    setShowEarlyCheckOutConfirm(false);
+    handleAttendance("checkOut");
+  }, [handleAttendance]);
 
   const officeDistance = useMemo(() => {
     if (!location || location.error) return null;
@@ -869,7 +942,7 @@ export default function AttendancePage() {
               size="lg"
               variant="outline"
               className="h-16 text-lg"
-              onClick={() => handleAttendance("checkOut")}
+              onClick={handleCheckOutClick}
               disabled={
                 submittingType !== null ||
                 checkOutMutation.isPending ||
@@ -914,6 +987,15 @@ export default function AttendancePage() {
       <OffsiteDetailDialog
         detail={offsiteDetail}
         onClose={handleCloseOffsiteDetail}
+      />
+
+      <EarlyCheckOutDialog
+        open={showEarlyCheckOutConfirm}
+        isSubmitting={
+          submittingType === "checkOut" || checkOutMutation.isPending
+        }
+        onConfirm={handleConfirmEarlyCheckOut}
+        onCancel={() => setShowEarlyCheckOutConfirm(false)}
       />
     </div>
   );

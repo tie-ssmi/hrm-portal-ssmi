@@ -36,7 +36,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.logAuditEvent = exports.recordCheckOut = exports.recordCheckIn = exports.notifyNewOffsiteRequest = exports.notifyNewLeaveRequest = exports.checkAttendanceAt814 = exports.checkAttendanceAt800 = exports.getServerTime = void 0;
+exports.logAuditEvent = exports.recordCheckOut = exports.recordCheckIn = exports.notifyNewOffsiteRequest = exports.notifyNewLeaveRequest = exports.checkAttendanceAt814 = exports.checkAttendanceAt800 = exports.backfillUserRoleMirrors = exports.syncEmployeeMirrors = exports.getServerTime = void 0;
 const admin = __importStar(require("firebase-admin"));
 const https_1 = require("firebase-functions/v2/https");
 const scheduler_1 = require("firebase-functions/v2/scheduler");
@@ -179,9 +179,180 @@ exports.getServerTime = (0, https_1.onCall)({ region: "asia-southeast1", cors: c
     return { date, isoDate, checkTime, status, isLate, timestamp: Date.now() };
 });
 // =========================================================================
+// 🔐 1b. SYNC userRoles/{uid} + employeeCompensation/{uid} FROM employees/{uid}
+//
+// employees/{uid} stays client-writable (within the security-rules field
+// allowlist) and the admin repo (HRM-System-SSMI) is still the only place
+// that assigns `rolesUid` or edits `salary` — this function does not change
+// that. It mirrors those two fields into collections that firestore.rules
+// trusts for permission checks (userRoles) and that are properly access-
+// scoped for pay data (employeeCompensation), without requiring the admin
+// repo to change how or where it writes. Deleting `salary`/`rolesUid` from
+// employees entirely is a follow-up that needs the admin repo updated in
+// lockstep (see the migration plan's hand-off checklist).
+// =========================================================================
+exports.syncEmployeeMirrors = (0, firestore_1.onDocumentWritten)({ document: "employees/{docId}", region: "asia-southeast1" }, async (event) => {
+    var _a, _b, _c, _d;
+    const before = (_b = (_a = event.data) === null || _a === void 0 ? void 0 : _a.before) === null || _b === void 0 ? void 0 : _b.data();
+    const after = (_d = (_c = event.data) === null || _c === void 0 ? void 0 : _c.after) === null || _d === void 0 ? void 0 : _d.data();
+    // Some legacy employee docs have a Firestore doc ID that doesn't match
+    // their `uid` field (see the fallback query in lib/employees.ts
+    // resolveEmployeeDocRef) — the `uid` field, not the doc ID, is this
+    // codebase's primary key convention, so mirrors must be keyed by it or
+    // client-side lookups keyed by the real auth uid would miss them.
+    const uid = (after === null || after === void 0 ? void 0 : after.uid) || (before === null || before === void 0 ? void 0 : before.uid) || event.params.docId;
+    if (!uid)
+        return;
+    const db = admin.firestore();
+    // Document deleted — clean up the mirrors too.
+    if (!after) {
+        await Promise.all([
+            db.collection("userRoles").doc(uid).delete(),
+            db.collection("employeeCompensation").doc(uid).delete(),
+        ]);
+        return;
+    }
+    const writes = [];
+    if (after.rolesUid !== (before === null || before === void 0 ? void 0 : before.rolesUid)) {
+        writes.push(after.rolesUid
+            ? db
+                .collection("userRoles")
+                .doc(uid)
+                .set({
+                uid,
+                roleId: after.rolesUid,
+                syncedAt: admin.firestore.FieldValue.serverTimestamp(),
+            })
+            : db.collection("userRoles").doc(uid).delete());
+    }
+    if (after.salary !== (before === null || before === void 0 ? void 0 : before.salary)) {
+        writes.push(after.salary != null
+            ? db
+                .collection("employeeCompensation")
+                .doc(uid)
+                .set({
+                uid,
+                currency: "LAK",
+                current: { baseSalary: after.salary },
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            }, { merge: true })
+            : db.collection("employeeCompensation").doc(uid).delete());
+    }
+    await Promise.all(writes);
+});
+// =========================================================================
+// 🔐 1c. ONE-TIME BACKFILL — userRoles/{uid} + employeeCompensation/{uid}
+//        FOR EMPLOYEES THAT PRE-DATE syncEmployeeMirrors
+//
+// syncEmployeeMirrors only writes on a rolesUid/salary *change* — it never
+// retroactively creates mirrors for existing employees whose role hasn't
+// been touched since it was deployed. This callable does that one-time
+// catch-up. Safe to re-run (set(), not create()).
+//
+// Admin-gated the same way firestore.rules' isAdmin() resolves it — off
+// employees/{uid}.rolesUid directly, not userRoles — so this doesn't
+// depend on the very collection it's backfilling.
+// =========================================================================
+exports.backfillUserRoleMirrors = (0, https_1.onCall)({ region: "asia-southeast1" }, async (request) => {
+    var _a, _b, _c;
+    if (!request.auth) {
+        throw new https_1.HttpsError("unauthenticated", "Must be signed in");
+    }
+    const db = admin.firestore();
+    const callerDoc = await db.collection("employees").doc(request.auth.uid).get();
+    const callerRolesUid = (_a = callerDoc.data()) === null || _a === void 0 ? void 0 : _a.rolesUid;
+    const callerRoleDoc = callerRolesUid
+        ? await db.collection("roles").doc(callerRolesUid).get()
+        : null;
+    if (!((_c = (_b = callerRoleDoc === null || callerRoleDoc === void 0 ? void 0 : callerRoleDoc.data()) === null || _b === void 0 ? void 0 : _b.role) === null || _c === void 0 ? void 0 : _c.loginAdmin)) {
+        throw new https_1.HttpsError("permission-denied", "Admin only");
+    }
+    const employeesSnap = await db.collection("employees").get();
+    let batch = db.batch();
+    let opsInBatch = 0;
+    let userRolesWritten = 0;
+    let compensationWritten = 0;
+    const BATCH_LIMIT = 400; // Firestore hard cap is 500 writes/batch
+    const flushIfNeeded = async () => {
+        if (opsInBatch >= BATCH_LIMIT) {
+            await batch.commit();
+            batch = db.batch();
+            opsInBatch = 0;
+        }
+    };
+    for (const doc of employeesSnap.docs) {
+        const data = doc.data();
+        const uid = data.uid || doc.id;
+        if (!uid)
+            continue;
+        if (data.rolesUid) {
+            batch.set(db.collection("userRoles").doc(uid), {
+                uid,
+                roleId: data.rolesUid,
+                syncedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            opsInBatch++;
+            userRolesWritten++;
+            await flushIfNeeded();
+        }
+        if (data.salary != null) {
+            batch.set(db.collection("employeeCompensation").doc(uid), {
+                uid,
+                currency: "LAK",
+                current: { baseSalary: data.salary },
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            }, { merge: true });
+            opsInBatch++;
+            compensationWritten++;
+            await flushIfNeeded();
+        }
+    }
+    if (opsInBatch > 0) {
+        await batch.commit();
+    }
+    return {
+        employeesScanned: employeesSnap.size,
+        userRolesWritten,
+        compensationWritten,
+    };
+});
+// =========================================================================
 // 🔔 2. ກວດສອບ + ສົ່ງ Push Notification ແຈ້ງເຕືອນ
 // =========================================================================
 const PUSH_BATCH_SIZE = 20;
+// Sends to one device doc under employees/{uid}/devices — replaces the old
+// single pushSubscription field so an employee with a phone + a desktop
+// gets notified on both, not just whichever logged in most recently. On a
+// dead subscription (410/404), only that one device doc is removed.
+async function sendToDevice(db, employeeUid, deviceDoc, payload, tag) {
+    var _a;
+    const data = deviceDoc.data();
+    const subscription = {
+        endpoint: data.endpoint,
+        keys: data.keys,
+        expirationTime: (_a = data.expirationTime) !== null && _a !== void 0 ? _a : null,
+    };
+    if (!subscription.endpoint || !subscription.keys)
+        return false;
+    return web_push_1.default
+        .sendNotification(subscription, payload)
+        .then(() => true)
+        .catch(async (err) => {
+        if (err.statusCode === 410 || err.statusCode === 404) {
+            await db
+                .collection("employees")
+                .doc(employeeUid)
+                .collection("devices")
+                .doc(deviceDoc.id)
+                .delete();
+            console.warn(`[${tag}]: removed stale device ${deviceDoc.id} for ${employeeUid}`);
+        }
+        else {
+            console.error(`[${tag}]: failed to notify ${employeeUid}/${deviceDoc.id}:`, err);
+        }
+        return false;
+    });
+}
 async function sendAttendanceReminder(tag) {
     const { isoDate } = getVientianeParts();
     console.log(`[Cron ${tag}]: checking not-checked-in for ${isoDate}`);
@@ -213,9 +384,7 @@ async function sendAttendanceReminder(tag) {
         if (!empDoc.exists)
             return false;
         const data = empDoc.data();
-        if (!(data === null || data === void 0 ? void 0 : data.pushSubscription))
-            return false;
-        if (data[notifiedField] === isoDate)
+        if ((data === null || data === void 0 ? void 0 : data[notifiedField]) === isoDate)
             return false;
         return true;
     });
@@ -223,33 +392,22 @@ async function sendAttendanceReminder(tag) {
     for (let i = 0; i < eligibleDocs.length; i += PUSH_BATCH_SIZE) {
         const batchDocs = eligibleDocs.slice(i, i + PUSH_BATCH_SIZE);
         const batchResults = await Promise.all(batchDocs.map(async (empDoc) => {
-            var _a;
-            const subscription = (_a = empDoc.data()) === null || _a === void 0 ? void 0 : _a.pushSubscription;
-            return web_push_1.default
-                .sendNotification(subscription, payload)
-                .then(async () => {
+            const devicesSnap = await db
+                .collection("employees")
+                .doc(empDoc.id)
+                .collection("devices")
+                .get();
+            if (devicesSnap.empty)
+                return false;
+            const deviceResults = await Promise.all(devicesSnap.docs.map((deviceDoc) => sendToDevice(db, empDoc.id, deviceDoc, payload, tag)));
+            const anySent = deviceResults.some(Boolean);
+            if (anySent) {
                 await db
                     .collection("employees")
                     .doc(empDoc.id)
                     .update({ [notifiedField]: isoDate });
-                return true;
-            })
-                .catch(async (err) => {
-                // subscription ໝົດອາຍຸ ຫຼື ບໍ່ valid — ລ້າງອອກຈາກ Firestore
-                if (err.statusCode === 410 || err.statusCode === 404) {
-                    await db
-                        .collection("employees")
-                        .doc(empDoc.id)
-                        .update({
-                        pushSubscription: admin.firestore.FieldValue.delete(),
-                    });
-                    console.warn(`[Cron ${tag}]: removed stale subscription for ${empDoc.id}`);
-                }
-                else {
-                    console.error(`[Cron ${tag}]: failed to notify ${empDoc.id}:`, err);
-                }
-                return false;
-            });
+            }
+            return anySent;
         }));
         allResults.push(...batchResults);
     }
@@ -279,32 +437,60 @@ async function sendPushToEmployeeDocs(employeeDocs, payload, tag) {
     for (let i = 0; i < employeeDocs.length; i += PUSH_BATCH_SIZE) {
         const batchDocs = employeeDocs.slice(i, i + PUSH_BATCH_SIZE);
         const results = await Promise.all(batchDocs.map(async (empDoc) => {
-            var _a;
-            const subscription = (_a = empDoc.data()) === null || _a === void 0 ? void 0 : _a.pushSubscription;
-            if (!subscription)
+            const devicesSnap = await db
+                .collection("employees")
+                .doc(empDoc.id)
+                .collection("devices")
+                .get();
+            if (devicesSnap.empty)
                 return false;
-            return web_push_1.default
-                .sendNotification(subscription, payload)
-                .then(() => true)
-                .catch(async (err) => {
-                if (err.statusCode === 410 || err.statusCode === 404) {
-                    await db
-                        .collection("employees")
-                        .doc(empDoc.id)
-                        .update({
-                        pushSubscription: admin.firestore.FieldValue.delete(),
-                    });
-                    console.warn(`[${tag}]: removed stale subscription for ${empDoc.id}`);
-                }
-                else {
-                    console.error(`[${tag}]: failed to notify ${empDoc.id}:`, err);
-                }
-                return false;
-            });
+            const deviceResults = await Promise.all(devicesSnap.docs.map((deviceDoc) => sendToDevice(db, empDoc.id, deviceDoc, payload, tag)));
+            return deviceResults.some(Boolean);
         }));
         notified += results.filter(Boolean).length;
     }
     return notified;
+}
+// Resolves employees who hold a given approval permission (approveBranch /
+// approveDepartment), scoped to a work location (and department, for the
+// department flag). Previously this queried
+// employees.where("rolePermissions.<flag>", "==", true) directly — but
+// nothing anywhere (this repo or the admin repo) ever writes
+// `rolePermissions` onto an employees doc, so that query silently matched
+// zero documents and approver push notifications never fired. Role is now
+// resolved the same way firestore.rules does: roles with the flag set →
+// userRoles pointing at one of those role ids → the matching employees.
+async function resolveApproversForFlag(db, flag, workLocationUid, departmentUid) {
+    const rolesSnap = await db.collection("roles").get();
+    const roleIds = rolesSnap.docs
+        .filter((d) => { var _a, _b; return ((_b = (_a = d.data()) === null || _a === void 0 ? void 0 : _a.role) === null || _b === void 0 ? void 0 : _b[flag]) === true; })
+        .map((d) => d.id);
+    if (roleIds.length === 0)
+        return [];
+    const uids = new Set();
+    for (let i = 0; i < roleIds.length; i += 30) {
+        const batch = roleIds.slice(i, i + 30);
+        const snap = await db
+            .collection("userRoles")
+            .where("roleId", "in", batch)
+            .get();
+        snap.docs.forEach((d) => uids.add(d.id));
+    }
+    if (uids.size === 0)
+        return [];
+    const empRefs = [...uids].map((uid) => db.collection("employees").doc(uid));
+    const empDocs = await db.getAll(...empRefs);
+    return empDocs.filter((d) => {
+        var _a, _b;
+        if (!d.exists)
+            return false;
+        const data = d.data();
+        if (((_a = data.workLocation) === null || _a === void 0 ? void 0 : _a.uuid) !== workLocationUid)
+            return false;
+        if (departmentUid && ((_b = data.department) === null || _b === void 0 ? void 0 : _b.uuid) !== departmentUid)
+            return false;
+        return true;
+    });
 }
 exports.notifyNewLeaveRequest = (0, firestore_1.onDocumentCreated)({ document: "leaves/{leaveId}", region: "asia-southeast1" }, async (event) => {
     const snap = event.data;
@@ -314,32 +500,19 @@ exports.notifyNewLeaveRequest = (0, firestore_1.onDocumentCreated)({ document: "
     if (leave.status !== "pending" || !leave.workLocationUid)
         return;
     const db = admin.firestore();
-    const [branchSnap, deptSnap] = await Promise.all([
-        db
-            .collection("employees")
-            .where("rolePermissions.approveBranch", "==", true)
-            .where("workLocation.uuid", "==", leave.workLocationUid)
-            .get(),
+    const [branchDocs, deptDocs] = await Promise.all([
+        resolveApproversForFlag(db, "approveBranch", leave.workLocationUid),
         leave.departmentUid
-            ? db
-                .collection("employees")
-                .where("rolePermissions.approveDepartment", "==", true)
-                .where("workLocation.uuid", "==", leave.workLocationUid)
-                .where("department.uuid", "==", leave.departmentUid)
-                .get()
-            : null,
+            ? resolveApproversForFlag(db, "approveDepartment", leave.workLocationUid, leave.departmentUid)
+            : Promise.resolve([]),
     ]);
     const seen = new Set();
     const approverDocs = [];
-    for (const snapshot of [branchSnap, deptSnap]) {
-        if (!snapshot)
+    for (const d of [...branchDocs, ...deptDocs]) {
+        if (d.id === leave.leaveUserUuid || seen.has(d.id))
             continue;
-        for (const d of snapshot.docs) {
-            if (d.id === leave.leaveUserUuid || seen.has(d.id))
-                continue;
-            seen.add(d.id);
-            approverDocs.push(d);
-        }
+        seen.add(d.id);
+        approverDocs.push(d);
     }
     if (approverDocs.length === 0)
         return;
@@ -368,31 +541,19 @@ exports.notifyNewOffsiteRequest = (0, firestore_1.onDocumentCreated)({ document:
     if (!workLocationUid)
         return;
     const db = admin.firestore();
-    const [branchSnap, deptSnap] = await Promise.all([
-        db
-            .collection("employees")
-            .where("rolePermissions.approveBranch", "==", true)
-            .where("workLocation.uuid", "==", workLocationUid)
-            .get(),
+    const [branchDocs, deptDocs] = await Promise.all([
+        resolveApproversForFlag(db, "approveBranch", workLocationUid),
         work.departmentUid
-            ? db
-                .collection("employees")
-                .where("rolePermissions.approveDepartment", "==", true)
-                .where("department.uuid", "==", work.departmentUid)
-                .get()
-            : null,
+            ? resolveApproversForFlag(db, "approveDepartment", workLocationUid, work.departmentUid)
+            : Promise.resolve([]),
     ]);
     const seen = new Set();
     const approverDocs = [];
-    for (const snapshot of [branchSnap, deptSnap]) {
-        if (!snapshot)
+    for (const d of [...branchDocs, ...deptDocs]) {
+        if (d.id === work.createdByUid || seen.has(d.id))
             continue;
-        for (const d of snapshot.docs) {
-            if (d.id === work.createdByUid || seen.has(d.id))
-                continue;
-            seen.add(d.id);
-            approverDocs.push(d);
-        }
+        seen.add(d.id);
+        approverDocs.push(d);
     }
     if (approverDocs.length === 0)
         return;

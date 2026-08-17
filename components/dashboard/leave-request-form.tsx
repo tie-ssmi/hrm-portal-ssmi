@@ -72,9 +72,14 @@ import { cn } from "@/lib/utils";
 
 // ** services
 import { getLeaveApproverRuleText } from "@/services/leave-approval";
-import { fetchOfficialHolidays } from "@/services/officialHolidays";
-import { fetchPoliciesForGender } from "@/services/policies";
-import { fetchLeaveBalancesForUserMonth } from "@/services/leave-balances";
+import {
+  fetchOfficialHolidays,
+  buildHolidayDateKeySet,
+} from "@/services/officialHolidays";
+import { calcLeaveDuration } from "@/lib/leave-duration";
+import { fetchPoliciesForGender, resolveEmployeePolicyLimit } from "@/services/policies";
+import { fetchCurrentLeaveBalancesV2 } from "@/services/leave-balances";
+import { resolveEmployeeEmploymentStatus } from "@/lib/employment-status";
 import { getEmployees } from "@/services/employees";
 import FileUpload from "@/components/fileUpload";
 
@@ -87,6 +92,7 @@ type LeaveTypeOption = {
   policyName: string | undefined;
   label: string;
   documentRequired?: "yes" | "option" | "no";
+  countMode?: "workingDays" | "calendarDays";
 };
 
 type DocUploadChoice = "now" | "later" | "skip" | null;
@@ -98,51 +104,6 @@ function getVientianeDateStr(): string {
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
-}
-
-// "MM-YYYY" — matches the leaveBalances doc id format ({month}_{uid}_{policyUuid})
-function getVientianeMonthKey(): string {
-  const [year, month] = getVientianeDateStr().split("-");
-  return `${month}-${year}`;
-}
-
-function calcDuration(
-  startDate?: Date,
-  startPeriod: Period = "morning",
-  endDate?: Date,
-  endPeriod: Period = "afternoon",
-  holidays: Set<string> = new Set(),
-): number | null {
-  if (!startDate || !endDate) return null;
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  start.setHours(0, 0, 0, 0);
-  end.setHours(0, 0, 0, 0);
-  if (start > end) return null;
-  let halfDays = 0;
-  const cursor = new Date(start);
-  while (cursor <= end) {
-    const dateKey = format(cursor, "yyyy-MM-dd");
-    if (!isWeekend(cursor) && !holidays.has(dateKey)) {
-      const isStartDay = cursor.getTime() === start.getTime();
-      const isEndDay = cursor.getTime() === end.getTime();
-      if (isStartDay && isEndDay) {
-        const startIndex = startPeriod === "morning" ? 0 : 1;
-        const endIndex = endPeriod === "morning" ? 0 : 1;
-        const sameDayHalfDays = endIndex - startIndex + 1;
-        if (sameDayHalfDays <= 0) return null;
-        halfDays += sameDayHalfDays;
-      } else if (isStartDay) {
-        halfDays += startPeriod === "morning" ? 2 : 1;
-      } else if (isEndDay) {
-        halfDays += endPeriod === "afternoon" ? 2 : 1;
-      } else {
-        halfDays += 2;
-      }
-    }
-    cursor.setDate(cursor.getDate() + 1);
-  }
-  return halfDays > 0 ? halfDays / 2 : null;
 }
 
 function formatDuration(d: number): string {
@@ -269,6 +230,11 @@ export default function LeaveRequestForm() {
   const sickRemaining = leaveBalance.sick - leaveBalance.sickUsed;
   const personalRemaining = leaveBalance.personal - leaveBalance.personalUsed;
 
+  const employmentStatus = useMemo(
+    () => (user ? resolveEmployeeEmploymentStatus(user) : "permanent"),
+    [user],
+  );
+
   const { data: officialHolidays = [] } = useQuery({
     queryKey: ["officialHolidays"],
     queryFn: fetchOfficialHolidays,
@@ -277,25 +243,8 @@ export default function LeaveRequestForm() {
   });
 
   const holidaySet = useMemo(
-    () => new Set(officialHolidays.map((h) => h.date)),
-    [officialHolidays],
-  );
-
-  const duration = useMemo(
-    () =>
-      calcDuration(
-        leaveStartDate,
-        startPeriod,
-        leaveEndDate,
-        endPeriod,
-        holidaySet,
-      ),
-    [leaveStartDate, startPeriod, leaveEndDate, endPeriod, holidaySet],
-  );
-
-  const approverRuleText = useMemo(
-    () => getLeaveApproverRuleText(duration),
-    [duration],
+    () => buildHolidayDateKeySet(officialHolidays, workLocationUuid),
+    [officialHolidays, workLocationUuid],
   );
 
   const { data: policyRecords = [] } = useQuery({
@@ -303,26 +252,24 @@ export default function LeaveRequestForm() {
     queryFn: () => fetchPoliciesForGender(user?.gender),
   });
 
-  const currentMonthKey = useMemo(() => getVientianeMonthKey(), []);
-
-  const { data: monthlyLeaveBalances = [] } = useQuery({
-    queryKey: ["leaveBalances", loggedInUserUuid, currentMonthKey],
-    queryFn: () => fetchLeaveBalancesForUserMonth(loggedInUserUuid, currentMonthKey),
+  const { data: leaveBalancesV2 = [] } = useQuery({
+    queryKey: ["leaveBalanceV2", loggedInUserUuid],
+    queryFn: () => fetchCurrentLeaveBalancesV2(loggedInUserUuid),
     enabled: !!loggedInUserUuid,
   });
 
   // Keyed by both policyUuid and policyId — services/policies.ts sets
   // PolicyRecord.uuid to the Firestore *document id*, which may or may not be
-  // the same value as leaveBalances.policyUuid depending on how the policies
+  // the same value as leaveBalance.policyUuid depending on how the policies
   // collection was seeded, so we match against whichever one lines up.
   const leaveBalanceByPolicyUuid = useMemo(() => {
-    const map = new Map<string, (typeof monthlyLeaveBalances)[number]>();
-    for (const b of monthlyLeaveBalances) {
+    const map = new Map<string, (typeof leaveBalancesV2)[number]>();
+    for (const b of leaveBalancesV2) {
       if (b.policyUuid) map.set(b.policyUuid, b);
       if (b.policyId) map.set(b.policyId, b);
     }
     return map;
-  }, [monthlyLeaveBalances]);
+  }, [leaveBalancesV2]);
 
   const {
     data: myCurrentLeaveRequests = [],
@@ -338,6 +285,7 @@ export default function LeaveRequestForm() {
   >(null);
 
   const isHousekeeper = user?.rolePermissions?.housekeeper === true;
+  const isCLive = user?.rolePermissions?.CLive === true;
   const isLPB = user?.rolePermissions?.LPB === true;
   const filterByDepartment = isHousekeeper || isLPB;
 
@@ -412,28 +360,38 @@ export default function LeaveRequestForm() {
         if (seen.has(value)) return null;
         seen.add(value);
 
-        // Monthly accrual balance takes over the label (and can hide the
-        // option entirely) when this policy has one for the current month —
-        // otherwise fall back to the static policy-limit label as before.
-        const monthlyBalance =
+        // Employment-status-specific rule gates eligibility for everyone
+        // (even when a v2 balance doc exists — aggregateLeaveBalancesV2 only
+        // ever creates one for eligible policies in the first place).
+        const limit = resolveEmployeePolicyLimit(p, employmentStatus);
+        if (!limit.eligible) return null;
+
+        // leaveBalance v2 doc (if the manual balance job has run for this
+        // employee/policy/period) takes over the label and can hide the
+        // option when nothing's left — otherwise fall back to the resolved
+        // (employment-status-aware) static policy-limit label. Unlike
+        // PolicyList, unlimited/event policies stay selectable here — an
+        // employee still needs to be able to submit a request against them.
+        const balance =
           (p.uuid && leaveBalanceByPolicyUuid.get(p.uuid)) ||
           leaveBalanceByPolicyUuid.get(p.id) ||
           undefined;
-        if (monthlyBalance) {
-          if (monthlyBalance.haveThisMonth <= 0) return null;
+        if (balance) {
+          if (balance.remaining <= 0) return null;
           return {
             value,
             requestType: p.requestType,
             policyUuid: p.uuid,
             policyId: p.id,
             policyName: p.name,
-            label: `${monthlyBalance.policyName}(${monthlyBalance.haveThisMonth} ວັນ)`,
+            label: `${balance.policyName}(${balance.remaining} ວັນ)`,
             documentRequired: p.documentRequired,
+            countMode: p.countMode,
           };
         }
 
         const baseLabel = p.name?.trim() || p.requestType;
-        const limitLabel = formatPolicyLimit(p.limitDay, p.limitType);
+        const limitLabel = formatPolicyLimit(limit.limitDay, limit.limitType);
         return {
           value,
           requestType: p.requestType,
@@ -442,12 +400,14 @@ export default function LeaveRequestForm() {
           policyName: p.name,
           label: limitLabel ? `${baseLabel} (${limitLabel})` : baseLabel,
           documentRequired: p.documentRequired,
+          countMode: p.countMode,
         };
       })
       .filter((o) => o !== null) as LeaveTypeOption[];
     return filtered.length > 0 ? filtered : fallback;
   }, [
     annualRemaining,
+    employmentStatus,
     leaveBalance.annualUsed,
     leaveBalance.personalUsed,
     leaveBalance.sickUsed,
@@ -462,6 +422,31 @@ export default function LeaveRequestForm() {
       leaveTypeOptions.find((o) => o.value === selectedPolicyValue) ??
       leaveTypeOptions[0],
     [leaveTypeOptions, selectedPolicyValue],
+  );
+
+  const duration = useMemo(
+    () =>
+      calcLeaveDuration({
+        startDate: leaveStartDate,
+        startPeriod,
+        endDate: leaveEndDate,
+        endPeriod,
+        holidayDateKeys: holidaySet,
+        countMode: selectedPolicy?.countMode,
+      }),
+    [
+      leaveStartDate,
+      startPeriod,
+      leaveEndDate,
+      endPeriod,
+      holidaySet,
+      selectedPolicy?.countMode,
+    ],
+  );
+
+  const approverRuleText = useMemo(
+    () => getLeaveApproverRuleText(duration),
+    [duration],
   );
 
   const documentRequired = useMemo(
@@ -603,13 +588,13 @@ export default function LeaveRequestForm() {
         ...rest
       } = selectedLeave;
 
-      const newDuration = calcDuration(
-        new Date(selectedLeave.startDate),
-        "afternoon",
-        new Date(selectedLeave.endDate),
-        "afternoon",
-        holidaySet,
-      );
+      const newDuration = calcLeaveDuration({
+        startDate: new Date(selectedLeave.startDate),
+        startPeriod: "afternoon",
+        endDate: new Date(selectedLeave.endDate),
+        endPeriod: "afternoon",
+        holidayDateKeys: holidaySet,
+      });
 
       await submitLeaveRequest({
         ...rest,
@@ -717,6 +702,7 @@ export default function LeaveRequestForm() {
                 .join(" ")
             : undefined,
           jobTitle: user?.jobTitle || user?.position,
+          jobTitleLo: user?.jobTitleLo || undefined,
           workLocationUid: workLocationUuid,
           docStatus:
             docUploadChoice === "now"
@@ -726,7 +712,11 @@ export default function LeaveRequestForm() {
                 : null,
           docLink,
         },
-        isHousekeeper ? { autoApproveDeptHead: true } : undefined,
+        isCLive
+          ? { autoApproveDeptHead: true, autoApproveManager: true }
+          : isHousekeeper
+            ? { autoApproveDeptHead: true }
+            : undefined,
       );
       await refetchMyCurrentLeaves();
       playSuccessSound();

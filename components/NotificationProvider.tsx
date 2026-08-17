@@ -4,12 +4,13 @@
 import { createContext, useContext, useEffect, useState, useRef, useMemo, useCallback } from "react";
 
 // ** third party
-import { collection, doc, query, updateDoc, where, onSnapshot } from "firebase/firestore";
+import { collection, doc, query, setDoc, serverTimestamp, where, onSnapshot } from "firebase/firestore";
 import { toast } from "sonner";
 
 // ** config / utils / types / hooks
 import { useAuth } from "@/lib/auth-context";
 import { db } from "@/lib/firebase";
+import { getDeviceInfo } from "@/lib/device";
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
@@ -77,9 +78,18 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         }
 
         const serialized = JSON.parse(JSON.stringify(subscription));
+        const { localId } = await getDeviceInfo();
+        if (!localId) return;
 
-        await updateDoc(doc(db, "employees", uid), {
-          pushSubscription: serialized,
+        // Keyed by device, not by employee — a phone + a desktop each get
+        // their own doc, so both receive notifications instead of only
+        // whichever device subscribed last (the old single-field behavior).
+        await setDoc(doc(db, "employees", uid, "devices", localId), {
+          endpoint: serialized.endpoint,
+          keys: serialized.keys,
+          expirationTime: serialized.expirationTime ?? null,
+          userAgent: navigator.userAgent,
+          lastSeenAt: serverTimestamp(),
         });
       } catch (err) {
         console.error("[Push] subscription failed:", err);

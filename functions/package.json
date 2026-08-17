@@ -6,7 +6,7 @@
     "shell": "npm run build && firebase functions:shell",
     "start": "npm run shell",
     "deploy": "npm run build && firebase deploy --only functions",
-    "deploy:dev": "npm run build && firebase --project hrm-dev-24dff deploy --only functions",
+    "deploy_dev": "npm run build && firebase --project hrm-dev-24dff deploy --only functions",
     "logs": "firebase functions:log"
   },
   "engines": {

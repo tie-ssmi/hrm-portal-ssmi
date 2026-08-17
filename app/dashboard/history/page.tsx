@@ -475,7 +475,8 @@ export default function HistoryPage() {
           }
           if (isAbsent(r.status) && isNullish(r.checkOutTime)) return sum + 2;
           if (isAbsent(r.status) && !isNullish(r.checkOutTime)) return sum + 1;
-          if (r.status !== "leave" && isNullish(r.checkOutTime)) return sum + 1;
+          if (r.status === "leave" || r.status === "trip") return sum;
+          if (isNullish(r.checkOutTime)) return sum + 1;
           return sum;
         }, 0);
         const fines =

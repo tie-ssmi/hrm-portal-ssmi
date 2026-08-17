@@ -147,6 +147,7 @@ function normalizeAttendanceStatus(status: AttendanceDoc['status']): AttendanceR
   if (status === 'absent') return 'absent'
   if (status === 'leave') return 'leave'
   if (status === 'offsite') return 'offsite'
+  if (status === 'trip') return 'trip'
   if (status === 'not_check_in' || status === 'not_checked_in') return 'not_check_in'
   return 'present'
 }

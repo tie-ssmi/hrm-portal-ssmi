@@ -58,11 +58,13 @@ import { useHRM } from "@/lib/hrm-context";
 import { db } from "@/lib/firebase";
 import { useUserLeaves } from "@/lib/use-leave-queries";
 import { useLateRankingForMonth } from "@/lib/use-late-ranking-queries";
-import type { LeaveRequest, PolicyRecord } from "@/lib/types";
+import type { EmploymentStatus, LeaveBalanceV2, LeaveRequest, PolicyRecord } from "@/lib/types";
 import type { OffsiteRequestDoc } from "@/types/workOutside";
+import { resolveEmployeeEmploymentStatus } from "@/lib/employment-status";
 
 // ** services
-import { fetchPoliciesForGender } from "@/services/policies";
+import { fetchPoliciesForGender, resolveEmployeePolicyLimit } from "@/services/policies";
+import { fetchCurrentLeaveBalancesV2 } from "@/services/leave-balances";
 
 const VISIBLE_COUNT = 3;
 
@@ -74,9 +76,17 @@ function buildRankMonths(): string[] {
   });
 }
 
-function PolicyRow({ policy, used }: { policy: PolicyRecord; used: number }) {
-  const total = policy.days ?? 0;
+function PolicyRow({
+  policy,
+  used,
+  total,
+}: {
+  policy: PolicyRecord;
+  used: number;
+  total: number;
+}) {
   const pct = total > 0 ? Math.min((used / total) * 100, 100) : 0;
+  const over = used > total;
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between text-sm">
@@ -84,11 +94,15 @@ function PolicyRow({ policy, used }: { policy: PolicyRecord; used: number }) {
           <Calendar className="text-chart-2 h-4 w-4" />
           {policy.name || policy.requestType}
         </span>
-        <span className="text-muted-foreground">
+        <span className={over ? "text-destructive" : "text-muted-foreground"}>
           {used} / {total} ວັນ
         </span>
       </div>
-      <Progress value={pct} className="h-2" />
+      <Progress
+        value={pct}
+        className="h-2"
+        indicatorClassName={over ? "bg-destructive" : undefined}
+      />
     </div>
   );
 }
@@ -96,41 +110,84 @@ function PolicyRow({ policy, used }: { policy: PolicyRecord; used: number }) {
 function PolicyList({
   policies,
   usedByPolicy,
+  employmentStatus,
+  balanceByPolicy,
 }: {
   policies: PolicyRecord[];
   usedByPolicy: Map<string, number>;
+  employmentStatus: EmploymentStatus;
+  balanceByPolicy: Map<string, LeaveBalanceV2>;
 }) {
   const [open, setOpen] = useState(false);
-  const visible = policies.slice(0, VISIBLE_COUNT);
-  const hidden = policies.slice(VISIBLE_COUNT);
+
+  const applicable = policies
+    .map((policy) => {
+      const limit = resolveEmployeePolicyLimit(policy, employmentStatus);
+      if (!limit.eligible) return null;
+      if (limit.limitType === "unlimited" || limit.limitType === "event") return null;
+
+      // leaveBalance v2 doc (if the manual balance job has run for this
+      // employee/policy/period) is authoritative — it reflects any manual
+      // HR adjustment on top of the raw policy entitlement. Fall back to the
+      // naive policy-limit/approved-leave calc when no doc exists yet.
+      const balance =
+        (policy.uuid && balanceByPolicy.get(policy.uuid)) ||
+        balanceByPolicy.get(policy.id);
+
+      if (balance) {
+        // Shown against the fixed entitlement rather than the adjustment-
+        // reduced `available`, folding adjustment (pre-digital-system used
+        // days, stored negative) and pending into "used" instead — this still
+        // lands on the same `remaining` as the admin panel:
+        // entitlement - (used + pending - adjustment) = available - used - pending = remaining
+        return {
+          policy,
+          total: balance.entitlement,
+          used: balance.used + balance.pending - balance.adjustment,
+        };
+      }
+
+      return {
+        policy,
+        total: limit.limitDay ?? 0,
+        used:
+          usedByPolicy.get(policy.uuid ?? "") ?? usedByPolicy.get(policy.id) ?? 0,
+      };
+    })
+    .filter((row): row is { policy: PolicyRecord; total: number; used: number } => row !== null);
+
+  if (applicable.length === 0) {
+    return (
+      <p className="text-muted-foreground py-2 text-center text-sm">
+        ບໍ່ມີສິດນະໂຍບາຍລາພັກສຳລັບສະຖານະນີ້
+      </p>
+    );
+  }
+
+  const visible = applicable.slice(0, VISIBLE_COUNT);
+  const hidden = applicable.slice(VISIBLE_COUNT);
   const hasMore = hidden.length > 0;
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="space-y-4">
-      {visible.map((policy) => (
+      {visible.map((row) => (
         <PolicyRow
-          key={policy.uuid ?? policy.id}
-          policy={policy}
-          used={
-            usedByPolicy.get(policy.uuid ?? "") ??
-            usedByPolicy.get(policy.id) ??
-            0
-          }
+          key={row.policy.uuid ?? row.policy.id}
+          policy={row.policy}
+          used={row.used}
+          total={row.total}
         />
       ))}
 
       {hasMore && (
         <>
           <CollapsibleContent className="space-y-4">
-            {hidden.map((policy) => (
+            {hidden.map((row) => (
               <PolicyRow
-                key={policy.uuid ?? policy.id}
-                policy={policy}
-                used={
-                  usedByPolicy.get(policy.uuid ?? "") ??
-                  usedByPolicy.get(policy.id) ??
-                  0
-                }
+                key={row.policy.uuid ?? row.policy.id}
+                policy={row.policy}
+                used={row.used}
+                total={row.total}
               />
             ))}
           </CollapsibleContent>
@@ -161,6 +218,11 @@ export default function DashboardPage() {
   const now = new Date();
   const currentMonthKey = `${(now.getMonth() + 1).toString().padStart(2, "0")}-${now.getFullYear()}`;
 
+  const employmentStatus = useMemo(
+    () => (user ? resolveEmployeeEmploymentStatus(user) : "permanent"),
+    [user],
+  );
+
   const { data: policies = [] } = useQuery({
     queryKey: ["policies", "gender", user?.gender ?? null],
     queryFn: () => fetchPoliciesForGender(user?.gender),
@@ -169,6 +231,23 @@ export default function DashboardPage() {
 
   // all leaves for policy usage calculation
   const { data: userLeaves = [] } = useUserLeaves(user?.uuid);
+
+  // authoritative leaveBalance v2 docs (manual-only job — not every employee
+  // has one yet; PolicyList falls back to the policy/leaves calc when absent)
+  const { data: leaveBalancesV2 = [] } = useQuery({
+    queryKey: ["leaveBalanceV2", user?.uid ?? null],
+    queryFn: () => fetchCurrentLeaveBalancesV2(user!.uid!),
+    enabled: !!user?.uid,
+  });
+
+  const balanceByPolicy = useMemo(() => {
+    const map = new Map<string, LeaveBalanceV2>();
+    for (const b of leaveBalancesV2) {
+      if (b.policyUuid) map.set(b.policyUuid, b);
+      if (b.policyId) map.set(b.policyId, b);
+    }
+    return map;
+  }, [leaveBalancesV2]);
 
   // late ranking — last 5 months selector (memoised so array reference is stable)
   const rankMonths = useMemo(buildRankMonths, []);
@@ -269,9 +348,11 @@ export default function DashboardPage() {
         // came >10:01 but checked out → 1 pt
         if (r.status === "not_check_in" && r.checkOutTime != null)
           return sum + 1;
+        if (r.status === "leave"||r.status === "trip")
+          return sum;
         if (
-          r.status !== "not_check_in" &&
-          r.status !== "leave" &&
+          r.status === "present" &&
+          
           r.checkOutTime == null
         )
           return sum + 1;
@@ -438,7 +519,12 @@ export default function DashboardPage() {
               ບໍ່ມີຂໍ້ມູນລາພັກ
             </p>
           ) : (
-            <PolicyList policies={policies} usedByPolicy={usedByPolicy} />
+            <PolicyList
+              policies={policies}
+              usedByPolicy={usedByPolicy}
+              employmentStatus={employmentStatus}
+              balanceByPolicy={balanceByPolicy}
+            />
           )}
         </CardContent>
       </Card>

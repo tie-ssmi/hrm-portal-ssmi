@@ -25,6 +25,20 @@ export function getVientianeIsoDate(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: TIMEZONE }).format(new Date())
 }
 
+// Current hour/minute in Vientiane time — use for time-of-day gating (e.g.
+// early check-out confirmation), not the viewer's local device time.
+export function getVientianeHourMinute(): { hour: number; minute: number } {
+  const formatter = new Intl.DateTimeFormat('en-GB', {
+    timeZone: TIMEZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+  const parts = formatter.formatToParts(new Date())
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '00'
+  return { hour: parseInt(get('hour'), 10), minute: parseInt(get('minute'), 10) }
+}
+
 export function fetchServerTime(_userUuid?: string): Promise<ServerTimeResult> {
   const now = new Date()
   const formatter = new Intl.DateTimeFormat('en-GB', {

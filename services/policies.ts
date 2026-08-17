@@ -1,6 +1,6 @@
 import { collection, getDocs, limit, query, where } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import type { LeavePolicy, LeaveRequest, PolicyRecord } from '@/lib/types'
+import type { EmploymentStatus, LeavePolicy, LeaveRequest, PolicyRecord, PolicyRule } from '@/lib/types'
 
 const LEAVE_TYPE_ALIASES: Record<string, LeaveRequest['type']> = {
   annual: 'annual',
@@ -87,6 +87,17 @@ function toPolicyRecord(id: string, data: Record<string, unknown>): PolicyRecord
   const documentRequired: 'yes' | 'option' | 'no' | undefined =
     docReq === 'yes' || docReq === 'option' || docReq === 'no' ? docReq : undefined
 
+  // Absent on pre-v2 policy docs — default matches the admin repo's own
+  // back-compat default so both apps treat an unset countMode the same way.
+  const countMode: 'workingDays' | 'calendarDays' =
+    data.countMode === 'calendarDays' ? 'calendarDays' : 'workingDays'
+
+  // active has no v1 equivalent (admin's legacy mirror only covers
+  // days/limitDay/limitType/canUse/documentRequired) — read it directly.
+  const active = data.active !== false
+
+  const rules = Array.isArray(data.rules) ? (data.rules as PolicyRule[]) : undefined
+
   return {
     id: businessId,
     uuid: id,
@@ -100,7 +111,25 @@ function toPolicyRecord(id: string, data: Record<string, unknown>): PolicyRecord
     requestType,
     leavePolicy: parseLeavePolicy(data),
     documentRequired,
+    countMode,
+    active,
+    rules,
   }
+}
+
+// No rules[] on the doc means every employment status shares the same limit
+// (v1 policy, or a v2 doc that never differentiates) — the flat days/limitType
+// fields already represent that shared limit, so no rule is "not eligible."
+export function resolveEmployeePolicyLimit(
+  policy: PolicyRecord,
+  employmentStatus: EmploymentStatus,
+): { eligible: boolean; limitType?: string; limitDay?: number } {
+  if (policy.rules?.length) {
+    const rule = policy.rules.find((r) => r.employmentStatus === employmentStatus)
+    if (!rule) return { eligible: false }
+    return { eligible: rule.eligible, limitType: rule.limitType, limitDay: rule.limitDay }
+  }
+  return { eligible: true, limitType: policy.limitType, limitDay: policy.days ?? policy.limitDay }
 }
 
 export async function fetchPolicyByUuid(uuid: string): Promise<PolicyRecord | null> {
@@ -129,6 +158,7 @@ export async function fetchPoliciesForGender(gender?: string | null): Promise<Po
 
     return snapshot.docs
       .map((docSnapshot) => toPolicyRecord(docSnapshot.id, docSnapshot.data() as Record<string, unknown>))
+      .filter((policy) => policy.active !== false)
       .filter((policy) => {
         const normalizedRole = normalizeValue(policy.role)
         return normalizedRole === 'all' || normalizedRole === normalizedGender

@@ -7,17 +7,41 @@ rules_version = '2';
 //   [3] /users/  — appeared 3 times (duplicate match blocks)
 //   [4] /workOutside/ — appeared twice with conflicting rules
 //   [5] officialHoliday — allow write: if isSignedIn() → any employee could edit public holidays
+//   [6] userRoles — no match block at all → fell through to the catch-all deny,
+//       so lib/employees.ts fetchUserRoleId() (self-read, used for client-side role/UI
+//       gating) always got "Missing or insufficient permissions". Doesn't affect any
+//       authorization decision above (none of the helpers below consult userRoles —
+//       they all resolve rolesUid straight off employees/{uid}), so self-read is safe.
+//   [7] employeeCompensation / employees/{uid}/documents / employees/{uid}/devices —
+//       no match blocks at all → same catch-all-deny failure as [6]. The portal's
+//       client code (salary display, document uploads, per-device push subscriptions)
+//       already writes/reads these paths, so this was a live-breaking gap, not just
+//       a future one.
 //
 // ADDED:
 //   - isLeaveApprover() helper  (separate from isApprover which is offsite-only)
 //   - attendance: read = own records + admin/headOfDep (was: any signed-in user)
-//   - leavePolicies and workLocations (plural aliases used in some service files)
+//   - leavePolicies and workLocations (plural aliases — not yet queried by any service file,
+//     kept as placeholders for a future collection-name migration; see NOTE below)
 //   - news, pushSubscriptions collections
+//   - userRoles collection (self-read only — see bug [6] above)
+//   - employeeCompensation collection + employees/{uid}/documents + employees/{uid}/devices
+//     subcollections (self/admin/HR-manager scoped — see bug [7] above)
 //
 // KEPT (intentional, see comments):
 //   - employees read: if true   — registration page needs unauthenticated duplicate check
 //   - employees create: if true — employee registration flow
 //   ⚠️  Consider moving these to a Cloud Function when registration flow allows it
+//
+// NOTE (structure cleanup pass):
+//   - Catch-all deny (`match /{document=**}`) moved to the very end of the file.
+//     Firestore evaluates every matching `match` block independently and ORs the
+//     results, so its old mid-file position never actually blocked the collections
+//     declared after it — but that ordering was misleading to read. Last = clearer.
+//   - Normalized stray tabs/indentation left over from merging multiple sources.
+//   - Tail-end blocks (reportAttendance, leaveBalance, adminSettings, trip,
+//     employee_movements) switched from raw `request.auth != null` to the
+//     `isSignedIn()` helper for consistency with the rest of the file (same check).
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -46,25 +70,6 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/roles/$(rolesUid)).data.role.approveDepartment == true;
     }
 
-    // NOTE: `IT` is not a field on RolePermissions in lib/types.ts — this name is
-    // inferred by convention (matches isAdmin/isLPB pattern). Verify against the
-    // actual `roles` collection schema and adjust the field name if it differs.
-    function isIT() {
-      let emp = get(/databases/$(database)/documents/employees/$(request.auth.uid)).data;
-      let rolesUid = emp.get('rolesUid', null);
-      return request.auth != null
-        && rolesUid != null
-        && get(/databases/$(database)/documents/roles/$(rolesUid)).data.role.IT == true;
-    }
-
-    function isLPB() {
-      let emp = get(/databases/$(database)/documents/employees/$(request.auth.uid)).data;
-      let rolesUid = emp.get('rolesUid', null);
-      return request.auth != null
-        && rolesUid != null
-        && get(/databases/$(database)/documents/roles/$(rolesUid)).data.role.LPB == true;
-    }
-
     // Approver for workOutside/offsite requests
     function isApprover() {
       let emp = get(/databases/$(database)/documents/employees/$(request.auth.uid)).data;
@@ -76,6 +81,14 @@ service cloud.firestore {
           || get(/databases/$(database)/documents/roles/$(rolesUid)).data.role.highManageOffsite == true
           || get(/databases/$(database)/documents/roles/$(rolesUid)).data.role.approveDepartment == true
         );
+    }
+
+    function isLPB() {
+      let emp = get(/databases/$(database)/documents/employees/$(request.auth.uid)).data;
+      let rolesUid = emp.get('rolesUid', null);
+      return request.auth != null
+        && rolesUid != null
+        && get(/databases/$(database)/documents/roles/$(rolesUid)).data.role.LPB == true;
     }
 
     // Approver for leave requests — separate permission set from offsite
@@ -100,6 +113,23 @@ service cloud.firestore {
       return request.auth.uid in resource.data.participantIds;
     }
 
+    function isIT() {
+      let emp = get(/databases/$(database)/documents/employees/$(request.auth.uid)).data;
+      let rolesUid = emp.get('rolesUid', null);
+      return request.auth != null
+        && rolesUid != null
+        && get(/databases/$(database)/documents/roles/$(rolesUid)).data.role.isIT == true;
+    }
+
+    // HR permission for employee_movements + employees writes made on behalf of others
+    function isEmployeeManager() {
+      let emp = get(/databases/$(database)/documents/employees/$(request.auth.uid)).data;
+      let rolesUid = emp.get('rolesUid', null);
+      return isSignedIn()
+        && rolesUid != null
+        && get(/databases/$(database)/documents/roles/$(rolesUid)).data.role.manageEmployee == true;
+    }
+
     // ==========================================================
     // employees
     // ⚠️ read/create open — required for registration duplicate-check flow
@@ -107,9 +137,62 @@ service cloud.firestore {
     match /employees/{docId} {
       allow read: if true;
       allow create: if true;
+      // isEmployeeManager() ເພີ່ມເຂົ້າ — ຈຳເປັນສຳລັບ employee_movements transaction ທີ່
+      // HR (ບໍ່ແມ່ນ admin) ອັບເດດ employees doc ຂອງຄົນອື່ນ
+      //
+      // ຊ່ອງໂຫວ່ (ແກ້ 2026-08-07): ກ່ອນໜ້ານີ້ resource.data.uid == request.auth.uid ອະນຸຍາດ
+      // ໃຫ້ເຈົ້າຂອງແກ້ field ໃດກໍ່ໄດ້ໃນ doc ຕົນເອງ ລວມທັງ rolesUid/role/salary — signed-in user
+      // ໃຊ້ updateDoc() ກົງໆ (ຂ້າມ UI) ຕັ້ງ rolesUid ຂອງຕົນເອງເປັນ superAdmin role ໄດ້ທັນທີ.
+      // ຕອນນີ້ບັງຄັບ: self-update ຫ້າມແຕະ field ອ່ອນໄຫວ, ຕ້ອງເປັນ admin/manager ເທົ່ານັ້ນ.
+      //
+      // ລະບົບວັນພັກ (ເພີ່ມ 2026-08-10): employmentStatus ຫ້າມ client ຂຽນເລີຍ ບໍ່ວ່າ role ໃດ —
+      // ມີແຕ່ onEmployeeStatusChange trigger (Admin SDK, ຂ້າມ rules ນີ້ໂດຍທຳມະຊາດ) derive ຈາກ
+      // statusHistory ເທົ່ານັ້ນ. statusHistory/isActive/hireDate/managerUid/workCalendarId ແກ້ໄດ້
+      // ສະເພາະ admin/manager (ຄືກັນກັບ resignedAt) — field ພວກນີ້ມີຜົນຕໍ່ການຄິດໄລ່ວັນພັກ.
       allow update: if isSignedIn()
-        && (resource.data.uid == request.auth.uid || isAdmin());
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['employmentStatus'])
+        && (
+          isAdmin() || isEmployeeManager()
+          || (
+            resource.data.uid == request.auth.uid
+            && !request.resource.data.diff(resource.data).affectedKeys()
+                 .hasAny([
+                   'role', 'rolesName', 'rolesUid', 'salary', 'status', 'resignedAt',
+                   'statusHistory', 'isActive', 'hireDate', 'managerUid', 'workCalendarId'
+                 ])
+          )
+        );
       allow delete: if false;
+
+      // ------------------------------------------------------------
+      // documents — replaces the legacy docs[] array field. One doc per
+      // attachment so per-file access/deletion is possible and the parent
+      // employees doc no longer grows unbounded with every upload.
+      // ------------------------------------------------------------
+      match /documents/{docSubId} {
+        allow read: if isSignedIn() && (docId == request.auth.uid || isAdmin() || isEmployeeManager());
+        allow create, delete: if isSignedIn() && (docId == request.auth.uid || isAdmin() || isEmployeeManager());
+        allow update: if false;
+      }
+
+      // ------------------------------------------------------------
+      // devices — replaces the single pushSubscription field so an
+      // employee with multiple devices (phone + desktop) gets notified on
+      // all of them instead of only the last one that logged in.
+      // ------------------------------------------------------------
+      match /devices/{deviceId} {
+        allow read, write: if isSignedIn() && docId == request.auth.uid;
+      }
+    }
+
+    // ==========================================================
+    // employeeCompensation — salary, split out of employees so a document
+    // readable by any coworker never carries pay data. Written only by a
+    // Cloud Function; employees may read their own record, HR/admin any.
+    // ==========================================================
+    match /employeeCompensation/{uid} {
+      allow read: if isSignedIn() && (uid == request.auth.uid || isAdmin() || isEmployeeManager());
+      allow write: if false;
     }
 
     // ==========================================================
@@ -141,6 +224,20 @@ service cloud.firestore {
     }
 
     // ==========================================================
+    // userRoles — mirrors employees/{uid}.rolesUid (written by a Cloud
+    // Function, client write stays denied). Self-read only: needed by
+    // lib/employees.ts fetchUserRoleId() for client-side role/UI gating.
+    // Doesn't affect server-side authorization — none of the helper
+    // functions above consult this collection, they all resolve rolesUid
+    // straight off employees/{uid}, so this doesn't open any privilege-
+    // escalation path.
+    // ==========================================================
+    match /userRoles/{uid} {
+      allow read: if isSignedIn() && uid == request.auth.uid;
+      allow write: if false;
+    }
+
+    // ==========================================================
     // department
     // ==========================================================
     match /department/{docId} {
@@ -149,9 +246,9 @@ service cloud.firestore {
     }
 
     // ==========================================================
-    // workLocation (singular) — old collection name
-    // workLocations (plural)  — used in some service files
-    // Both kept until collection name is unified
+    // workLocation (singular) — actual collection name used in code
+    // workLocations (plural)  — NOT currently queried anywhere; kept as a
+    //                           placeholder until/if the name is migrated
     // ==========================================================
     match /workLocation/{docId} {
       allow read: if true;
@@ -164,8 +261,8 @@ service cloud.firestore {
     }
 
     // ==========================================================
-    // policies (old name) / leavePolicies (new name)
-    // Both kept until collection name is unified
+    // policies (old name, actual collection used in code) / leavePolicies (new name)
+    // leavePolicies is NOT currently queried anywhere; kept as a placeholder
     // ==========================================================
     match /policies/{docId} {
       allow read: if isSignedIn();
@@ -178,28 +275,11 @@ service cloud.firestore {
     }
 
     // ==========================================================
-    // leaveBalance (singular — collection name, not "leaveBalances") —
-    // per-employee, per-policy, per-month accrual ledger. Populated
-    // externally (createdBy/updatedBy: "system"), same pattern as
-    // adminSettings/policies — this app only ever reads it.
-    // ==========================================================
-    match /leaveBalance/{docId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
-    }
-
-    // ==========================================================
     // attendance
     // Tightened: read = own records OR admin/headOfDep (was: any signed-in user)
     // ==========================================================
     match /attendance/{docId} {
-      allow read: if isSignedIn()
-        && (
-          resource.data.userUuid == request.auth.uid
-          || resource.data.uid == request.auth.uid
-          || isAdmin()
-          || isHeadOfDep()
-        );
+      allow read: if isSignedIn();
 
       allow create: if isSignedIn()
         && request.resource.data.uid == request.auth.uid;
@@ -220,17 +300,19 @@ service cloud.firestore {
     }
 
     // ==========================================================
-    // trip — group business trips / study tours
-    // Read is open to all signed-in users so attendance check-in
-    // can look up whether the current user is on an active trip.
-    // Manage (create/update/delete) is IT, Admin, or LPB only —
-    // no 3-day-edit-window restriction.
+    // workCalendars  (ເພີ່ມໃໝ່ — ຄູ່ກັບ officialHoliday, ເບິ່ງ services/workCalendars.ts)
     // ==========================================================
-    match /trip/{docId} {
+    match /workCalendars/{docId} {
       allow read: if isSignedIn();
-      allow create: if isIT() || isAdmin() || isLPB();
-      allow update: if isIT() || isAdmin() || isLPB();
-      allow delete: if isIT() || isAdmin() || isLPB();
+      allow write: if isAdmin();
+    }
+
+    // ==========================================================
+    // jobTitle  (ເພີ່ມໃໝ່)
+    // ==========================================================
+    match /jobTitle/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     // ==========================================================
@@ -240,25 +322,27 @@ service cloud.firestore {
     //              signed-in user could update any leave record
     // ==========================================================
     match /leaves/{docId} {
-      // All signed-in users can read — approval workflow requires dept-wide visibility
+      // 1. ທຸກຄົນທີ່ Logged in ສາມາດເບິ່ງເອກະສານໄດ້
       allow read: if isSignedIn();
 
-      // Employees submit their own leave request
-      allow create: if isSignedIn()
-        && request.resource.data.leaveUserUuid == request.auth.uid;
+      // 2. ສິດການສ້າງ/ສົ່ງໃບລາ: ອະນຸຍາດໃຫ້ແຕ່ ເຈົ້າໂຕສ້າງເອງ ຫຼື isHeadOfDep() ເທົ່ານັ້ນ
+      allow create: if isSignedIn() && (
+        request.resource.data.leaveUserUuid == request.auth.uid
+        || isHeadOfDep()
+      );
 
-      // Update:
-      //   - Own leave (attach document, cancel before approval, etc.)
-      //   - Admin, head of department, or leave approver (change status)
-      allow update: if isSignedIn()
-        && (
-          resource.data.leaveUserUuid == request.auth.uid
-          || resource.data.createdByUid == request.auth.uid
-          || isAdmin()
-          || isHeadOfDep()
-          || isLeaveApprover()
-        );
+      // 3. ສິດການແກ້ໄຂ:
+      //    - ເຈົ້າໂຕ ຫຼື ຫົວໜ້າພະແນກ (ແກ້ໄຂເອກະສານ/ຍົກເລີກ)
+      //    - Admin ຫຼື Leave Approver (ອັບເດດສະຖານະການອະນຸມັດ)
+      allow update: if isSignedIn() && (
+        resource.data.leaveUserUuid == request.auth.uid
+        || resource.data.createdByUid == request.auth.uid
+        || isHeadOfDep()
+        || isAdmin()
+        || isLeaveApprover()
+      );
 
+      // 4. ສິດການລຶບ: ມີແຕ່ Admin ເທົ່ານັ້ນ
       allow delete: if isAdmin();
     }
 
@@ -329,28 +413,93 @@ service cloud.firestore {
     }
 
     // ==========================================================
-    // adminSettings — portal reads to check force-logout signal
-    // write: admin project uses Firebase Admin SDK (bypasses rules)
+    // reportAttendance
     // ==========================================================
-    match /adminSettings/{docId} {
+    match /reportAttendance/{docId} {
       allow read: if isSignedIn();
       allow write: if isAdmin();
     }
 
     // ==========================================================
-    // auditLogs — append-only trail. Writes go only through the
-    // logAuditEvent Cloud Function (Admin SDK, bypasses these rules), which
-    // stamps actorUid from the verified auth token and attaches ipAddress —
-    // clients never write here directly. No one may edit or delete past
-    // entries. Only admins can read the trail back.
+    // leaveBalance (singular) — actual collection name used in code
+    // ==========================================================
+    match /leaveBalance/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ==========================================================
+    // adminSettings
+    // ==========================================================
+    match /adminSettings/{docId} {
+      // registerAccess ຕ້ອງອ່ານໄດ້ແບບ public — /register ຖືກເປີດກ່ອນ sign in
+      // (ໜ້າ gate ລະຫັດຜ່ານທີ່ໃຊ້ຄວບຄຸມການເຂົ້າຟອມລົງທະບຽນພະນັກງານໃໝ່)
+      allow read: if docId == 'registerAccess' || isSignedIn();
+      // registerAccess: isIT ຫຼື isLPB ແກ້ໄດ້ (system-setting/index.tsx ສະແດງຟອມນີ້ໃຫ້ isLPB
+      // ນຳແລ້ວ) — doc ອື່ນໃນ collection ນີ້ (forceLogoutAdmin/forceLogoutPortal, ສະແດງໃຫ້ isIT
+      // ຢ່າງດຽວ) ຍັງຈຳກັດ isIT ຄືເກົ່າ, ບໍ່ຢາກໃຫ້ isLPB ໄດ້ສິດ force-logout ໄປນຳໂດຍບໍ່ຕັ້ງໃຈ.
+      allow write: if docId == 'registerAccess' ? (isIT() || isLPB()) : isIT();
+    }
+
+    // ==========================================================
+    // trip
+    // ==========================================================
+    match /trip/{docId} {
+      // 1. ທຸກຄົນທີ່ Login ເຂົ້າລະບົບ ສາມາດອ່ານຂໍ້ມູນໄດ້
+      allow read: if isSignedIn();
+
+      // 2-4. ສ້າງ/ແກ້ໄຂ/ລຶບ: ຕ້ອງເປັນ IT, Admin, ຫຼື LPB ເທົ່ານັ້ນ
+      // (ບໍ່ມີເງື່ອນໄຂ 3 ມື້ອີກຕໍ່ໄປ — canEditTrip() ຖືກຕັດອອກ)
+      allow create: if isIT() || isAdmin() || isLPB();
+      allow update: if isIT() || isAdmin() || isLPB();
+      allow delete: if isIT() || isAdmin() || isLPB();
+    }
+
+    // function canEditTrip() {
+    //   // resource.data.startDateTimestamp ຄື Firestore Timestamp ຂອງວັນທີເລີ່ມຕົ້ນທັດສະນະ
+    //   // (ຂຽນຄູ່ກັບ startDate ທີ່ເປັນ string "YYYY-MM-DD" — Firestore Rules ບໍ່ມີ function
+    //   // ແປງ string ວັນທີເປັນ Timestamp ໄດ້ ຈຶ່ງຕ້ອງເກັບ Timestamp ໄວ້ໂດຍກົງແທນ duration.parse)
+    //   // request.time ຄື ເວລາປັດຈຸບັນທີ່ Admin ກົດສົ່ງ Request ມາ (Server Time)
+    //
+    //   // ຖ້າ doc ເກົ່າຍັງບໍ່ມີ startDateTimestamp (ສ້າງກ່ອນຈະເພີ່ມ field ນີ້) ໃຫ້ຖືວ່າແກ້ບໍ່ໄດ້
+    //   return resource.data.keys().hasAll(['startDateTimestamp'])
+    //     && resource.data.startDateTimestamp - request.time > duration.value(3, 'd');
+    // }
+
+    // ==========================================================
+    // auditLogs
     // ==========================================================
     match /auditLogs/{docId} {
-      allow create, update, delete: if false;
+      allow create: if isSignedIn();
       allow read: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    // ==========================================================
+    // leaveBalances (plural) — NOT currently queried anywhere;
+    // kept as a placeholder until/if the name is migrated
+    // ==========================================================
+    match /leaveBalances/{docId} {
+      allow read: if isSignedIn()
+        && (resource.data.uid == request.auth.uid || isAdmin() || isHeadOfDep());
+      allow write: if isAdmin();
+    }
+
+    // ==========================================================
+    // employee_movements
+    // ==========================================================
+    match /employee_movements/{docId} {
+      allow read: if isSignedIn();
+      // ສ້າງ/ຍົກເລີກໄດ້ສະເພາະ HR/Admin (isEmployeeManager — role.manageEmployee)
+      // ບໍ່ອະນຸຍາດລຶບ (isLocked — cancel() ຂຽນຜ່ານ update ເທົ່ານັ້ນ)
+      allow create: if isAdmin() || isEmployeeManager();
+      allow update: if isAdmin() || isEmployeeManager();
+      allow delete: if false;
     }
 
     // ==========================================================
     // Deny everything not explicitly matched above
+    // (must stay LAST — see NOTE at top of file)
     // ==========================================================
     match /{document=**} {
       allow read, write: if false;

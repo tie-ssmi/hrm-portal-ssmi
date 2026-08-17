@@ -23,6 +23,7 @@ import {
   EyeOff,
   Layers,
   Pencil,
+  Clock,
 } from "lucide-react";
 
 // ** shared components
@@ -83,6 +84,8 @@ import { toast } from "sonner";
 
 // ** config / utils / types / hooks
 import { useAuth } from "@/lib/auth-context";
+import { useEmployeeCompensation } from "@/lib/use-compensation-query";
+import { resolveTenureLabel } from "@/lib/employment-status";
 import type { EducationEntry, Employee } from "@/lib/types";
 
 function toStr(value: unknown): string {
@@ -272,6 +275,11 @@ export default function ProfilePage() {
 
   const toggleSalary = useCallback(() => setShowSalary((v) => !v), []);
 
+  const tenureLabel = useMemo(
+    () => (profileUser ? resolveTenureLabel(profileUser) : null),
+    [profileUser],
+  );
+
   const employmentFields = useMemo<InfoField[]>(
     () => [
       {
@@ -309,17 +317,22 @@ export default function ProfilePage() {
         ),
         icon: IdCard,
       },
+      {
+        label: "ອາຍຸການ",
+        value: tenureLabel ?? "-",
+        icon: Clock,
+      },
     ],
-    [profileUser],
+    [profileUser, tenureLabel],
   );
 
-  const salaryDisplay = useMemo(
-    () =>
-      profileUser?.salary
-        ? toStr(NumberFormatter.NoZero(profileUser.salary)) + " ກີບ"
-        : "-",
-    [profileUser?.salary],
-  );
+  const { data: compensation } = useEmployeeCompensation(firebaseUser?.uid);
+  const salaryDisplay = useMemo(() => {
+    const baseSalary = compensation?.current?.baseSalary;
+    return baseSalary
+      ? toStr(NumberFormatter.NoZero(baseSalary)) + " ກີບ"
+      : "-";
+  }, [compensation]);
 
   const personalFields = useMemo<InfoField[]>(
     () => [
@@ -506,6 +519,12 @@ export default function ProfilePage() {
                 {profileUser.employeeType && (
                   <Badge variant="outline">
                     {toStr(profileUser.employeeType)}
+                  </Badge>
+                )}
+                {tenureLabel && (
+                  <Badge variant="outline" className="gap-1">
+                    <Clock className="h-3 w-3" />
+                    {tenureLabel}
                   </Badge>
                 )}
               </div>

@@ -2,6 +2,7 @@ import type { User as FirebaseUser } from "firebase/auth";
 
 export interface RolePermissions {
   AuditDashboard: boolean;
+  CLive: boolean;
   LPB: boolean;
   approveBranch: boolean;
   approveDepartment: boolean;
@@ -18,6 +19,7 @@ export interface RolePermissions {
   manageOffsite: boolean;
   managePolicy: boolean;
   manageRole: boolean;
+  secretaty: boolean;
   viewEmployee: boolean;
   viewLeave: boolean;
   viewNews: boolean;
@@ -90,6 +92,7 @@ export interface Employee {
   major?: string;
   drivingLicenseType?: string;
   jobTitle?: string;
+  jobTitleLo?: string;
   role?: string;
   rolesUid?: string;
   rolesName?: string;
@@ -104,6 +107,20 @@ export interface Employee {
   declarationUrl?: string;
   docs?: DocEntry[];
   createdAt?: any;
+  // Written by the admin repo (HRM-System-SSMI) — employment lifecycle
+  hireDate?: string;
+  employmentStatus?: string;
+  statusHistory?: EmploymentStatusEntry[];
+  managerUid?: string;
+  workCalendarId?: string;
+  isActive?: boolean;
+  resignedAt?: string | null;
+}
+
+export interface EmploymentStatusEntry {
+  status: string;
+  from: string;
+  to: string | null;
 }
 
 export interface AttendanceRecord {
@@ -194,6 +211,7 @@ export interface LeaveRequest {
   successorNameLo?: string;
   successorNameEn?: string;
   jobTitle?: string;
+  jobTitleLo?: string;
   doc?: string;
   docLink?: string;
   docStatus?: "now" | "later" | null;
@@ -243,6 +261,17 @@ export interface LeavePolicy {
   personal: number;
 }
 
+export type EmploymentStatus = "intern" | "probation95" | "permanent";
+export type PolicyRuleLimitType = "month" | "year" | "event" | "unlimited";
+
+export interface PolicyRule {
+  employmentStatus: EmploymentStatus;
+  eligible: boolean;
+  limitType?: PolicyRuleLimitType;
+  limitDay?: number;
+  reason?: string;
+}
+
 export interface PolicyRecord {
   id: string;
   uuid?: string;
@@ -256,21 +285,36 @@ export interface PolicyRecord {
   requestType: string;
   leavePolicy: LeavePolicy;
   documentRequired?: "yes" | "option" | "no";
+  countMode?: "workingDays" | "calendarDays";
+  active?: boolean;
+  rules?: PolicyRule[];
 }
 
-// Per-employee, per-policy, per-month accrual ledger — doc id is
-// "{month}_{uid}_{policyUuid}" where month is "MM-YYYY".
-export interface LeaveBalanceRecord {
+// Authoritative per-employee, per-policy, per-period balance — written by the
+// admin repo's runLeaveBalanceSummaryV2 (HRM-System-SSMI/functions/src/index.ts).
+// Doc id is "{period}_{uid}_{policyId}" where period is "YYYY" (year policies)
+// or "YYYY-MM" (month policies). Coexists in the same `leaveBalance` collection
+// as the older LeaveBalanceRecord docs above — distinguish via schemaVersion.
+export interface LeaveBalanceV2 {
   id: string;
   uid: string;
   policyId: string;
   policyUuid: string;
   policyName: string;
-  month: string; // "MM-YYYY"
+  periodType: "month" | "year";
+  period: string;
+  periodStart: string; // "YYYY-MM-DD"
+  periodEnd: string; // "YYYY-MM-DD"
+  employmentStatusAtGrant: EmploymentStatus;
+  countMode: "workingDays" | "calendarDays";
   entitlement: number;
-  haveLastMonth: number;
-  haveThisMonth: number;
-  usedThisMonth: number;
+  adjustment: number;
+  available: number;
+  used: number;
+  pending: number;
+  remaining: number;
+  locked: boolean;
+  schemaVersion: number;
 }
 
 export interface LateRecord {
@@ -333,7 +377,7 @@ export interface HRMContextType {
   leaveRequests: LeaveRequest[];
   submitLeaveRequest: (
     request: Omit<LeaveRequest, "id" | "status" | "createdAt">,
-    options?: { autoApproveDeptHead?: boolean },
+    options?: { autoApproveDeptHead?: boolean; autoApproveManager?: boolean },
   ) => Promise<void>;
   reviewLeaveRequest: (
     requestId: string,

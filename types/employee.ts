@@ -33,6 +33,7 @@ export interface Employee {
   graduatedFrom: string;
   major: string;
   jobTitle: string;
+  jobTitleLo?: string;
   employeeType: string;
   department?: string | EmployeeDepartment;
   departmentUid ?: string;

@@ -71,7 +71,7 @@ async function getEmployeesModule() {
 }
 
 async function resolveEmployeeForFirebaseUser(firebaseUser: FirebaseUser): Promise<Partial<Employee> | null> {
-  const { fetchEmployeeByEmail, fetchEmployeeByUid, fetchRoleByUid, updateEmployeeUidByEmail } = await getEmployeesModule()
+  const { fetchEmployeeByEmail, fetchEmployeeByUid, fetchRoleByUid, fetchUserRoleId, updateEmployeeUidByEmail } = await getEmployeesModule()
   let employeeData = await fetchEmployeeByUid(firebaseUser.uid)
 
   if (!employeeData && firebaseUser.email) {
@@ -92,9 +92,14 @@ async function resolveEmployeeForFirebaseUser(firebaseUser: FirebaseUser): Promi
     }
   }
 
-  if (employeeData?.rolesUid) {
-    const rolePermissions = await fetchRoleByUid(employeeData.rolesUid)
-    if (rolePermissions) {
+  // Resolved from userRoles (synced by the syncEmployeeMirrors Cloud
+  // Function), not employeeData.rolesUid directly — see firestore.rules,
+  // which stopped trusting that field for the same reason.
+  const resolvedUid = employeeData?.uid || firebaseUser.uid
+  const roleId = await fetchUserRoleId(resolvedUid)
+  if (roleId) {
+    const rolePermissions = await fetchRoleByUid(roleId)
+    if (rolePermissions && employeeData) {
       employeeData = { ...employeeData, rolePermissions }
     }
   }

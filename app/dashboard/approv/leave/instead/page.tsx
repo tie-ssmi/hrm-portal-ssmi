@@ -40,7 +40,8 @@ import { buildInitialLeaveApprovals, getLeaveApproverRuleText } from '@/services
 import { fetchLeavesByUserUuidFromToday } from '@/services/leaves'
 import { fetchPoliciesForGender } from '@/services/policies'
 import { getEmployees } from '@/services/employees'
-import { fetchOfficialHolidays } from '@/services/officialHolidays'
+import { fetchOfficialHolidays, buildHolidayDateKeySet } from '@/services/officialHolidays'
+import { calcLeaveDuration } from '@/lib/leave-duration'
 type Period = 'morning' | 'afternoon'
 type LeaveTypeOption = {
   value: string
@@ -49,39 +50,7 @@ type LeaveTypeOption = {
   policyId: string
   policyName: string | undefined
   label: string
-}
-
-function calcDuration(startDate?: Date, startPeriod: Period = 'morning', endDate?: Date, endPeriod: Period = 'afternoon', holidays: Set<string> = new Set()): number | null {
-  if (!startDate || !endDate) return null
-  const start = new Date(startDate)
-  const end = new Date(endDate)
-  start.setHours(0, 0, 0, 0)
-  end.setHours(0, 0, 0, 0)
-  if (start > end) return null
-  let halfDays = 0
-  const cursor = new Date(start)
-  while (cursor <= end) {
-    const dateKey = format(cursor, 'yyyy-MM-dd')
-    if (!isWeekend(cursor) && !holidays.has(dateKey)) {
-      const isStartDay = cursor.getTime() === start.getTime()
-      const isEndDay = cursor.getTime() === end.getTime()
-      if (isStartDay && isEndDay) {
-        const startIndex = startPeriod === 'morning' ? 0 : 1
-        const endIndex = endPeriod === 'morning' ? 0 : 1
-        const sameDayHalfDays = endIndex - startIndex + 1
-        if (sameDayHalfDays <= 0) return null
-        halfDays += sameDayHalfDays
-      } else if (isStartDay) {
-        halfDays += startPeriod === 'morning' ? 2 : 1
-      } else if (isEndDay) {
-        halfDays += endPeriod === 'afternoon' ? 2 : 1
-      } else {
-        halfDays += 2
-      }
-    }
-    cursor.setDate(cursor.getDate() + 1)
-  }
-  return halfDays > 0 ? halfDays / 2 : null
+  countMode?: 'workingDays' | 'calendarDays'
 }
 
 function formatDuration(d: number): string {
@@ -119,6 +88,10 @@ function getStatusBadgeClass(status: string) {
     default: return 'bg-amber-100 text-amber-700 border-amber-200'
   }
 }
+
+// ຄະນະອຳນວຍການ (C Level) — secretaries can file leave-on-behalf for this
+// department in addition to their own, scoped to their own work location.
+const CLEVEL_DEPARTMENT_UID = 'bFbgmtSNSdKmTnKKKDM4'
 
 function SectionHeader({ number, icon: Icon, title }: { number: number; icon: React.ElementType; title: string }) {
   return (
@@ -167,16 +140,9 @@ export default function InsteadLeaveRequestForm() {
   })
 
   const holidaySet = useMemo(
-    () => new Set(officialHolidays.map((h) => h.date)),
-    [officialHolidays],
+    () => buildHolidayDateKeySet(officialHolidays, workLocationUuid),
+    [officialHolidays, workLocationUuid],
   )
-
-  const duration = useMemo(
-    () => calcDuration(leaveStartDate, startPeriod, leaveEndDate, endPeriod, holidaySet),
-    [leaveStartDate, startPeriod, leaveEndDate, endPeriod, holidaySet]
-  )
-
-  const approverRuleText = useMemo(() => getLeaveApproverRuleText(duration), [duration])
 
   const { data: policyRecords = [] } = useQuery({
     queryKey: ['policies', 'leave-types', user?.gender ?? null],
@@ -188,26 +154,36 @@ export default function InsteadLeaveRequestForm() {
     refetch: refetchMyCurrentLeaves,
     error: myCurrentLeavesError,
   } = useQuery({
-    queryKey: ['leaves', 'my-current', loggedInUserUuid],
-    queryFn: () => fetchLeavesByUserUuidFromToday(loggedInUserUuid),
-    enabled: !!loggedInUserUuid,
+    queryKey: ['leaves', 'my-current', selectedLeaveForUid],
+    queryFn: () => fetchLeavesByUserUuidFromToday(selectedLeaveForUid),
+    enabled: !!selectedLeaveForUid,
   })
 
   const isHousekeeper = user?.rolePermissions?.housekeeper === true
+  const isSecretary = user?.rolePermissions?.secretaty === true
   const isLPB = user?.rolePermissions?.LPB === true
-  const filterByDepartment = isHousekeeper || isLPB
+  const filterByDepartment = isHousekeeper || isLPB || isSecretary
+
+  // Secretaries file leave on behalf of their own department plus the C
+  // Level department, still scoped to their own work location — an
+  // executive at another branch is out of scope.
+  const secretaryDepartmentUuids = useMemo(
+    () => Array.from(new Set([departmentUuid, CLEVEL_DEPARTMENT_UID].filter(Boolean))) as string[],
+    [departmentUuid],
+  )
 
   const { data: employeesData = [] } = useQuery({
     queryKey: [
       'employees',
-      filterByDepartment ? departmentUuid : null,
+      isSecretary ? secretaryDepartmentUuids : filterByDepartment ? departmentUuid : null,
       workLocationUuid ?? null,
     ],
     queryFn: () =>
-      getEmployees({
-        ...(filterByDepartment ? { departmentUuid } : {}),
-        workLocationUuid,
-      }),
+      getEmployees(
+        isSecretary
+          ? { departmentUuids: secretaryDepartmentUuids, workLocationUuid }
+          : { ...(filterByDepartment ? { departmentUuid } : {}), workLocationUuid },
+      ),
     enabled: !!workLocationUuid,
   })
 
@@ -239,9 +215,9 @@ export default function InsteadLeaveRequestForm() {
         seen.add(value)
         const baseLabel = p.name?.trim() || p.requestType
         const limitLabel = formatPolicyLimit(p.limitDay, p.limitType)
-        return { value, requestType: p.requestType, policyUuid: p.uuid, policyId: p.id, policyName: p.name, label: limitLabel ? `${baseLabel} (${limitLabel})` : baseLabel }
+        return { value, requestType: p.requestType, policyUuid: p.uuid, policyId: p.id, policyName: p.name, label: limitLabel ? `${baseLabel} (${limitLabel})` : baseLabel, countMode: p.countMode }
       })
-      .filter((o): o is LeaveTypeOption => o !== null)
+      .filter((o) => o !== null) as LeaveTypeOption[]
     return filtered.length > 0 ? filtered : fallback
   }, [annualRemaining, leaveBalance.annualUsed, leaveBalance.personalUsed, leaveBalance.sickUsed, personalRemaining, policyRecords, sickRemaining])
 
@@ -249,6 +225,21 @@ export default function InsteadLeaveRequestForm() {
     () => leaveTypeOptions.find((o) => o.value === selectedPolicyValue) ?? leaveTypeOptions[0],
     [leaveTypeOptions, selectedPolicyValue]
   )
+
+  const duration = useMemo(
+    () =>
+      calcLeaveDuration({
+        startDate: leaveStartDate,
+        startPeriod,
+        endDate: leaveEndDate,
+        endPeriod,
+        holidayDateKeys: holidaySet,
+        countMode: selectedPolicy?.countMode,
+      }),
+    [leaveStartDate, startPeriod, leaveEndDate, endPeriod, holidaySet, selectedPolicy?.countMode]
+  )
+
+  const approverRuleText = useMemo(() => getLeaveApproverRuleText(duration), [duration])
 
   const selectedLeaveFor = useMemo(
     () => employeesData.find(emp => empKey(emp) === selectedLeaveForUid),
@@ -341,10 +332,13 @@ export default function InsteadLeaveRequestForm() {
         successorNameLo: selectedSuccessor ? [selectedSuccessor.firstNameLo, selectedSuccessor.lastNameLo].filter(Boolean).join(' ') : undefined,
         successorNameEn: selectedSuccessor ? [selectedSuccessor.firstNameEn, selectedSuccessor.lastNameEn].filter(Boolean).join(' ') : undefined,
         jobTitle: selectedLeaveFor.jobTitle,
+        jobTitleLo: selectedLeaveFor.jobTitleLo || undefined,
         workLocationUid: typeof selectedLeaveFor.workLocation === 'string'
           ? selectedLeaveFor.workLocation
           : selectedLeaveFor.workLocation?.uuid,
-      }, { autoApproveDeptHead: true })
+      }, employeeDept?.uuid === CLEVEL_DEPARTMENT_UID
+        ? { autoApproveDeptHead: true, autoApproveManager: true }
+        : { autoApproveDeptHead: true })
       await refetchMyCurrentLeaves()
       toast.success('ສົ່ງຄໍາຮ້ອງຂໍສໍາເລັດ (ອະນຸມັດຂັ້ນຕົ້ນແລ້ວ)')
       setOpenConfirmDialog(false)
@@ -606,10 +600,19 @@ export default function InsteadLeaveRequestForm() {
       {/* Recent requests */}
       <Card className="mt-4">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">ຄໍາຮ້ອງຂໍລ່າສຸດ</CardTitle>
+          <CardTitle className="text-base">
+            {selectedLeaveFor
+              ? `ຄໍາຮ້ອງຂໍລ່າສຸດຂອງ ${employeeName(selectedLeaveFor)}`
+              : 'ຄໍາຮ້ອງຂໍລ່າສຸດ'}
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          {myCurrentLeaveRequests.length === 0 ? (
+          {!selectedLeaveForUid ? (
+            <div className="flex flex-col items-center py-6 text-muted-foreground gap-2">
+              <FileText className="w-8 h-8 opacity-30" />
+              <p className="text-sm">ເລືອກຜູ້ລາພັກກ່ອນເພື່ອເບິ່ງຄໍາຮ້ອງຂໍລ່າສຸດ</p>
+            </div>
+          ) : myCurrentLeaveRequests.length === 0 ? (
             <div className="flex flex-col items-center py-6 text-muted-foreground gap-2">
               <FileText className="w-8 h-8 opacity-30" />
               <p className="text-sm">ຍັງບໍ່ມີຄໍາຮ້ອງຂໍ</p>

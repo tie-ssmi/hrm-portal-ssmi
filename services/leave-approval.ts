@@ -9,11 +9,14 @@ export function getRequiredLeaveApprovers(duration?: number): LeaveApproverRole[
 
 export function buildInitialLeaveApprovals(
   duration?: number,
-  options?: { autoApproveDeptHead?: boolean },
+  options?: { autoApproveDeptHead?: boolean; autoApproveManager?: boolean },
 ): LeaveApprovalStep[] {
   const today = new Date().toISOString().split('T')[0]
   return getRequiredLeaveApprovers(duration).map((role) => {
-    if (role === 'departmentHead' && options?.autoApproveDeptHead) {
+    const autoApprove =
+      (role === 'departmentHead' && options?.autoApproveDeptHead) ||
+      (role === 'manager' && options?.autoApproveManager)
+    if (autoApprove) {
       return { role, decision: 'approved' as const, reviewedAt: today, reviewedBy: 'System' }
     }
     return { role, decision: 'pending' as const }

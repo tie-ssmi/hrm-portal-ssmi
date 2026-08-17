@@ -9,7 +9,12 @@
       "Bash(node -e \"const p = require\\('./package.json'\\); console.log\\('next:', p.dependencies?.next || p.devDependencies?.next\\)\")",
       "Bash(Get-Content \"c:\\\\Users\\\\muale\\\\Desktop\\\\SSMI\\\\hrm-portal-ssmi\\\\package.json\")",
       "Bash(Select-String '\"next\"')",
-      "Bash(Remove-Item -Path \"app\\\\dashboard\\\\approv\\\\loading.tsx\", \"app\\\\dashboard\\\\attendance\\\\loading.tsx\", \"app\\\\dashboard\\\\history\\\\loading.tsx\", \"app\\\\dashboard\\\\loading.tsx\", \"app\\\\dashboard\\\\profile\\\\loading.tsx\", \"app\\\\dashboard\\\\request\\\\loading.tsx\", \"app\\\\dashboard\\\\check-in\\\\loading.tsx\", \"app\\\\dashboard\\\\news\\\\loading.tsx\", \"app\\\\dashboard\\\\ai\\\\loading.tsx\", \"app\\\\dashboard\\\\approv\\\\leave\\\\[id]\\\\loading.tsx\", \"app\\\\dashboard\\\\approv\\\\wrok-off-site\\\\[id]\\\\loading.tsx\", \"app\\\\dashboard\\\\approv\\\\leave\\\\instead\\\\loading.tsx\" -Force)"
+      "Bash(Remove-Item -Path \"app\\\\dashboard\\\\approv\\\\loading.tsx\", \"app\\\\dashboard\\\\attendance\\\\loading.tsx\", \"app\\\\dashboard\\\\history\\\\loading.tsx\", \"app\\\\dashboard\\\\loading.tsx\", \"app\\\\dashboard\\\\profile\\\\loading.tsx\", \"app\\\\dashboard\\\\request\\\\loading.tsx\", \"app\\\\dashboard\\\\check-in\\\\loading.tsx\", \"app\\\\dashboard\\\\news\\\\loading.tsx\", \"app\\\\dashboard\\\\ai\\\\loading.tsx\", \"app\\\\dashboard\\\\approv\\\\leave\\\\[id]\\\\loading.tsx\", \"app\\\\dashboard\\\\approv\\\\wrok-off-site\\\\[id]\\\\loading.tsx\", \"app\\\\dashboard\\\\approv\\\\leave\\\\instead\\\\loading.tsx\" -Force)",
+      "Bash(echo \"=== search portal ===\" ; find \"C:/Users/Advice_LPB/Desktop/SSMI/hrm-portal-ssmi\" -path '*/node_modules/*' -prune -o -type f \\\\\\( -iname '*schema*' -o -iname '*leave-schema*' -o -iname '*roles-schema*' -o -iname '*holiday*schema*' -o -iname '*employees-schema*' \\\\\\) -print 2>/dev/null | head -50 *)",
+      "Bash(git -C \"C:/Users/Advice_LPB/Desktop/SSMI/hrm-portal-ssmi\" rev-parse --show-toplevel)",
+      "Bash(git -C \"C:/Users/Advice_LPB/Desktop/SSMI/hrm-portal-ssmi\" remote -v)",
+      "Bash(git -C \"C:/Users/Advice_LPB/Desktop/SSMI/HRM-System-SSMI\" rev-parse --show-toplevel)",
+      "Bash(git -C \"C:/Users/Advice_LPB/Desktop/SSMI/HRM-System-SSMI\" remote -v)"
     ]
   }
 }

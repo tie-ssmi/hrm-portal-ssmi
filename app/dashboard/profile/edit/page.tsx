@@ -50,8 +50,14 @@ import { format } from "date-fns";
 // ** config / utils / types / hooks
 import { useAuth } from "@/lib/auth-context";
 import { updateEmployeeProfile } from "@/lib/employees";
+import {
+  deleteEmployeeDocument,
+  fetchEmployeeDocuments,
+  upsertEmployeeDocument,
+  type EmployeeDocumentRecord,
+} from "@/services/employee-documents";
 import { cn } from "@/lib/utils";
-import type { Employee, EducationEntry, DocEntry } from "@/lib/types";
+import type { Employee, EducationEntry } from "@/lib/types";
 import { LAO_PROVINCES } from "@/public/data/laos-provinces";
 
 const GENDERS: ComboboxOption[] = [
@@ -105,7 +111,7 @@ const createEmptyEducationEntry = (): EducationEntry => ({
   graduatedFrom: "",
 });
 
-type DocFormEntry = DocEntry & { id: string };
+type DocFormEntry = EmployeeDocumentRecord;
 
 const createEmptyDocEntry = (): DocFormEntry => ({
   id: crypto.randomUUID(),
@@ -178,13 +184,9 @@ function toFormValue(profileUser: Employee | null): EditableFields {
           ]
         : [createEmptyEducationEntry()];
 
-  const docs: DocFormEntry[] = (profileUser?.docs || []).map((d) => ({
-    id: crypto.randomUUID(),
-    name: d.name || "",
-    url: d.url || "",
-    addAt: d.addAt || new Date().toISOString(),
-  }));
-
+  // docs are loaded separately from the employees/{uid}/documents
+  // subcollection (see the loadDocuments effect below) — toFormValue only
+  // seeds the synchronous, profile-doc-backed fields.
   return {
     firstNameLo: profileUser?.firstNameLo || "",
     lastNameLo: profileUser?.lastNameLo || "",
@@ -206,7 +208,7 @@ function toFormValue(profileUser: Employee | null): EditableFields {
     criminalRecordUrl: profileUser?.criminalRecordUrl || "",
     declarationUrl: profileUser?.declarationUrl || "",
     educations,
-    docs,
+    docs: [],
   };
 }
 
@@ -318,12 +320,20 @@ export default function EditProfilePage() {
   const [telError, setTelError] = useState("");
 
   useEffect(() => {
-    if (profileUser) {
-      const initial = toFormValue(profileUser);
-      setForm(initial);
-      setOriginalForm(initial);
-    }
-  }, [profileUser]);
+    if (!profileUser) return;
+    const initial = toFormValue(profileUser);
+    setForm(initial);
+    setOriginalForm(initial);
+
+    const docsUid = firebaseUser?.uid || profileUser.id;
+    if (!docsUid) return;
+    fetchEmployeeDocuments(docsUid)
+      .then((docs) => {
+        setForm((prev) => ({ ...prev, docs }));
+        setOriginalForm((prev) => ({ ...prev, docs }));
+      })
+      .catch((err) => console.error("Error loading employee documents:", err));
+  }, [profileUser, firebaseUser?.uid]);
 
   const setField = <K extends keyof EditableFields>(
     key: K,
@@ -422,25 +432,30 @@ export default function EditProfilePage() {
       JSON.stringify(normalizedEducations) !==
       JSON.stringify(originalEducations)
     ) {
-      const primaryEducation =
-        normalizedEducations[0] || createEmptyEducationEntry();
+      // educations[] is the source of truth; the flat education/major/
+      // graduatedFrom fields are a legacy mirror nothing in this app reads
+      // for docs that already have educations[] populated, so new saves no
+      // longer need to keep them in sync.
       updates.educations = normalizedEducations;
-      updates.education = primaryEducation.education;
-      updates.major = primaryEducation.major;
-      updates.graduatedFrom = primaryEducation.graduatedFrom;
     }
 
-    const normalizedDocs: DocEntry[] = form.docs
-      .filter((d) => d.name || d.url)
-      .map(({ name, url, addAt }) => ({ name, url, addAt }));
-    const originalDocs: DocEntry[] = originalForm.docs
-      .filter((d) => d.name || d.url)
-      .map(({ name, url, addAt }) => ({ name, url, addAt }));
-    if (JSON.stringify(normalizedDocs) !== JSON.stringify(originalDocs)) {
-      updates.docs = normalizedDocs;
-    }
+    // docs live in the employees/{uid}/documents subcollection now, so they're
+    // diffed and written as individual create/delete calls, not a field patch.
+    const normalizedFormDocs = form.docs.filter((d) => d.name || d.url);
+    const formDocIds = new Set(normalizedFormDocs.map((d) => d.id));
+    const originalDocsById = new Map(originalForm.docs.map((d) => [d.id, d]));
 
-    if (Object.keys(updates).length === 0) {
+    const docsToDelete = originalForm.docs.filter((d) => !formDocIds.has(d.id));
+    const docsToUpsert = normalizedFormDocs.filter((d) => {
+      const original = originalDocsById.get(d.id);
+      return !original || original.name !== d.name || original.url !== d.url;
+    });
+
+    if (
+      Object.keys(updates).length === 0 &&
+      docsToDelete.length === 0 &&
+      docsToUpsert.length === 0
+    ) {
       toast.info("ບໍ່ມີການປ່ຽນແປງ");
       router.back();
       return;
@@ -448,15 +463,33 @@ export default function EditProfilePage() {
 
     setIsSubmitting(true);
     try {
-      await updateEmployeeProfile(uid, updates, {
-        name:
-          [user?.firstNameLo || user?.firstName, user?.lastNameLo || user?.lastName]
-            .filter(Boolean)
-            .join(" ") || undefined,
-        roleUuid: user?.rolesUid,
-        roleName: user?.rolesName,
-        workLocation: user?.workLocation,
-      });
+      const writes: Promise<unknown>[] = [];
+      if (Object.keys(updates).length > 0) {
+        writes.push(
+          updateEmployeeProfile(uid, updates, {
+            name:
+              [user?.firstNameLo || user?.firstName, user?.lastNameLo || user?.lastName]
+                .filter(Boolean)
+                .join(" ") || undefined,
+            roleUuid: user?.rolesUid,
+            roleName: user?.rolesName,
+            workLocation: user?.workLocation,
+          }),
+        );
+      }
+      for (const d of docsToUpsert) {
+        writes.push(
+          upsertEmployeeDocument(uid, d.id, {
+            name: d.name,
+            url: d.url,
+            addAt: d.addAt,
+          }),
+        );
+      }
+      for (const d of docsToDelete) {
+        writes.push(deleteEmployeeDocument(uid, d.id));
+      }
+      await Promise.all(writes);
       updateProfile(updates);
       toast.success("ອັບເດດຂໍ້ມູນສ່ວນຕົວສໍາເລັດ");
       router.back();
