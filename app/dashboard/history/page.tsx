@@ -14,6 +14,7 @@ import {
   XCircle,
   LogIn,
   LogOut,
+  Paperclip,
 } from "lucide-react";
 
 // ** shared components
@@ -261,6 +262,19 @@ function LeaveDetailContent({ leave }: { leave: LeaveRequest }) {
           <span className="text-muted-foreground">ຜູ້ຮັບວຽກຕໍ່</span>
           <span>{leave.successorNameLo || leave.successorNameEn}</span>
         </div>
+      )}
+
+      {/* Attached document */}
+      {leave.docLink && (
+        <a
+          href={leave.docLink}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 text-primary hover:underline"
+        >
+          <Paperclip className="w-4 h-4 shrink-0" />
+          ເບິ່ງເອກະສານແນບ
+        </a>
       )}
 
       <Separator />

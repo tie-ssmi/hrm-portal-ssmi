@@ -37,7 +37,7 @@ import { PWAInstallButton } from "@/components/pwa-install-button";
 import { useAuth } from "@/lib/auth-context";
 import { useNavProgress } from "@/lib/navigation-context";
 import { cn } from "@/lib/utils";
-import { isNavItemActive } from "@/lib/nav-utils";
+import { isNavItemActive, NAV_STUCK_FALLBACK_MS } from "@/lib/nav-utils";
 import { version } from "@/package.json";
 
 type NavConfig = {
@@ -123,6 +123,15 @@ export function DashboardNav() {
 
   const notifCount = notifications.length;
 
+  // Warms the router cache for every nav destination so router.push() below
+  // resolves fast enough to beat handleNavClick's 2s stuck-navigation
+  // fallback — without this, an un-prefetched route's JS chunk can take
+  // longer than 2s to fetch, which was triggering a hard window.location
+  // reload on essentially every first visit to a route each session.
+  useEffect(() => {
+    PREFETCH_HREFS.forEach((href) => router.prefetch(href));
+  }, [router]);
+
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   const activeHref = pendingHref ?? pathname;
   const pathnameRef = useRef(pathname);
@@ -132,17 +141,27 @@ export function DashboardNav() {
     setPendingHref(null);
   }, [pathname]);
 
+  // Holds the stuck-navigation fallback timer so a second nav click can
+  // cancel the previous click's timer — otherwise clicking two different
+  // nav items within 2s left the first click's timer alive; it would fire
+  // against its own now-stale href, see the (correctly-updated) pathname
+  // no longer matches it, and force a hard window.location reload back to
+  // the FIRST destination even though the second navigation had already
+  // succeeded.
+  const navFallbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const handleNavClick = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
     const href = e.currentTarget.dataset.href!;
     if (isNavItemActive(pathnameRef.current, href)) return;
+    if (navFallbackTimeoutRef.current) clearTimeout(navFallbackTimeoutRef.current);
     setPendingHref(href);
     startNavigation();
     router.push(href);
-    setTimeout(() => {
+    navFallbackTimeoutRef.current = setTimeout(() => {
       if (!isNavItemActive(pathnameRef.current, href)) {
         window.location.href = href;
       }
-    }, 2000);
+    }, NAV_STUCK_FALLBACK_MS);
   }, [router, startNavigation]);
 
   const navItems = useMemo(

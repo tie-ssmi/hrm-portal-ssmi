@@ -21,6 +21,7 @@ import {
   Timer,
   X,
   HelpCircle,
+  Paperclip,
 } from "lucide-react";
 
 // ** shared components
@@ -1285,6 +1286,20 @@ export default function LeaveRequestForm() {
                       </p>
                     )}
                   </div>
+                  {selectedLeave.docLink && (
+                    <>
+                      <Separator />
+                      <a
+                        href={selectedLeave.docLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 text-sm text-primary hover:underline"
+                      >
+                        <Paperclip className="w-4 h-4 shrink-0" />
+                        ເບິ່ງເອກະສານແນບ
+                      </a>
+                    </>
+                  )}
                   {selectedLeave.approvals &&
                     selectedLeave.approvals.length > 0 && (
                       <>

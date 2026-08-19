@@ -51,6 +51,7 @@ import {
 } from "@/components/ui/card";
 import { translateJobTitle } from "./translater";
 import { countWorkDays } from "./theWorkingDays";
+import { formatDateLao } from "@/components/laoDate";
 
 // ** config / utils / types / hooks
 import { useAuth } from "@/lib/auth-context";
@@ -117,12 +118,20 @@ function LeaveDetailSheet({
             <DetailRow
               icon={<CalendarDays className="h-4 w-4" />}
               label="ວັນທີເລີ່ມຕົ້ນ"
-              value={leave?.startDate}
+              value={
+                leave?.startDate
+                  ? formatDateLao(new Date(`${leave.startDate}T00:00:00`))
+                  : undefined
+              }
             />
             <DetailRow
               icon={<CalendarDays className="h-4 w-4" />}
               label="ວັນທີສິ້ນສຸດ"
-              value={leave?.endDate}
+              value={
+                leave?.endDate
+                  ? formatDateLao(new Date(`${leave.endDate}T00:00:00`))
+                  : undefined
+              }
             />
             <DetailRow
               icon={<FileText className="h-4 w-4" />}
@@ -588,9 +597,9 @@ export function TodayOffsiteSection() {
                     </p>
                     <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <CalendarDays className="h-3 w-3 shrink-0" />
-                      <span>{record.startDate}</span>
+                      <span>{formatDateLao(new Date(`${record.startDate}T00:00:00`))}</span>
                       <span className="text-muted-foreground/40">–</span>
-                      <span>{record.endDate}</span>
+                      <span>{formatDateLao(new Date(`${record.endDate}T00:00:00`))}</span>
                     </div>
                   </div>
                 </CardContent>

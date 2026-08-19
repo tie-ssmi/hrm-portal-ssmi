@@ -5,11 +5,11 @@
   /* Brand: Navy #114a92 | Yellow #Fad243 | Red #B32725 */
 
   /* ✅ White background — Yellow ใช้เป็น accent ไม่ใช่ background */
-  --background: #f8fafc;
+  --background: #f8f8ff;
   --foreground: #114a92;
 
   /* ✅ Card สะอาด มี yellow tint เบาๆ ผ่าน border */
-  --card: #ffffff;
+  --card: #f5f5f5;
   --card-foreground: #114a92;
   --popover: #ffffff;
   --popover-foreground: #114a92;

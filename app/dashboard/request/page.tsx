@@ -230,6 +230,19 @@ function FormsPageContent() {
 
   const handleCancelClose = useCallback(() => setCancelTarget(null), []);
 
+  const scrollToPendingDocs = useCallback(() => {
+    const scroll = () =>
+      document
+        .getElementById("leave-recent-requests")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (activeTab === "leave") {
+      scroll();
+    } else {
+      handleTabChange("leave");
+      setTimeout(scroll, 100);
+    }
+  }, [activeTab, handleTabChange]);
+
   const handleConfirmCancel = useCallback(async () => {
     if (!cancelTarget || !user) return;
     setIsCancelling(true);
@@ -384,7 +397,10 @@ function FormsPageContent() {
             )}
           </CardContent>
         </Card>
-        <Card className="min-w-0 flex-1 border-blue-200/40 bg-blue-50/50 dark:border-blue-800/30 dark:bg-blue-950/20">
+        <Card
+          onClick={scrollToPendingDocs}
+          className="min-w-0 flex-1 cursor-pointer border-blue-200/40 bg-blue-50/50 transition-colors hover:bg-blue-100/60 dark:border-blue-800/30 dark:bg-blue-950/20 dark:hover:bg-blue-950/30"
+        >
           <CardContent className="px-3 pt-3 pb-3">
             <div className="mb-1 flex items-center gap-1">
               <FileWarning className="h-3 w-3 shrink-0 text-blue-500" />
@@ -478,7 +494,7 @@ function FormsPageContent() {
                 >
                   <a href="/data/format.xlsx" download="format.xlsx">
                     <Download className="h-4 w-4" />
-                    Excel
+                    format
                   </a>
                 </Button>
                 <Button

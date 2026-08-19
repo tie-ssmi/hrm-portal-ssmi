@@ -8,17 +8,25 @@ export function RainEffect() {
   const [images, setImages] = useState<HTMLImageElement[]>([]);
 
   useEffect(() => {
-    // ວາດເສັ້ນຍາວບາງໆ ແທນເມັດຫິມະ ໃຫ້ຄືເມັດຝົນ
+    // ວາດເສັ້ນຍາວບາງໆ ໂຄ້ງໄປທາງດຽວກັບລົມ ພ້ອມ gradient ໃຫ້ຄືຮອຍເມັດຝົນຕົກແຮງ
+    // (ເສັ້ນຊື່ໆ ບໍ່ມີ gradient/ມຸມແມ່ນເບິ່ງຄືເມັດຫິມະ ບໍ່ຄືຝົນ — rotationSpeed:[0,0]
+    // ໝາຍວາມວ່າ sprite ບໍ່ໝູນຕາມທິດທາງ, ສະນັ້ນຕ້ອງແຕ້ມມຸມນັ້ນເຂົ້າໃນ sprite ເອງ
+    // ໃຫ້ກົງກັບທິດ wind ທີ່ໃຊ້ຢູ່ລຸ່ມນີ້)
     const canvas = document.createElement("canvas");
-    canvas.width = 3;
-    canvas.height = 20;
+    canvas.width = 8;
+    canvas.height = 40;
     const ctx = canvas.getContext("2d");
     if (ctx) {
-      ctx.strokeStyle = "rgba(174, 210, 255, 0.6)";
-      ctx.lineWidth = 2;
+      const gradient = ctx.createLinearGradient(0, 0, 6, 40);
+      gradient.addColorStop(0, "rgba(174, 210, 255, 0)");
+      gradient.addColorStop(0.6, "rgba(174, 210, 255, 0.65)");
+      gradient.addColorStop(1, "rgba(224, 238, 255, 0.9)");
+      ctx.strokeStyle = gradient;
+      ctx.lineWidth = 1.5;
+      ctx.lineCap = "round";
       ctx.beginPath();
-      ctx.moveTo(1.5, 0);
-      ctx.lineTo(1.5, 20);
+      ctx.moveTo(1, 0);
+      ctx.lineTo(6, 40);
       ctx.stroke();
     }
 
@@ -33,10 +41,10 @@ export function RainEffect() {
     <Snowfall
       images={images}
       snowflakeCount={150}
-      radius={[1, 5]} // ຂະໜາດຂອງເມັດຝົນ (px) - radius ຄວບຄຸມຂະໜາດແທ້ຈິງທີ່ແຕ້ມ
-      speed={[8, 15]} // ໄວ, ຄືຝົນຕົກ
-      wind={[-0.5, 1]} // ປັດເລັກນ້ອຍຕາມລົມ
-      rotationSpeed={[0, 0]} // ບໍ່ໝູນ
+      radius={[4, 9]} // ຂະໜາດຂອງເມັດຝົນ (px) - radius ຄວບຄຸມຂະໜາດແທ້ຈິງທີ່ແຕ້ມ
+      speed={[12, 22]} // ໄວ, ຄືຝົນຕົກແຮງ
+      wind={[0.6, 1.6]} // ປັດທາງດຽວກັນ ໃຫ້ກົງກັບມຸມທີ່ແຕ້ມໄວ້ໃນ sprite
+      rotationSpeed={[0, 0]} // ບໍ່ໝູນ — ມຸມແມ່ນຢູ່ໃນ sprite ແລ້ວ
       style={{
         position: "fixed",
         top: 0,

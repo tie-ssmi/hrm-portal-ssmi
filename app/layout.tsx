@@ -5,7 +5,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { PWARegister } from "@/components/pwa-register";
 import "@/app/globals.css";
 // import { SnowfallEffect } from "@/components/snow";
-// import { RainEffect } from "@/components/rain-effect";
+import { RainEffect } from "@/components/rain-effect";
 export const metadata: Metadata = {
   title: "ພະນັກງານ SSMILaos | Smart system HRM for Staff | web portal",
   description:
@@ -67,7 +67,7 @@ export default function RootLayout({
           <AuthProvider>
             <div>
               {/* <SnowfallEffect /> */}
-              {/* <RainEffect /> */}
+              <RainEffect />
             </div>
             {children}
             <Toaster position="top-center" />
