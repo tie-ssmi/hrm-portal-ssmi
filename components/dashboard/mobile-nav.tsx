@@ -76,8 +76,6 @@ const MOBILE_NAV_CONFIGS: NavConfig[] = [
   { href: "/dashboard/request",    label: "ແບບຟອມ",        icon: FileText,        inBottomBar: false },
 ];
 
-const MOBILE_PREFETCH_HREFS = MOBILE_NAV_CONFIGS.map((c) => c.href);
-
 export function MobileNav() {
   const pathname = usePathname();
   const router = useRouter();
@@ -106,14 +104,13 @@ export function MobileNav() {
 
   const notifCount = notifications.length;
 
-  // Warms the router cache for every nav destination so router.push() below
-  // resolves fast enough to beat handleNavClick's 2s stuck-navigation
-  // fallback — without this, an un-prefetched route's JS chunk can take
-  // longer than 2s to fetch, which was triggering a hard window.location
-  // reload on essentially every first visit to a route each session.
-  useEffect(() => {
-    MOBILE_PREFETCH_HREFS.forEach((href) => router.prefetch(href));
-  }, [router]);
+  // NOTE: router.prefetch() was tried here to speed up navigation, but on the
+  // static-export production build it makes a request Next.js's router
+  // expects an RSC-differential response for — something a pure static host
+  // never serves — and the aborted prefetch left the router unable to later
+  // push() to that same href at all (confirmed: production build, live
+  // tested against the actual `out/` export). Do not reintroduce prefetch
+  // here without confirming it against a static-export build, not `next dev`.
 
   // Holds the stuck-navigation fallback timer so a second nav click can
   // cancel the previous click's timer — otherwise clicking two different

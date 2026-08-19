@@ -55,8 +55,6 @@ const NAV_CONFIGS: NavConfig[] = [
   { href: "/dashboard/history",    label: "ປະຫວັດ",         icon: History         },
 ];
 
-const PREFETCH_HREFS = NAV_CONFIGS.map((c) => c.href);
-
 function formatDepartment(value: unknown): string {
   if (!value) return "-";
   if (typeof value === "string") return value;
@@ -128,9 +126,13 @@ export function DashboardNav() {
   // fallback — without this, an un-prefetched route's JS chunk can take
   // longer than 2s to fetch, which was triggering a hard window.location
   // reload on essentially every first visit to a route each session.
-  useEffect(() => {
-    PREFETCH_HREFS.forEach((href) => router.prefetch(href));
-  }, [router]);
+  // NOTE: router.prefetch() was tried here to speed up navigation, but on the
+  // static-export production build it makes a request Next.js's router
+  // expects an RSC-differential response for — something a pure static host
+  // never serves — and the aborted prefetch left the router unable to later
+  // push() to that same href at all (confirmed: production build, live
+  // tested against the actual `out/` export). Do not reintroduce prefetch
+  // here without confirming it against a static-export build, not `next dev`.
 
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   const activeHref = pendingHref ?? pathname;
