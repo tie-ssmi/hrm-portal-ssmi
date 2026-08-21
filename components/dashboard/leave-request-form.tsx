@@ -44,6 +44,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Field, FieldLabel } from "@/components/ui/field";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -72,7 +74,7 @@ import {
 import { cn } from "@/lib/utils";
 
 // ** services
-import { getLeaveApproverRuleText } from "@/services/leave-approval";
+import { getLeaveApproverRuleText, getLeaveRecipientText } from "@/services/leave-approval";
 import {
   fetchOfficialHolidays,
   buildHolidayDateKeySet,
@@ -94,6 +96,11 @@ type LeaveTypeOption = {
   label: string;
   documentRequired?: "yes" | "option" | "no";
   countMode?: "workingDays" | "calendarDays";
+  // Balance remaining for this policy at render time — i.e. BEFORE this
+  // request's own duration is subtracted. Saved on the leave doc as
+  // remainingDaysBeforeRequest so history shows what was left going in,
+  // not the post-deduction number.
+  remainingDays?: number;
 };
 
 type DocUploadChoice = "now" | "later" | "skip" | null;
@@ -213,9 +220,18 @@ export default function LeaveRequestForm() {
     typeof user?.workLocation === "object"
       ? user.workLocation?.uuid
       : undefined;
+  const workLocationNameLo =
+    typeof user?.workLocation === "object"
+      ? user.workLocation?.nameLo
+      : undefined;
 
   const [selectedPolicyValue, setSelectedPolicyValue] = useState("annual");
   const [selectedSuccessorUid, setSelectedSuccessorUid] = useState("");
+  const [delegateResponsibilities, setDelegateResponsibilities] = useState(false);
+  const [delegateDocumentSigning, setDelegateDocumentSigning] = useState(false);
+  const [delegateO9Approval, setDelegateO9Approval] = useState(false);
+  const [delegateOther, setDelegateOther] = useState(false);
+  const [delegateOtherReason, setDelegateOtherReason] = useState("");
   const [leaveStartDate, setLeaveStartDate] = useState<Date>();
   const [startPeriod, setStartPeriod] = useState<Period>("morning");
   const [leaveEndDate, setLeaveEndDate] = useState<Date>();
@@ -327,6 +343,7 @@ export default function LeaveRequestForm() {
         policyId: "",
         policyName: "Annual Leave",
         label: `Annual Leave (ສູງສຸດ ${annualRemaining} ມື້)`,
+        remainingDays: annualRemaining,
       },
       {
         value: "sick",
@@ -335,6 +352,7 @@ export default function LeaveRequestForm() {
         policyId: "",
         policyName: "Sick Leave",
         label: `Sick Leave (ສູງສຸດ ${sickRemaining} ມື້)`,
+        remainingDays: sickRemaining,
       },
       {
         value: "personal",
@@ -343,6 +361,7 @@ export default function LeaveRequestForm() {
         policyId: "",
         policyName: "Personal Leave",
         label: `Personal Leave (ສູງສຸດ ${personalRemaining} ມື້)`,
+        remainingDays: personalRemaining,
       },
       {
         value: "unpaid",
@@ -388,6 +407,7 @@ export default function LeaveRequestForm() {
             label: `${balance.policyName}(${balance.remaining} ວັນ)`,
             documentRequired: p.documentRequired,
             countMode: p.countMode,
+            remainingDays: balance.remaining,
           };
         }
 
@@ -402,6 +422,7 @@ export default function LeaveRequestForm() {
           label: limitLabel ? `${baseLabel} (${limitLabel})` : baseLabel,
           documentRequired: p.documentRequired,
           countMode: p.countMode,
+          remainingDays: limit.limitDay,
         };
       })
       .filter((o) => o !== null) as LeaveTypeOption[];
@@ -643,6 +664,20 @@ export default function LeaveRequestForm() {
       toast.error("ກະລຸນາເລືອກໄຟລ໌ເອກະສານ");
       return;
     }
+    if (
+      selectedSuccessor &&
+      !delegateResponsibilities &&
+      !delegateDocumentSigning &&
+      !delegateO9Approval &&
+      !delegateOther
+    ) {
+      toast.error("ກະລຸນາເລືອກໜ້າທີ່ທີ່ຈະມອບໝາຍໃຫ້ຜູ້ຮັບວຽກຕໍ່ຢ່າງໜ້ອຍໜຶ່ງຢ່າງ");
+      return;
+    }
+    if (selectedSuccessor && delegateOther && !delegateOtherReason.trim()) {
+      toast.error("ກະລຸນາລະບຸລາຍລະອຽດໜ້າທີ່ອື່ນໆ");
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -702,9 +737,21 @@ export default function LeaveRequestForm() {
                 .filter(Boolean)
                 .join(" ")
             : undefined,
+          taskDelegation: selectedSuccessor
+            ? {
+                responsibilities: delegateResponsibilities,
+                documentSigning: delegateDocumentSigning,
+                o9Approval: delegateO9Approval,
+                other: delegateOther,
+                otherReason: delegateOther ? delegateOtherReason.trim() || null : null,
+              }
+            : undefined,
           jobTitle: user?.jobTitle || user?.position,
           jobTitleLo: user?.jobTitleLo || undefined,
           workLocationUid: workLocationUuid,
+          workLocationNameLo: workLocationNameLo,
+          to: getLeaveRecipientText(duration, isLPB, workLocationNameLo),
+          remainingDaysBeforeRequest: selectedPolicy?.remainingDays,
           docStatus:
             docUploadChoice === "now"
               ? "now"
@@ -713,17 +760,20 @@ export default function LeaveRequestForm() {
                 : null,
           docLink,
         },
-        isCLive
-          ? { autoApproveDeptHead: true, autoApproveManager: true }
-          : isHousekeeper
-            ? { autoApproveDeptHead: true }
-            : undefined,
+        isCLive || isHousekeeper
+          ? { autoApproveDeptHead: true }
+          : undefined,
       );
       await refetchMyCurrentLeaves();
       playSuccessSound();
       setShowSuccessDialog(true);
       setSelectedPolicyValue(leaveTypeOptions[0]?.value || "annual");
       setSelectedSuccessorUid("");
+      setDelegateResponsibilities(false);
+      setDelegateDocumentSigning(false);
+      setDelegateO9Approval(false);
+      setDelegateOther(false);
+      setDelegateOtherReason("");
       setLeaveStartDate(undefined);
       setStartPeriod("morning");
       setLeaveEndDate(undefined);
@@ -990,6 +1040,87 @@ export default function LeaveRequestForm() {
                       {selectedSuccessor.jobTitle}
                     </p>
                   </div>
+                </div>
+              )}
+
+              {selectedSuccessor && (
+                <div className="space-y-2.5 pt-1">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    ມອບໝາຍໜ້າທີ່ໃຫ້ຜູ້ຮັບວຽກຕໍ່
+                  </p>
+
+                  <div className="flex items-center gap-2.5">
+                    <Checkbox
+                      id="delegate-responsibilities"
+                      checked={delegateResponsibilities}
+                      onCheckedChange={(c) =>
+                        setDelegateResponsibilities(c === true)
+                      }
+                    />
+                    <Label
+                      htmlFor="delegate-responsibilities"
+                      className="text-sm font-normal cursor-pointer"
+                    >
+                      ໜ້າທີ່ຮັບຜິດຊອບ
+                    </Label>
+                  </div>
+
+                  <div className="flex items-center gap-2.5">
+                    <Checkbox
+                      id="delegate-document-signing"
+                      checked={delegateDocumentSigning}
+                      onCheckedChange={(c) =>
+                        setDelegateDocumentSigning(c === true)
+                      }
+                    />
+                    <Label
+                      htmlFor="delegate-document-signing"
+                      className="text-sm font-normal cursor-pointer"
+                    >
+                      ສິດໃນການເຊັນເອກະສານຕ່າງໆ
+                    </Label>
+                  </div>
+
+                  <div className="flex items-center gap-2.5">
+                    <Checkbox
+                      id="delegate-o9-approval"
+                      checked={delegateO9Approval}
+                      onCheckedChange={(c) => setDelegateO9Approval(c === true)}
+                    />
+                    <Label
+                      htmlFor="delegate-o9-approval"
+                      className="text-sm font-normal cursor-pointer"
+                    >
+                      ສິດອະນຸມັດລະບົບ O9
+                    </Label>
+                  </div>
+
+                  <div className="flex items-center gap-2.5">
+                    <Checkbox
+                      id="delegate-other"
+                      checked={delegateOther}
+                      onCheckedChange={(c) => {
+                        const checked = c === true;
+                        setDelegateOther(checked);
+                        if (!checked) setDelegateOtherReason("");
+                      }}
+                    />
+                    <Label
+                      htmlFor="delegate-other"
+                      className="text-sm font-normal cursor-pointer"
+                    >
+                      ອື່ນໆ
+                    </Label>
+                  </div>
+
+                  {delegateOther && (
+                    <Textarea
+                      placeholder="ລະບຸລາຍລະອຽດໜ້າທີ່ອື່ນໆ ຢູ່ບ່ອນນີ້..."
+                      value={delegateOtherReason}
+                      onChange={(e) => setDelegateOtherReason(e.target.value)}
+                      rows={2}
+                    />
+                  )}
                 </div>
               )}
             </div>
@@ -1286,6 +1417,59 @@ export default function LeaveRequestForm() {
                       </p>
                     )}
                   </div>
+                  {(selectedLeave.successorNameLo ||
+                    selectedLeave.successorNameEn) && (
+                    <>
+                      <Separator />
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">
+                          ຜູ້ຮັບວຽກຕໍ່
+                        </p>
+                        <p>
+                          {selectedLeave.successorNameLo ||
+                            selectedLeave.successorNameEn}
+                        </p>
+                      </div>
+                    </>
+                  )}
+                  {selectedLeave.taskDelegation && (
+                    <>
+                      <Separator />
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-2">
+                          ໜ້າທີ່ທີ່ມອບໝາຍ
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {selectedLeave.taskDelegation.responsibilities && (
+                            <Badge variant="outline" className="text-xs">
+                              ໜ້າທີ່ຮັບຜິດຊອບ
+                            </Badge>
+                          )}
+                          {selectedLeave.taskDelegation.documentSigning && (
+                            <Badge variant="outline" className="text-xs">
+                              ສິດເຊັນເອກະສານ
+                            </Badge>
+                          )}
+                          {selectedLeave.taskDelegation.o9Approval && (
+                            <Badge variant="outline" className="text-xs">
+                              ສິດອະນຸມັດ O9
+                            </Badge>
+                          )}
+                          {selectedLeave.taskDelegation.other && (
+                            <Badge variant="outline" className="text-xs">
+                              ອື່ນໆ
+                            </Badge>
+                          )}
+                        </div>
+                        {selectedLeave.taskDelegation.other &&
+                          selectedLeave.taskDelegation.otherReason && (
+                            <p className="text-sm mt-1.5">
+                              {selectedLeave.taskDelegation.otherReason}
+                            </p>
+                          )}
+                      </div>
+                    </>
+                  )}
                   {selectedLeave.docLink && (
                     <>
                       <Separator />

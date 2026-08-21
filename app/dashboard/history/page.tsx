@@ -264,6 +264,38 @@ function LeaveDetailContent({ leave }: { leave: LeaveRequest }) {
         </div>
       )}
 
+      {/* Task delegation */}
+      {leave.taskDelegation && (
+        <div>
+          <p className="text-muted-foreground mb-2">ໜ້າທີ່ທີ່ມອບໝາຍ</p>
+          <div className="flex flex-wrap gap-1.5">
+            {leave.taskDelegation.responsibilities && (
+              <Badge variant="outline" className="text-xs">
+                ໜ້າທີ່ຮັບຜິດຊອບ
+              </Badge>
+            )}
+            {leave.taskDelegation.documentSigning && (
+              <Badge variant="outline" className="text-xs">
+                ສິດເຊັນເອກະສານ
+              </Badge>
+            )}
+            {leave.taskDelegation.o9Approval && (
+              <Badge variant="outline" className="text-xs">
+                ສິດອະນຸມັດ O9
+              </Badge>
+            )}
+            {leave.taskDelegation.other && (
+              <Badge variant="outline" className="text-xs">
+                ອື່ນໆ
+              </Badge>
+            )}
+          </div>
+          {leave.taskDelegation.other && leave.taskDelegation.otherReason && (
+            <p className="text-sm mt-1.5">{leave.taskDelegation.otherReason}</p>
+          )}
+        </div>
+      )}
+
       {/* Attached document */}
       {leave.docLink && (
         <a

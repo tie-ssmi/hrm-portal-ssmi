@@ -9,7 +9,7 @@ export function getRequiredLeaveApprovers(duration?: number): LeaveApproverRole[
 
 export function buildInitialLeaveApprovals(
   duration?: number,
-  options?: { autoApproveDeptHead?: boolean; autoApproveManager?: boolean },
+  options?: { autoApproveDeptHead?: boolean; autoApproveManager?: boolean; reviewedBy?: string },
 ): LeaveApprovalStep[] {
   const today = new Date().toISOString().split('T')[0]
   return getRequiredLeaveApprovers(duration).map((role) => {
@@ -17,7 +17,7 @@ export function buildInitialLeaveApprovals(
       (role === 'departmentHead' && options?.autoApproveDeptHead) ||
       (role === 'manager' && options?.autoApproveManager)
     if (autoApprove) {
-      return { role, decision: 'approved' as const, reviewedAt: today, reviewedBy: 'System' }
+      return { role, decision: 'approved' as const, reviewedAt: today, reviewedBy: options?.reviewedBy || 'System' }
     }
     return { role, decision: 'pending' as const }
   })
@@ -44,4 +44,20 @@ export function getLeaveApproverRuleText(duration?: number | null): string {
     return 'ຜູ້ອານຸມັດ: ຫົວໜ້າພາແນກ, ບໍລິຫານ ບຸກຄະລາກອນ, ແລະ ຜູ້ຈັດການ'
   }
   return 'ຜູ້ອານຸມັດ: ຫົວໜ້າພາແນກ ແລະ ບໍລິຫານ ບຸກຄະລາກອນ'
+}
+
+// Formal salutation line for the printed/PDF leave doc — who the request
+// letter is addressed to.
+export function getLeaveRecipientText(
+  duration: number | null | undefined,
+  isLPB: boolean,
+  workLocationNameLo?: string,
+): string {
+  if (duration !== null && duration !== undefined && duration >= 3) {
+    return 'ທ່ານ ຮອງຜູ້ອຳນວຍການຝ່າຍປະຕິບັດການ ທີ່ນັບຖື'
+  }
+  if (isLPB) {
+    return 'ທ່ານ ຫົວໜ້າພະແນກ ບໍລິຫານ ແລະ ບຸກຄະລາກອນ ທີ່ນັບຖື'
+  }
+  return `ທ່ານ ຫົວໜ້າ ສກຈຮ ສິນຊັບເມືອງເໜືອ ຈຳກັດ ສາຂາ ແຂວງ ${workLocationNameLo ?? ''} ທີ່ນັບຖື`.replace(/\s+/g, ' ').trim()
 }

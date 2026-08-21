@@ -740,11 +740,145 @@ function haversineMeters(
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+// ~200 km/h ceiling: fast enough to allow any real ground travel between
+// shifts (car/bus), slow enough that a location "jump" faster than this is
+// almost certainly a spoofed GPS reading rather than real travel.
+const IMPLAUSIBLE_SPEED_KMH = 200;
+// Mock-location apps often report suspiciously clean accuracy values;
+// genuine outdoor phone GPS rarely holds this tight consistently.
+const SUSPICIOUSLY_PRECISE_ACCURACY_M = 3;
+
+function timestampFromParts(isoDate: string, time: string): number {
+  return new Date(`${isoDate}T${time}:00+07:00`).getTime();
+}
+
+// ບໍ່ມີທາງພິສູດ 100% ວ່າ GPS ຈາກ web browser ແມ່ນຫຼືປອມ (ບໍ່ມີ isMock flag
+// ຄືມືຖື native app) — heuristic ພວກນີ້ຈຶ່ງເປັນສັນຍານໃຫ້ admin ກວດຄືນເທົ່ານັ້ນ,
+// ບໍ່ throw ແລະ ບໍ່ຢຸດ check-in/check-out ໃດໆ.
+function computeLocationFlags(
+  location: { lat: number; lng: number } | undefined,
+  accuracy: number | undefined,
+  isOffsite: boolean | undefined,
+  nowTimestampMs: number,
+  prior: { lat: number; lng: number; timestampMs: number } | null,
+): string[] {
+  const flags: string[] = [];
+  if (!location) return flags;
+
+  if (prior) {
+    const hoursElapsed = (nowTimestampMs - prior.timestampMs) / (1000 * 60 * 60);
+    if (hoursElapsed > 0) {
+      const distanceM = haversineMeters(
+        location.lat,
+        location.lng,
+        prior.lat,
+        prior.lng,
+      );
+      const speedKmh = distanceM / 1000 / hoursElapsed;
+      if (speedKmh > IMPLAUSIBLE_SPEED_KMH) {
+        flags.push("impossible_travel");
+      }
+    }
+  }
+
+  if (
+    !isOffsite &&
+    accuracy != null &&
+    accuracy > 0 &&
+    accuracy <= SUSPICIOUSLY_PRECISE_ACCURACY_M
+  ) {
+    flags.push("suspiciously_precise_accuracy");
+  }
+
+  return flags;
+}
+
+// ຫາຈຸດ location ຫຼ້າສຸດຂອງພະນັກງານກ່ອນວັນນີ້ (ຍ້ອນຫຼັງສູງສຸດ 5 record ເຜື່ອວັນ
+// ຫຼ້າສຸດບໍ່ມີ location, ເຊັ່ນ: ວັນລາພັກ) — ໃຊ້ເປັນ "prior point" ສຳລັບກວດ
+// impossible-travel ຕອນ check-in. ບໍ່ throw ຈັກເທື່ອ: index/query fail ກໍ່ພຽງແຕ່
+// ຂ້າມ heuristic ນີ້ໄປ ບໍ່ໃຫ້ກະທົບ check-in.
+async function getPriorLocationPoint(
+  userUuid: string,
+  beforeIsoDate: string,
+): Promise<{ lat: number; lng: number; timestampMs: number } | null> {
+  try {
+    const snap = await admin
+      .firestore()
+      .collection("attendance")
+      .where("userUuid", "==", userUuid)
+      .where("dateKey", "<", beforeIsoDate)
+      .orderBy("dateKey", "desc")
+      .limit(5)
+      .get();
+
+    for (const doc of snap.docs) {
+      const d = doc.data();
+      const dateKey = d.dateKey as string | undefined;
+      if (!dateKey) continue;
+      const loc = (d.checkOutLocation ?? d.checkInLocation) as
+        | { lat?: number; lng?: number }
+        | undefined;
+      const time = (d.checkOutLocation ? d.checkOutTime : d.checkInTime) as
+        | string
+        | undefined;
+      if (loc?.lat != null && loc?.lng != null && time) {
+        return {
+          lat: loc.lat,
+          lng: loc.lng,
+          timestampMs: timestampFromParts(dateKey, time),
+        };
+      }
+    }
+    return null;
+  } catch (err) {
+    console.warn("[locationFlags] getPriorLocationPoint failed", err);
+    return null;
+  }
+}
+
+// ຂຽນເຂົ້າ auditLogs ໂດຍກົງ (admin SDK, ບໍ່ຜ່ານ callable logAuditEvent — ຢູ່ໃນ
+// Cloud Function ນີ້ຢູ່ແລ້ວ) ດ້ວຍ shape ດຽວກັນກັບ entry ຂອງ logAuditEvent (ເບິ່ງ
+// section 7 ຂ້າງລຸ່ມ), ສະເພາະຕອນ check-in/out ຖືກ flag ວ່າສົງໄສເທົ່ານັ້ນ — ບໍ່ໃຫ້
+// auditLogs ເຕັມໄປດ້ວຍ record ປົກກະຕິທຸກມື້. ບໍ່ throw: fail ໃນນີ້ບໍ່ໃຫ້ກະທົບ check-in/out.
+async function logLocationFlagAudit(params: {
+  action: string;
+  actorUid: string;
+  actorName?: string;
+  targetId: string;
+  after: Record<string, unknown>;
+  ipAddress?: string;
+  userAgent?: string;
+}): Promise<void> {
+  try {
+    await admin
+      .firestore()
+      .collection("auditLogs")
+      .add({
+        systemType: "portal",
+        action: params.action,
+        actorUid: params.actorUid,
+        actorName: params.actorName ?? "",
+        actorRoleUuid: "",
+        targetType: "attendance",
+        targetId: params.targetId,
+        before: {},
+        after: params.after,
+        status: "SUCCESS",
+        ...(params.ipAddress != null ? { ipAddress: params.ipAddress } : {}),
+        ...(params.userAgent != null ? { userAgent: params.userAgent } : {}),
+        createdAt: new Date().toISOString(),
+      });
+  } catch (err) {
+    console.warn("[locationFlags] failed to write auditLogs entry", err);
+  }
+}
+
 // date, checkInTime, status ບໍ່ຮັບຈາກ client — server ຄຳນວນເອງ ກັນການປອມເວລາ
 type CheckInPayload = {
   userUuid: string;
   uid?: string;
   location?: { lat: number; lng: number };
+  accuracy?: number;
   isOffsite?: boolean;
   checkInImageURL?: string;
   fullNameEn?: string;
@@ -764,6 +898,7 @@ type CheckOutPayload = {
   userUuid: string;
   uid?: string;
   location?: { lat: number; lng: number };
+  accuracy?: number;
   checkOutImageURL?: string;
   fullNameEn?: string;
   fullNameLo?: string;
@@ -946,6 +1081,25 @@ export const recordCheckIn = onCall(
       }
     }
 
+    const checkInForwardedFor = request.rawRequest.headers["x-forwarded-for"];
+    const checkInIp =
+      (Array.isArray(checkInForwardedFor)
+        ? checkInForwardedFor[0]
+        : checkInForwardedFor)
+        ?.split(",")[0]
+        ?.trim() ?? request.rawRequest.ip;
+
+    const priorLocationPoint = data.location
+      ? await getPriorLocationPoint(data.userUuid, isoDate)
+      : null;
+    const locationFlags = computeLocationFlags(
+      data.location,
+      data.accuracy,
+      data.isOffsite,
+      timestampFromParts(isoDate, checkTime),
+      priorLocationPoint,
+    );
+
     const attendanceId = `${data.userUuid}_${date}`;
     await admin
       .firestore()
@@ -988,11 +1142,34 @@ export const recordCheckIn = onCall(
           ...(data.deviceFingerprint
             ? { deviceFingerprint: data.deviceFingerprint }
             : {}),
+          ...(data.accuracy != null ? { checkInAccuracy: data.accuracy } : {}),
+          ...(checkInIp ? { checkInIp } : {}),
+          ...(checkInUserAgent ? { checkInUserAgent } : {}),
+          ...(locationFlags.length > 0
+            ? { checkInLocationFlags: locationFlags }
+            : {}),
           updatedAt: new Date().toISOString(),
           updatedBy: data.updatedBy ?? data.userUuid,
         },
         { merge: true },
       );
+
+    if (locationFlags.length > 0) {
+      await logLocationFlagAudit({
+        action: "attendance.checkIn.locationFlag",
+        actorUid: request.auth.uid,
+        actorName: data.fullNameLo || data.fullNameEn,
+        targetId: attendanceId,
+        after: {
+          locationFlags,
+          location: data.location ?? null,
+          accuracy: data.accuracy ?? null,
+          isOffsite: data.isOffsite ?? false,
+        },
+        ipAddress: checkInIp,
+        userAgent: checkInUserAgent,
+      });
+    }
 
     return { attendanceId, date, isoDate, checkTime, status };
   },
@@ -1050,7 +1227,8 @@ export const recordCheckOut = onCall(
       .collection("attendance")
       .doc(attendanceId)
       .get();
-    const checkInTime = existing.data()?.checkInTime as string | undefined;
+    const existingData = existing.data();
+    const checkInTime = existingData?.checkInTime as string | undefined;
     let workHours = 0;
     if (checkInTime) {
       const [inH, inM] = checkInTime.split(":").map(Number);
@@ -1059,6 +1237,35 @@ export const recordCheckOut = onCall(
       workHours =
         diffMinutes > 0 ? Math.round((diffMinutes / 60) * 10) / 10 : 0;
     }
+
+    const checkOutForwardedFor =
+      request.rawRequest.headers["x-forwarded-for"];
+    const checkOutIp =
+      (Array.isArray(checkOutForwardedFor)
+        ? checkOutForwardedFor[0]
+        : checkOutForwardedFor)
+        ?.split(",")[0]
+        ?.trim() ?? request.rawRequest.ip;
+
+    // "prior point" ຂອງ checkout ຄື checkIn ຂອງມື້ດຽວກັນ (doc ດຽວກັນ, ບໍ່ຕ້ອງ query ເພີ່ມ)
+    const checkInLoc = existingData?.checkInLocation as
+      | { lat?: number; lng?: number }
+      | undefined;
+    const priorLocationPoint =
+      checkInLoc?.lat != null && checkInLoc?.lng != null && checkInTime
+        ? {
+            lat: checkInLoc.lat,
+            lng: checkInLoc.lng,
+            timestampMs: timestampFromParts(isoDate, checkInTime),
+          }
+        : null;
+    const locationFlags = computeLocationFlags(
+      data.location,
+      data.accuracy,
+      existingData?.isOffsite as boolean | undefined,
+      timestampFromParts(isoDate, checkTime),
+      priorLocationPoint,
+    );
 
     await admin
       .firestore()
@@ -1091,11 +1298,34 @@ export const recordCheckOut = onCall(
           ...(data.deviceFingerprint
             ? { deviceFingerprint: data.deviceFingerprint }
             : {}),
+          ...(data.accuracy != null ? { checkOutAccuracy: data.accuracy } : {}),
+          ...(checkOutIp ? { checkOutIp } : {}),
+          ...(checkOutUserAgent ? { checkOutUserAgent } : {}),
+          ...(locationFlags.length > 0
+            ? { checkOutLocationFlags: locationFlags }
+            : {}),
           updatedAt: new Date().toISOString(),
           updatedBy: data.userUuid,
         },
         { merge: true },
       );
+
+    if (locationFlags.length > 0) {
+      await logLocationFlagAudit({
+        action: "attendance.checkOut.locationFlag",
+        actorUid: request.auth.uid,
+        actorName: data.fullNameLo || data.fullNameEn,
+        targetId: attendanceId,
+        after: {
+          locationFlags,
+          location: data.location ?? null,
+          accuracy: data.accuracy ?? null,
+          isOffsite: existingData?.isOffsite ?? false,
+        },
+        ipAddress: checkOutIp,
+        userAgent: checkOutUserAgent,
+      });
+    }
 
     return { attendanceId, checkOutTime: checkTime, workHours };
   },

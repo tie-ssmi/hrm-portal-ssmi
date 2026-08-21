@@ -150,6 +150,17 @@ export interface AttendanceRecord {
     lng: number;
     address?: string;
   };
+  // GPS accuracy (meters), source IP, and non-blocking spoofing-suspicion
+  // flags captured server-side for later admin review — see recordCheckIn/
+  // recordCheckOut in functions/src/index.ts. Never used to block a request.
+  checkInAccuracy?: number;
+  checkOutAccuracy?: number;
+  checkInIp?: string;
+  checkOutIp?: string;
+  checkInUserAgent?: string;
+  checkOutUserAgent?: string;
+  checkInLocationFlags?: string[];
+  checkOutLocationFlags?: string[];
   isOffsite?: boolean;
   checkInImageURL?: string;
   checkOutImageURL?: string;
@@ -185,6 +196,14 @@ export interface LeaveApprovalStep {
   reviewedAt?: string;
 }
 
+export interface TaskDelegation {
+  responsibilities: boolean;
+  documentSigning: boolean;
+  o9Approval: boolean;
+  other: boolean;
+  otherReason: string | null;
+}
+
 export interface LeaveRequest {
   id: string;
   leaveUserUuid?: string;
@@ -207,9 +226,19 @@ export interface LeaveRequest {
   departmentNameLo?: string;
   departmentNameEn?: string;
   workLocationUid?: string;
+  workLocationNameLo?: string;
+  // Formal salutation line for the printed/PDF leave doc — who the request
+  // is addressed to. Computed at submission time from duration + LPB scope,
+  // see getLeaveRecipientText in services/leave-approval.ts.
+  to?: string;
+  // Remaining balance for this policy at submission time, BEFORE this
+  // request's own duration is subtracted — a snapshot, not the post-
+  // deduction figure (e.g. 15 days available, request 5 -> saves 15).
+  remainingDaysBeforeRequest?: number;
   successorUid?: string;
   successorNameLo?: string;
   successorNameEn?: string;
+  taskDelegation?: TaskDelegation;
   jobTitle?: string;
   jobTitleLo?: string;
   doc?: string;
@@ -377,7 +406,7 @@ export interface HRMContextType {
   leaveRequests: LeaveRequest[];
   submitLeaveRequest: (
     request: Omit<LeaveRequest, "id" | "status" | "createdAt">,
-    options?: { autoApproveDeptHead?: boolean; autoApproveManager?: boolean },
+    options?: { autoApproveDeptHead?: boolean; autoApproveManager?: boolean; reviewedBy?: string },
   ) => Promise<void>;
   reviewLeaveRequest: (
     requestId: string,

@@ -750,6 +750,7 @@ export default function AttendancePage() {
           await mutation.mutateAsync({
             user,
             location: loc ? { lat: loc.lat, lng: loc.lng } : undefined,
+            accuracy: loc?.accuracy,
             imageFile,
             isOffsite: true,
           });
@@ -759,6 +760,7 @@ export default function AttendancePage() {
           await mutation.mutateAsync({
             user,
             location: { lat: loc.lat, lng: loc.lng },
+            accuracy: loc.accuracy,
           });
         }
         toast.success(successMsg);

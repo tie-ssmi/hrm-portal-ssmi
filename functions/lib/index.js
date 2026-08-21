@@ -580,6 +580,94 @@ function haversineMeters(lat1, lng1, lat2, lng2) {
             Math.sin(dLng / 2) ** 2;
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
+// ~200 km/h ceiling: fast enough to allow any real ground travel between
+// shifts (car/bus), slow enough that a location "jump" faster than this is
+// almost certainly a spoofed GPS reading rather than real travel.
+const IMPLAUSIBLE_SPEED_KMH = 200;
+// Mock-location apps often report suspiciously clean accuracy values;
+// genuine outdoor phone GPS rarely holds this tight consistently.
+const SUSPICIOUSLY_PRECISE_ACCURACY_M = 3;
+function timestampFromParts(isoDate, time) {
+    return new Date(`${isoDate}T${time}:00+07:00`).getTime();
+}
+// ບໍ່ມີທາງພິສູດ 100% ວ່າ GPS ຈາກ web browser ແມ່ນຫຼືປອມ (ບໍ່ມີ isMock flag
+// ຄືມືຖື native app) — heuristic ພວກນີ້ຈຶ່ງເປັນສັນຍານໃຫ້ admin ກວດຄືນເທົ່ານັ້ນ,
+// ບໍ່ throw ແລະ ບໍ່ຢຸດ check-in/check-out ໃດໆ.
+function computeLocationFlags(location, accuracy, isOffsite, nowTimestampMs, prior) {
+    const flags = [];
+    if (!location)
+        return flags;
+    if (prior) {
+        const hoursElapsed = (nowTimestampMs - prior.timestampMs) / (1000 * 60 * 60);
+        if (hoursElapsed > 0) {
+            const distanceM = haversineMeters(location.lat, location.lng, prior.lat, prior.lng);
+            const speedKmh = distanceM / 1000 / hoursElapsed;
+            if (speedKmh > IMPLAUSIBLE_SPEED_KMH) {
+                flags.push("impossible_travel");
+            }
+        }
+    }
+    if (!isOffsite &&
+        accuracy != null &&
+        accuracy > 0 &&
+        accuracy <= SUSPICIOUSLY_PRECISE_ACCURACY_M) {
+        flags.push("suspiciously_precise_accuracy");
+    }
+    return flags;
+}
+// ຫາຈຸດ location ຫຼ້າສຸດຂອງພະນັກງານກ່ອນວັນນີ້ (ຍ້ອນຫຼັງສູງສຸດ 5 record ເຜື່ອວັນ
+// ຫຼ້າສຸດບໍ່ມີ location, ເຊັ່ນ: ວັນລາພັກ) — ໃຊ້ເປັນ "prior point" ສຳລັບກວດ
+// impossible-travel ຕອນ check-in. ບໍ່ throw ຈັກເທື່ອ: index/query fail ກໍ່ພຽງແຕ່
+// ຂ້າມ heuristic ນີ້ໄປ ບໍ່ໃຫ້ກະທົບ check-in.
+async function getPriorLocationPoint(userUuid, beforeIsoDate) {
+    var _a;
+    try {
+        const snap = await admin
+            .firestore()
+            .collection("attendance")
+            .where("userUuid", "==", userUuid)
+            .where("dateKey", "<", beforeIsoDate)
+            .orderBy("dateKey", "desc")
+            .limit(5)
+            .get();
+        for (const doc of snap.docs) {
+            const d = doc.data();
+            const dateKey = d.dateKey;
+            if (!dateKey)
+                continue;
+            const loc = ((_a = d.checkOutLocation) !== null && _a !== void 0 ? _a : d.checkInLocation);
+            const time = (d.checkOutLocation ? d.checkOutTime : d.checkInTime);
+            if ((loc === null || loc === void 0 ? void 0 : loc.lat) != null && (loc === null || loc === void 0 ? void 0 : loc.lng) != null && time) {
+                return {
+                    lat: loc.lat,
+                    lng: loc.lng,
+                    timestampMs: timestampFromParts(dateKey, time),
+                };
+            }
+        }
+        return null;
+    }
+    catch (err) {
+        console.warn("[locationFlags] getPriorLocationPoint failed", err);
+        return null;
+    }
+}
+// ຂຽນເຂົ້າ auditLogs ໂດຍກົງ (admin SDK, ບໍ່ຜ່ານ callable logAuditEvent — ຢູ່ໃນ
+// Cloud Function ນີ້ຢູ່ແລ້ວ) ດ້ວຍ shape ດຽວກັນກັບ entry ຂອງ logAuditEvent (ເບິ່ງ
+// section 7 ຂ້າງລຸ່ມ), ສະເພາະຕອນ check-in/out ຖືກ flag ວ່າສົງໄສເທົ່ານັ້ນ — ບໍ່ໃຫ້
+// auditLogs ເຕັມໄປດ້ວຍ record ປົກກະຕິທຸກມື້. ບໍ່ throw: fail ໃນນີ້ບໍ່ໃຫ້ກະທົບ check-in/out.
+async function logLocationFlagAudit(params) {
+    var _a;
+    try {
+        await admin
+            .firestore()
+            .collection("auditLogs")
+            .add(Object.assign(Object.assign(Object.assign({ systemType: "portal", action: params.action, actorUid: params.actorUid, actorName: (_a = params.actorName) !== null && _a !== void 0 ? _a : "", actorRoleUuid: "", targetType: "attendance", targetId: params.targetId, before: {}, after: params.after, status: "SUCCESS" }, (params.ipAddress != null ? { ipAddress: params.ipAddress } : {})), (params.userAgent != null ? { userAgent: params.userAgent } : {})), { createdAt: new Date().toISOString() }));
+    }
+    catch (err) {
+        console.warn("[locationFlags] failed to write auditLogs entry", err);
+    }
+}
 // FingerprintJS (free tier) has very low entropy on iOS Safari — Apple
 // deliberately restricts canvas/WebGL/font-enumeration signals for privacy,
 // so different iPhones (same model + iOS version) frequently produce the
@@ -634,7 +722,7 @@ exports.recordCheckIn = (0, https_1.onCall)(
 // NOT enforced yet — see logAppCheckShadow. Flip to `enforceAppCheck: true` once
 // Cloud Logging shows consistent coverage (client scaffold: lib/firebase.ts).
 { region: "asia-southeast1", cors: callableCorsOrigins, invoker: "public" }, async (request) => {
-    var _a, _b, _c, _d;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
     if (!request.auth) {
         throw new https_1.HttpsError("unauthenticated", "Must be signed in");
     }
@@ -686,12 +774,20 @@ exports.recordCheckIn = (0, https_1.onCall)(
             }
         }
     }
+    const checkInForwardedFor = request.rawRequest.headers["x-forwarded-for"];
+    const checkInIp = (_e = (_d = (_c = (Array.isArray(checkInForwardedFor)
+        ? checkInForwardedFor[0]
+        : checkInForwardedFor)) === null || _c === void 0 ? void 0 : _c.split(",")[0]) === null || _d === void 0 ? void 0 : _d.trim()) !== null && _e !== void 0 ? _e : request.rawRequest.ip;
+    const priorLocationPoint = data.location
+        ? await getPriorLocationPoint(data.userUuid, isoDate)
+        : null;
+    const locationFlags = computeLocationFlags(data.location, data.accuracy, data.isOffsite, timestampFromParts(isoDate, checkTime), priorLocationPoint);
     const attendanceId = `${data.userUuid}_${date}`;
     await admin
         .firestore()
         .collection("attendance")
         .doc(attendanceId)
-        .set(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ _id: attendanceId, uid: (_c = data.uid) !== null && _c !== void 0 ? _c : data.userUuid, userUuid: data.userUuid, date, dateKey: isoDate, checkInTime: checkTime, status }, (dayLeaveStatus === "morning_leave"
+        .set(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ _id: attendanceId, uid: (_f = data.uid) !== null && _f !== void 0 ? _f : data.userUuid, userUuid: data.userUuid, date, dateKey: isoDate, checkInTime: checkTime, status }, (dayLeaveStatus === "morning_leave"
         ? { morningLeaveDay: true }
         : {})), (data.location
         ? {
@@ -706,7 +802,25 @@ exports.recordCheckIn = (0, https_1.onCall)(
         ? { checkInImageURL: data.checkInImageURL }
         : {})), (data.isOffsite ? { isOffsite: true } : {})), (data.deviceLocalId ? { deviceLocalId: data.deviceLocalId } : {})), (data.deviceFingerprint
         ? { deviceFingerprint: data.deviceFingerprint }
-        : {})), { updatedAt: new Date().toISOString(), updatedBy: (_d = data.updatedBy) !== null && _d !== void 0 ? _d : data.userUuid }), { merge: true });
+        : {})), (data.accuracy != null ? { checkInAccuracy: data.accuracy } : {})), (checkInIp ? { checkInIp } : {})), (checkInUserAgent ? { checkInUserAgent } : {})), (locationFlags.length > 0
+        ? { checkInLocationFlags: locationFlags }
+        : {})), { updatedAt: new Date().toISOString(), updatedBy: (_g = data.updatedBy) !== null && _g !== void 0 ? _g : data.userUuid }), { merge: true });
+    if (locationFlags.length > 0) {
+        await logLocationFlagAudit({
+            action: "attendance.checkIn.locationFlag",
+            actorUid: request.auth.uid,
+            actorName: data.fullNameLo || data.fullNameEn,
+            targetId: attendanceId,
+            after: {
+                locationFlags,
+                location: (_h = data.location) !== null && _h !== void 0 ? _h : null,
+                accuracy: (_j = data.accuracy) !== null && _j !== void 0 ? _j : null,
+                isOffsite: (_k = data.isOffsite) !== null && _k !== void 0 ? _k : false,
+            },
+            ipAddress: checkInIp,
+            userAgent: checkInUserAgent,
+        });
+    }
     return { attendanceId, date, isoDate, checkTime, status };
 });
 // =========================================================================
@@ -716,7 +830,7 @@ exports.recordCheckOut = (0, https_1.onCall)(
 // NOT enforced yet — see logAppCheckShadow. Flip to `enforceAppCheck: true` once
 // Cloud Logging shows consistent coverage (client scaffold: lib/firebase.ts).
 { region: "asia-southeast1", cors: callableCorsOrigins, invoker: "public" }, async (request) => {
-    var _a;
+    var _a, _b, _c, _d, _e, _f;
     if (!request.auth) {
         throw new https_1.HttpsError("unauthenticated", "Must be signed in");
     }
@@ -741,7 +855,8 @@ exports.recordCheckOut = (0, https_1.onCall)(
         .collection("attendance")
         .doc(attendanceId)
         .get();
-    const checkInTime = (_a = existing.data()) === null || _a === void 0 ? void 0 : _a.checkInTime;
+    const existingData = existing.data();
+    const checkInTime = existingData === null || existingData === void 0 ? void 0 : existingData.checkInTime;
     let workHours = 0;
     if (checkInTime) {
         const [inH, inM] = checkInTime.split(":").map(Number);
@@ -750,11 +865,25 @@ exports.recordCheckOut = (0, https_1.onCall)(
         workHours =
             diffMinutes > 0 ? Math.round((diffMinutes / 60) * 10) / 10 : 0;
     }
+    const checkOutForwardedFor = request.rawRequest.headers["x-forwarded-for"];
+    const checkOutIp = (_c = (_b = (_a = (Array.isArray(checkOutForwardedFor)
+        ? checkOutForwardedFor[0]
+        : checkOutForwardedFor)) === null || _a === void 0 ? void 0 : _a.split(",")[0]) === null || _b === void 0 ? void 0 : _b.trim()) !== null && _c !== void 0 ? _c : request.rawRequest.ip;
+    // "prior point" ຂອງ checkout ຄື checkIn ຂອງມື້ດຽວກັນ (doc ດຽວກັນ, ບໍ່ຕ້ອງ query ເພີ່ມ)
+    const checkInLoc = existingData === null || existingData === void 0 ? void 0 : existingData.checkInLocation;
+    const priorLocationPoint = (checkInLoc === null || checkInLoc === void 0 ? void 0 : checkInLoc.lat) != null && (checkInLoc === null || checkInLoc === void 0 ? void 0 : checkInLoc.lng) != null && checkInTime
+        ? {
+            lat: checkInLoc.lat,
+            lng: checkInLoc.lng,
+            timestampMs: timestampFromParts(isoDate, checkInTime),
+        }
+        : null;
+    const locationFlags = computeLocationFlags(data.location, data.accuracy, existingData === null || existingData === void 0 ? void 0 : existingData.isOffsite, timestampFromParts(isoDate, checkTime), priorLocationPoint);
     await admin
         .firestore()
         .collection("attendance")
         .doc(attendanceId)
-        .set(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ checkOutTime: checkTime, workHours }, (data.fullNameEn != null ? { fullNameEn: data.fullNameEn } : {})), (data.fullNameLo != null ? { fullNameLo: data.fullNameLo } : {})), (data.jobTitle != null ? { jobTitle: data.jobTitle } : {})), (data.employeeImage != null
+        .set(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ checkOutTime: checkTime, workHours }, (data.fullNameEn != null ? { fullNameEn: data.fullNameEn } : {})), (data.fullNameLo != null ? { fullNameLo: data.fullNameLo } : {})), (data.jobTitle != null ? { jobTitle: data.jobTitle } : {})), (data.employeeImage != null
         ? { employeeImage: data.employeeImage }
         : {})), (data.department ? { department: data.department } : {})), (data.workLocation ? { workLocation: data.workLocation } : {})), (data.checkOutImageURL
         ? { checkOutImageURL: data.checkOutImageURL }
@@ -767,7 +896,25 @@ exports.recordCheckOut = (0, https_1.onCall)(
         }
         : {})), (data.deviceLocalId ? { deviceLocalId: data.deviceLocalId } : {})), (data.deviceFingerprint
         ? { deviceFingerprint: data.deviceFingerprint }
+        : {})), (data.accuracy != null ? { checkOutAccuracy: data.accuracy } : {})), (checkOutIp ? { checkOutIp } : {})), (checkOutUserAgent ? { checkOutUserAgent } : {})), (locationFlags.length > 0
+        ? { checkOutLocationFlags: locationFlags }
         : {})), { updatedAt: new Date().toISOString(), updatedBy: data.userUuid }), { merge: true });
+    if (locationFlags.length > 0) {
+        await logLocationFlagAudit({
+            action: "attendance.checkOut.locationFlag",
+            actorUid: request.auth.uid,
+            actorName: data.fullNameLo || data.fullNameEn,
+            targetId: attendanceId,
+            after: {
+                locationFlags,
+                location: (_d = data.location) !== null && _d !== void 0 ? _d : null,
+                accuracy: (_e = data.accuracy) !== null && _e !== void 0 ? _e : null,
+                isOffsite: (_f = existingData === null || existingData === void 0 ? void 0 : existingData.isOffsite) !== null && _f !== void 0 ? _f : false,
+            },
+            ipAddress: checkOutIp,
+            userAgent: checkOutUserAgent,
+        });
+    }
     return { attendanceId, checkOutTime: checkTime, workHours };
 });
 exports.logAuditEvent = (0, https_1.onCall)({ region: "asia-southeast1", cors: callableCorsOrigins, invoker: "public" }, async (request) => {

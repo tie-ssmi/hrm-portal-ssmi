@@ -36,6 +36,7 @@ type UpdateCheckInTimeParams = {
   checkInTime: string
   status: 'present' | 'late' | 'not_check_in'
   location?: AttendanceLocation
+  accuracy?: number
   createdBy?: string
   fullNameEn?: string
   fullNameLo?: string
@@ -65,6 +66,7 @@ type UpdateCheckOutTimeParams = {
   checkOutTime: string
   workHours?: number
   location?: AttendanceLocation
+  accuracy?: number
   fullNameEn?: string
   fullNameLo?: string
   jobTitle?: string
@@ -296,6 +298,7 @@ export async function updateAttendanceCheckOutTime({
   userUuid,
   uid,
   location,
+  accuracy,
   fullNameEn,
   fullNameLo,
   jobTitle,
@@ -309,7 +312,7 @@ export async function updateAttendanceCheckOutTime({
   const fn = httpsCallable<Omit<UpdateCheckOutTimeParams, 'date' | 'checkOutTime' | 'workHours'>, { attendanceId: string }>(
     fns(), 'recordCheckOut'
   )
-  const result = await fn({ userUuid, uid, location, fullNameEn, fullNameLo, jobTitle, employeeImage, department, workLocation, checkOutImageURL, deviceLocalId, deviceFingerprint })
+  const result = await fn({ userUuid, uid, location, accuracy, fullNameEn, fullNameLo, jobTitle, employeeImage, department, workLocation, checkOutImageURL, deviceLocalId, deviceFingerprint })
   return result.data.attendanceId
 }
 

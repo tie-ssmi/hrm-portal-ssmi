@@ -34,9 +34,10 @@ import { format, isWeekend } from 'date-fns'
 import { useAuth } from '@/lib/auth-context'
 import { useHRM } from '@/lib/hrm-context'
 import { cn } from '@/lib/utils'
+import { fetchUserRoleId, fetchRoleByUid } from '@/lib/employees'
 
 // ** services
-import { buildInitialLeaveApprovals, getLeaveApproverRuleText } from '@/services/leave-approval'
+import { getLeaveApproverRuleText, getLeaveRecipientText } from '@/services/leave-approval'
 import { fetchLeavesByUserUuidFromToday } from '@/services/leaves'
 import { fetchPoliciesForGender } from '@/services/policies'
 import { getEmployees } from '@/services/employees'
@@ -246,6 +247,19 @@ export default function InsteadLeaveRequestForm() {
     [employeesData, selectedLeaveForUid]
   )
 
+  // getEmployees() doesn't join rolePermissions (only auth-context does that
+  // for the logged-in user) — fetch it separately for whoever is selected as
+  // the leave-taker, so the "to" salutation can reflect their own LPB scope
+  // rather than the filer's.
+  const { data: selectedLeaveForRole } = useQuery({
+    queryKey: ['employeeRole', selectedLeaveForUid],
+    queryFn: async () => {
+      const roleId = await fetchUserRoleId(selectedLeaveForUid)
+      return roleId ? fetchRoleByUid(roleId) : null
+    },
+    enabled: !!selectedLeaveForUid,
+  })
+
   const selectedSuccessor = useMemo(
     () => employeesData.find(emp => empKey(emp) === selectedSuccessorUid),
     [employeesData, selectedSuccessorUid]
@@ -336,9 +350,14 @@ export default function InsteadLeaveRequestForm() {
         workLocationUid: typeof selectedLeaveFor.workLocation === 'string'
           ? selectedLeaveFor.workLocation
           : selectedLeaveFor.workLocation?.uuid,
-      }, employeeDept?.uuid === CLEVEL_DEPARTMENT_UID
-        ? { autoApproveDeptHead: true, autoApproveManager: true }
-        : { autoApproveDeptHead: true })
+        to: getLeaveRecipientText(
+          duration,
+          selectedLeaveForRole?.LPB === true,
+          typeof selectedLeaveFor.workLocation === 'string'
+            ? undefined
+            : selectedLeaveFor.workLocation?.nameLo,
+        ),
+      }, { autoApproveDeptHead: true, reviewedBy: createdBy })
       await refetchMyCurrentLeaves()
       toast.success('ສົ່ງຄໍາຮ້ອງຂໍສໍາເລັດ (ອະນຸມັດຂັ້ນຕົ້ນແລ້ວ)')
       setOpenConfirmDialog(false)

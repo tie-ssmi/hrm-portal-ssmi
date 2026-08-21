@@ -131,6 +131,7 @@ export function useTodayCheckInAttendance(isoDate?: string) {
 type CheckInParams = {
   user: Employee
   location?: AttendanceLocation
+  accuracy?: number
   imageFile?: File
   isOffsite?: boolean
 }
@@ -141,7 +142,7 @@ export function useCheckIn() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async ({ user, location, imageFile, isOffsite }: CheckInParams) => {
+    mutationFn: async ({ user, location, accuracy, imageFile, isOffsite }: CheckInParams) => {
       if (!user.uuid) throw new Error('User uuid is missing. Unable to update attendance.')
 
       const serverTime = await fetchServerTime(user.uuid)
@@ -175,6 +176,7 @@ export function useCheckIn() {
         note: null,
         checkInImageURL,
         isOffsite,
+        accuracy,
         deviceLocalId: device.localId,
         deviceFingerprint: device.fingerprint,
       })
@@ -209,6 +211,7 @@ export function useCheckIn() {
 type CheckOutParams = {
   user: Employee
   location?: AttendanceLocation
+  accuracy?: number
   imageFile?: File
 }
 
@@ -216,7 +219,7 @@ export function useCheckOut() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async ({ user, location, imageFile }: CheckOutParams) => {
+    mutationFn: async ({ user, location, accuracy, imageFile }: CheckOutParams) => {
       if (!user.uuid) throw new Error('User uuid is missing. Unable to update attendance.')
 
       const serverTime = await fetchServerTime(user.uuid)
@@ -240,6 +243,7 @@ export function useCheckOut() {
         department: toDepartmentPayload(user.department),
         workLocation: toWorkLocationPayload(user.workLocation),
         checkOutImageURL,
+        accuracy,
         deviceLocalId: device.localId,
         deviceFingerprint: device.fingerprint,
       })
