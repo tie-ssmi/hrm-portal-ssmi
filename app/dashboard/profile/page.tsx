@@ -39,7 +39,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import ProfileSkeleton from "@/components/skeletons/profileSkeleton";
 import { NumberFormatter } from "@/components/formatNumber";
-import { formatDateLao } from "@/components/laoDate";
+import { formatDateLao, formatDateMonthLao } from "@/components/laoDate";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   translateJobTitle,
   translateEmployeeType,
@@ -86,7 +94,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
 import { useEmployeeCompensation } from "@/lib/use-compensation-query";
 import { resolveTenureLabel } from "@/lib/employment-status";
-import type { EducationEntry, Employee } from "@/lib/types";
+import type { EducationEntry, Employee, TrainingEntry } from "@/lib/types";
 
 function toStr(value: unknown): string {
   if (value === null || value === undefined) return "-";
@@ -213,6 +221,47 @@ function buildEducationFields(profileUser: Employee | null): InfoField[] {
   });
   return fields;
 }
+
+function formatTrainingDateRange(item: TrainingEntry): string {
+  if (!item.fromDate && !item.toDate) return "-";
+  if (item.fromDate && item.toDate) {
+    if (item.fromDate === item.toDate) {
+      return formatDateLao(new Date(item.fromDate));
+    }
+    return `${formatDateMonthLao(new Date(item.fromDate))} - ${formatDateLao(new Date(item.toDate))}`;
+  }
+  const only = item.fromDate || item.toDate!;
+  return formatDateLao(new Date(only));
+}
+
+const TrainingTable = memo(function TrainingTable({
+  trainings,
+}: {
+  trainings: TrainingEntry[];
+}) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-10">#</TableHead>
+          <TableHead>ຫົວຂໍ້</TableHead>
+          <TableHead>ວັນທີ</TableHead>
+          <TableHead>ຈາກສະຖາບັນ</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {trainings.map((item, index) => (
+          <TableRow key={index}>
+            <TableCell>{index + 1}</TableCell>
+            <TableCell>{toStr(item.title)}</TableCell>
+            <TableCell>{formatTrainingDateRange(item)}</TableCell>
+            <TableCell>{toStr(item.graduatedFrom)}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+});
 
 const EmploymentRow = memo(function EmploymentRow({
   field,
@@ -400,8 +449,42 @@ export default function ProfilePage() {
     [profileUser],
   );
 
+  const currentAddressFields = useMemo<InfoField[]>(
+    () => [
+      {
+        label: "ແຂວງ",
+        value: toStr(profileUser?.currentProvince),
+        icon: MapPin,
+      },
+      {
+        label: "ເມືອງ",
+        value: toStr(profileUser?.currentDistrict),
+        icon: MapPin,
+      },
+      {
+        label: "ບ້ານ",
+        value: toStr(profileUser?.currentVillage),
+        icon: MapPin,
+      },
+      {
+        label: "ປະເພດທີ່ຢູ່ອາໄສ",
+        value: toStr(profileUser?.housingType),
+        icon: MapPin,
+      },
+    ],
+    [profileUser],
+  );
+
   const educationFields = useMemo(
     () => buildEducationFields(profileUser),
+    [profileUser],
+  );
+
+  const trainings = useMemo(
+    () =>
+      Array.isArray(profileUser?.trainings)
+        ? (profileUser?.trainings as TrainingEntry[])
+        : [],
     [profileUser],
   );
 
@@ -607,6 +690,16 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">ທີ່ຢູ່ປັດຈຸບັນ</CardTitle>
+          <CardDescription>ບ່ອນຢູ່ປະຈຸບັນ ແລະ ປະເພດທີ່ຢູ່ອາໄສ</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <InfoGrid fields={currentAddressFields} />
+        </CardContent>
+      </Card>
+
       {/* Education */}
       <Card>
         <CardHeader>
@@ -619,6 +712,20 @@ export default function ProfilePage() {
           <InfoGrid fields={educationFields} />
         </CardContent>
       </Card>
+
+      {trainings.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">ການຝຶກອົບຮົມ</CardTitle>
+            <CardDescription>
+              ຫົວຂໍ້/ການຝຶກອົບຮົມທີ່ເຄີຍເຂົ້າຮ່ວມ
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <TrainingTable trainings={trainings} />
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

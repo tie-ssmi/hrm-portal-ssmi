@@ -14,6 +14,7 @@ import {
   User,
   MapPin,
   GraduationCap,
+  Award,
   Phone,
   Droplets,
   Image as ImageIcon,
@@ -42,6 +43,7 @@ import {
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import ProfileSkeleton from "@/components/skeletons/profileSkeleton";
 import { uploadImageFile } from "@/components/cameraUpload";
+import { PdfThumbnail } from "@/components/pdf-thumbnail";
 
 // ** third party
 import { toast } from "sonner";
@@ -57,7 +59,7 @@ import {
   type EmployeeDocumentRecord,
 } from "@/services/employee-documents";
 import { cn } from "@/lib/utils";
-import type { Employee, EducationEntry } from "@/lib/types";
+import type { Employee, EducationEntry, TrainingEntry } from "@/lib/types";
 import { LAO_PROVINCES } from "@/public/data/laos-provinces";
 
 const GENDERS: ComboboxOption[] = [
@@ -83,6 +85,7 @@ const EDUCATION_LEVELS = [
   "ປະລິນຍາໂທ",
   "ປະລິນຍາເອກ",
 ];
+const HOUSING_TYPES = ["ຫ້ອງແຖວ", "ພັກກັບພີ່ນ້ອງ", "ເຮືອນຄອບຄົວ"];
 const DRIVING_LICENSE_TYPES: ComboboxOption[] = [
   { value: "None", label: "ບໍ່ມີ" },
   { value: "A", label: "A" },
@@ -111,6 +114,13 @@ const createEmptyEducationEntry = (): EducationEntry => ({
   graduatedFrom: "",
 });
 
+const createEmptyTrainingEntry = (): TrainingEntry => ({
+  title: "",
+  fromDate: "",
+  toDate: "",
+  graduatedFrom: "",
+});
+
 type DocFormEntry = EmployeeDocumentRecord;
 
 const createEmptyDocEntry = (): DocFormEntry => ({
@@ -133,6 +143,10 @@ type EditableFields = {
   provinceOfBirth: string;
   cityOfBirth: string;
   placeOfBirth: string;
+  currentProvince: string;
+  currentDistrict: string;
+  currentVillage: string;
+  housingType: string;
   numberOfFamilyMembers: string;
   emergencyContactNumber: string;
   drivingLicenseType: string;
@@ -140,11 +154,16 @@ type EditableFields = {
   photo3x4Url: string;
   criminalRecordUrl: string;
   declarationUrl: string;
+  combinedDocumentUrl: string;
   educations: EducationEntry[];
+  trainings: TrainingEntry[];
   docs: DocFormEntry[];
 };
 
-type ScalarFieldKey = Exclude<keyof EditableFields, "educations" | "docs">;
+type ScalarFieldKey = Exclude<
+  keyof EditableFields,
+  "educations" | "trainings" | "docs"
+>;
 
 const SCALAR_FIELD_KEYS: ScalarFieldKey[] = [
   "firstNameLo",
@@ -159,6 +178,10 @@ const SCALAR_FIELD_KEYS: ScalarFieldKey[] = [
   "provinceOfBirth",
   "cityOfBirth",
   "placeOfBirth",
+  "currentProvince",
+  "currentDistrict",
+  "currentVillage",
+  "housingType",
   "numberOfFamilyMembers",
   "emergencyContactNumber",
   "drivingLicenseType",
@@ -166,6 +189,7 @@ const SCALAR_FIELD_KEYS: ScalarFieldKey[] = [
   "photo3x4Url",
   "criminalRecordUrl",
   "declarationUrl",
+  "combinedDocumentUrl",
 ];
 
 function toFormValue(profileUser: Employee | null): EditableFields {
@@ -184,6 +208,11 @@ function toFormValue(profileUser: Employee | null): EditableFields {
           ]
         : [createEmptyEducationEntry()];
 
+  const trainings =
+    profileUser?.trainings && profileUser.trainings.length > 0
+      ? profileUser.trainings
+      : [createEmptyTrainingEntry()];
+
   // docs are loaded separately from the employees/{uid}/documents
   // subcollection (see the loadDocuments effect below) — toFormValue only
   // seeds the synchronous, profile-doc-backed fields.
@@ -200,6 +229,10 @@ function toFormValue(profileUser: Employee | null): EditableFields {
     provinceOfBirth: profileUser?.provinceOfBirth || "",
     cityOfBirth: profileUser?.cityOfBirth || "",
     placeOfBirth: profileUser?.placeOfBirth || "",
+    currentProvince: profileUser?.currentProvince || "",
+    currentDistrict: profileUser?.currentDistrict || "",
+    currentVillage: profileUser?.currentVillage || "",
+    housingType: profileUser?.housingType || "",
     numberOfFamilyMembers: profileUser?.numberOfFamilyMembers || "",
     emergencyContactNumber: profileUser?.emergencyContactNumber || "",
     drivingLicenseType: profileUser?.drivingLicenseType || "",
@@ -207,7 +240,9 @@ function toFormValue(profileUser: Employee | null): EditableFields {
     photo3x4Url: profileUser?.photo3x4Url || "",
     criminalRecordUrl: profileUser?.criminalRecordUrl || "",
     declarationUrl: profileUser?.declarationUrl || "",
+    combinedDocumentUrl: profileUser?.combinedDocumentUrl || "",
     educations,
+    trainings,
     docs: [],
   };
 }
@@ -221,12 +256,14 @@ function DocUploadSlot({
   value,
   label,
   onUploaded,
+  accept = "image",
 }: {
   uid: string;
   folder: string;
   value: string;
   label: string;
   onUploaded: (url: string) => void;
+  accept?: "image" | "pdf";
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -234,8 +271,15 @@ function DocUploadSlot({
 
   const handleSelect = async (file?: File) => {
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      toast.error("ກະລຸນາເລືອກໄຟລ໌ຮູບພາບ");
+    const isValid =
+      accept === "pdf"
+        ? file.type === "application/pdf" ||
+          file.name.toLowerCase().endsWith(".pdf")
+        : file.type.startsWith("image/");
+    if (!isValid) {
+      toast.error(
+        accept === "pdf" ? "ກະລຸນາເລືອກໄຟລ໌ PDF" : "ກະລຸນາເລືອກໄຟລ໌ຮູບພາບ",
+      );
       return;
     }
     try {
@@ -261,22 +305,33 @@ function DocUploadSlot({
     <div className="space-y-2">
       <p className="text-sm font-medium">{label}</p>
       {value ? (
-        <a
-          href={value}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="block"
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={value}
-            alt={label}
-            className="h-32 w-full rounded-md border object-cover"
-          />
-        </a>
+        accept === "pdf" ? (
+          <a
+            href={value}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:bg-muted block h-32 w-full overflow-hidden rounded-md border"
+          >
+            <PdfThumbnail url={value} className="h-full w-full" />
+          </a>
+        ) : (
+          <a
+            href={value}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={value}
+              alt={label}
+              className="h-32 w-full rounded-md border object-cover"
+            />
+          </a>
+        )
       ) : (
         <div className="text-muted-foreground flex h-32 w-full items-center justify-center rounded-md border border-dashed text-xs">
-          ຍັງບໍ່ມີຮູບ
+          ຍັງບໍ່ມີໄຟລ໌
         </div>
       )}
       <Button
@@ -299,7 +354,7 @@ function DocUploadSlot({
       <input
         ref={inputRef}
         type="file"
-        accept="image/*"
+        accept={accept === "pdf" ? "application/pdf,.pdf" : "image/*"}
         className="hidden"
         onChange={(e) => handleSelect(e.target.files?.[0])}
       />
@@ -345,6 +400,12 @@ export default function EditProfilePage() {
     return toOptions(province?.districts.map((d) => d.name) || []);
   }, [form.provinceOfBirth]);
 
+  const currentDistrictOptions = useMemo<ComboboxOption[]>(() => {
+    const province = LAO_PROVINCES.find((p) => p.name === form.currentProvince);
+    return toOptions(province?.districts.map((d) => d.name) || []);
+  }, [form.currentProvince]);
+
+
   const setEducationField = (
     index: number,
     key: keyof EducationEntry,
@@ -373,14 +434,42 @@ export default function EditProfilePage() {
           : prev.educations.filter((_, i) => i !== index),
     }));
 
-  const setDocField = (
+  const setTrainingField = (
     index: number,
+    key: keyof TrainingEntry,
+    value: string,
+  ) => {
+    setForm((prev) => ({
+      ...prev,
+      trainings: prev.trainings.map((item, i) =>
+        i === index ? { ...item, [key]: value } : item,
+      ),
+    }));
+  };
+
+  const addTrainingEntry = () =>
+    setForm((prev) => ({
+      ...prev,
+      trainings: [...prev.trainings, createEmptyTrainingEntry()],
+    }));
+
+  const removeTrainingEntry = (index: number) =>
+    setForm((prev) => ({
+      ...prev,
+      trainings:
+        prev.trainings.length === 1
+          ? [createEmptyTrainingEntry()]
+          : prev.trainings.filter((_, i) => i !== index),
+    }));
+
+  const setDocField = (
+    id: string,
     key: keyof Omit<DocFormEntry, "id">,
     value: string,
   ) => {
     setForm((prev) => ({
       ...prev,
-      docs: prev.docs.map((d, i) => (i === index ? { ...d, [key]: value } : d)),
+      docs: prev.docs.map((d) => (d.id === id ? { ...d, [key]: value } : d)),
     }));
   };
 
@@ -390,10 +479,10 @@ export default function EditProfilePage() {
       docs: [...prev.docs, createEmptyDocEntry()],
     }));
 
-  const removeExtraDoc = (index: number) =>
+  const removeExtraDoc = (id: string) =>
     setForm((prev) => ({
       ...prev,
-      docs: prev.docs.filter((_, i) => i !== index),
+      docs: prev.docs.filter((d) => d.id !== id),
     }));
 
   if (!profileUser) {
@@ -437,6 +526,18 @@ export default function EditProfilePage() {
       // for docs that already have educations[] populated, so new saves no
       // longer need to keep them in sync.
       updates.educations = normalizedEducations;
+    }
+
+    const normalizedTrainings = form.trainings.filter(
+      (item) => item.title || item.fromDate || item.toDate || item.graduatedFrom,
+    );
+    const originalTrainings = originalForm.trainings.filter(
+      (item) => item.title || item.fromDate || item.toDate || item.graduatedFrom,
+    );
+    if (
+      JSON.stringify(normalizedTrainings) !== JSON.stringify(originalTrainings)
+    ) {
+      updates.trainings = normalizedTrainings;
     }
 
     // docs live in the employees/{uid}/documents subcollection now, so they're
@@ -775,6 +876,79 @@ export default function EditProfilePage() {
             </CardContent>
           </Card>
 
+          {/* Current address */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <MapPin className="text-primary h-4 w-4" />
+                ທີ່ຢູ່ປັດຈຸບັນ
+              </CardTitle>
+              <CardDescription>ບ່ອນຢູ່ປະຈຸບັນ ແລະ ປະເພດທີ່ຢູ່ອາໄສ</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <FieldGroup>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Field>
+                    <FieldLabel>ແຂວງ</FieldLabel>
+                    <Combobox
+                      value={form.currentProvince}
+                      onValueChange={(v) => {
+                        setField("currentProvince", v);
+                        setField("currentDistrict", "");
+                      }}
+                      options={withCurrentValue(
+                        toOptions(LAO_PROVINCES.map((p) => p.name)),
+                        form.currentProvince,
+                      )}
+                      placeholder="ເລືອກ ແຂວງ"
+                      searchPlaceholder="ຄົ້ນຫາແຂວງ..."
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel>ເມືອງ</FieldLabel>
+                    <Combobox
+                      value={form.currentDistrict}
+                      onValueChange={(v) => setField("currentDistrict", v)}
+                      options={withCurrentValue(
+                        currentDistrictOptions,
+                        form.currentDistrict,
+                      )}
+                      placeholder={
+                        form.currentProvince
+                          ? "ເລືອກ ເມືອງ"
+                          : "ກະລຸນາເລືອກແຂວງກ່ອນ"
+                      }
+                      searchPlaceholder="ຄົ້ນຫາເມືອງ..."
+                      disabled={!form.currentProvince}
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel>ບ້ານ</FieldLabel>
+                    <Input
+                      value={form.currentVillage}
+                      onChange={(e) =>
+                        setField("currentVillage", e.target.value)
+                      }
+                      placeholder="ບ້ານ"
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel>ປະເພດທີ່ຢູ່ອາໄສ</FieldLabel>
+                    <Combobox
+                      value={form.housingType}
+                      onValueChange={(v) => setField("housingType", v)}
+                      options={withCurrentValue(
+                        toOptions(HOUSING_TYPES),
+                        form.housingType,
+                      )}
+                      placeholder="ເລືອກ ປະເພດທີ່ຢູ່ອາໄສ"
+                    />
+                  </Field>
+                </div>
+              </FieldGroup>
+            </CardContent>
+          </Card>
+
           {/* Health & other */}
           <Card>
             <CardHeader className="pb-3">
@@ -898,6 +1072,148 @@ export default function EditProfilePage() {
             </CardContent>
           </Card>
 
+          {/* Training */}
+          <Card className="lg:col-span-2">
+            <CardHeader className="flex flex-row items-center justify-between pb-3">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Award className="text-primary h-4 w-4" />
+                  ການຝຶກອົບຮົມ
+                </CardTitle>
+                <CardDescription>ຫົວຂໍ້ ແລະ ວັນທີການຝຶກອົບຮົມ</CardDescription>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={addTrainingEntry}
+              >
+                <Plus className="h-4 w-4" />
+                ເພີ່ມການຝຶກອົບຮົມ
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {form.trainings.map((item, index) => {
+                const fromDate = item.fromDate
+                  ? new Date(item.fromDate)
+                  : undefined;
+                const toDate = item.toDate ? new Date(item.toDate) : undefined;
+                return (
+                  <div key={index} className="space-y-3 rounded-lg border p-4">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                      <Field>
+                        <FieldLabel>ຫົວຂໍ້ການຝຶກອົບຮົມ</FieldLabel>
+                        <Input
+                          value={item.title || ""}
+                          onChange={(e) =>
+                            setTrainingField(index, "title", e.target.value)
+                          }
+                          placeholder="ຫົວຂໍ້ການຝຶກອົບຮົມ"
+                        />
+                      </Field>
+                      <Field>
+                        <FieldLabel>ວັນທີເລີ່ມ</FieldLabel>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className={cn(
+                                "w-full justify-start text-left font-normal",
+                                !fromDate && "text-muted-foreground",
+                              )}
+                            >
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {fromDate
+                                ? format(fromDate, "dd/MM/yyyy")
+                                : "ເລືອກວັນທີ"}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0">
+                            <Calendar
+                              mode="single"
+                              selected={fromDate}
+                              captionLayout="dropdown"
+                              onSelect={(date) =>
+                                setTrainingField(
+                                  index,
+                                  "fromDate",
+                                  date ? format(date, "yyyy-MM-dd") : "",
+                                )
+                              }
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      </Field>
+                      <Field>
+                        <FieldLabel>ວັນທີສິ້ນສຸດ</FieldLabel>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className={cn(
+                                "w-full justify-start text-left font-normal",
+                                !toDate && "text-muted-foreground",
+                              )}
+                            >
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {toDate
+                                ? format(toDate, "dd/MM/yyyy")
+                                : "ເລືອກວັນທີ"}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0">
+                            <Calendar
+                              mode="single"
+                              selected={toDate}
+                              captionLayout="dropdown"
+                              onSelect={(date) =>
+                                setTrainingField(
+                                  index,
+                                  "toDate",
+                                  date ? format(date, "yyyy-MM-dd") : "",
+                                )
+                              }
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      </Field>
+                      <Field>
+                        <FieldLabel>ຝຶກຢູ່ (ສະຖາບັນ/ອົງກອນ)</FieldLabel>
+                        <Input
+                          value={item.graduatedFrom || ""}
+                          onChange={(e) =>
+                            setTrainingField(
+                              index,
+                              "graduatedFrom",
+                              e.target.value,
+                            )
+                          }
+                          placeholder="ຊື່ສະຖາບັນ/ອົງກອນ"
+                        />
+                      </Field>
+                    </div>
+                    {form.trainings.length > 1 && (
+                      <div className="flex justify-end">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="text-destructive border-destructive/40 hover:bg-destructive hover:text-white"
+                          onClick={() => removeTrainingEntry(index)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          ລຶບ
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+
           {/* Documents */}
           <Card className="lg:col-span-2">
             <CardHeader className="pb-3">
@@ -905,15 +1221,17 @@ export default function EditProfilePage() {
                 <ImageIcon className="text-primary h-4 w-4" />
                 ເອກະສານ
               </CardTitle>
-              <CardDescription>ຮູບບັດປະຈຳຕົວ ແລະ ຮູບ 3x4</CardDescription>
+              <CardDescription>
+                ຮູບບັດປະຈຳຕົວ, ຮູບ 3x4 ແລະ ເອກະສານລວມ (PDF)
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-5">
                 <DocUploadSlot
                   uid={uid}
                   folder="images/idCards"
                   value={form.idCardPhotoUrl}
-                  label="ຮູບບັດປະຈຳຕົວ"
+                  label="ຮູບບັດປະຈຳຕົວ/ພາສປອດ"
                   onUploaded={(url) => setField("idCardPhotoUrl", url)}
                 />
                 <DocUploadSlot
@@ -936,6 +1254,14 @@ export default function EditProfilePage() {
                   value={form.declarationUrl}
                   label="ໃບປະກາດ"
                   onUploaded={(url) => setField("declarationUrl", url)}
+                />
+                <DocUploadSlot
+                  uid={uid}
+                  folder="images/combinedDocs"
+                  value={form.combinedDocumentUrl}
+                  label="ເອກະສານລວມ (PDF)"
+                  accept="pdf"
+                  onUploaded={(url) => setField("combinedDocumentUrl", url)}
                 />
               </div>
             </CardContent>
@@ -968,7 +1294,7 @@ export default function EditProfilePage() {
                 </p>
               ) : (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  {form.docs.map((doc, index) => (
+                  {form.docs.map((doc) => (
                     <div
                       key={doc.id}
                       className="relative space-y-3 rounded-lg border p-4"
@@ -978,14 +1304,14 @@ export default function EditProfilePage() {
                         size="icon"
                         variant="ghost"
                         className="text-destructive absolute top-2 right-2"
-                        onClick={() => removeExtraDoc(index)}
+                        onClick={() => removeExtraDoc(doc.id)}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
                       <Input
                         value={doc.name}
                         onChange={(e) =>
-                          setDocField(index, "name", e.target.value)
+                          setDocField(doc.id, "name", e.target.value)
                         }
                         placeholder="ຊື່ເອກະສານ"
                       />
@@ -994,7 +1320,7 @@ export default function EditProfilePage() {
                         folder="images/docs"
                         value={doc.url}
                         label="ໄຟລ໌"
-                        onUploaded={(url) => setDocField(index, "url", url)}
+                        onUploaded={(url) => setDocField(doc.id, "url", url)}
                       />
                     </div>
                   ))}

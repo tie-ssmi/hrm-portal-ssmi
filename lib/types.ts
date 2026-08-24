@@ -49,6 +49,13 @@ export interface EducationEntry {
   major?: string;
 }
 
+export interface TrainingEntry {
+  title?: string;
+  fromDate?: string;
+  toDate?: string;
+  graduatedFrom?: string;
+}
+
 export interface DocEntry {
   name: string;
   url: string;
@@ -84,12 +91,17 @@ export interface Employee {
   placeOfBirth?: string;
   cityOfBirth?: string;
   provinceOfBirth?: string;
+  currentProvince?: string;
+  currentDistrict?: string;
+  currentVillage?: string;
+  housingType?: string;
   numberOfFamilyMembers?: string;
   emergencyContactNumber?: string;
   educations?: EducationEntry[];
   education?: string;
   graduatedFrom?: string;
   major?: string;
+  trainings?: TrainingEntry[];
   drivingLicenseType?: string;
   jobTitle?: string;
   jobTitleLo?: string;
@@ -105,6 +117,7 @@ export interface Employee {
   idCardPhotoUrl?: string;
   criminalRecordUrl?: string;
   declarationUrl?: string;
+  combinedDocumentUrl?: string;
   docs?: DocEntry[];
   createdAt?: any;
   // Written by the admin repo (HRM-System-SSMI) — employment lifecycle

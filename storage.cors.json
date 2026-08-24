@@ -1,0 +1,23 @@
+[
+  {
+    "origin": [
+      "https://hrmapp.ssmilaos.com",
+      "https://hrm.ssmilaos.com",
+
+      "https://hrm-portal-ssmi.web.app",
+      "https://hrm-portal-ssmi.firebaseapp.com",
+      "https://hrm-dev-24dff.web.app",
+      "https://hrm-dev-24dff.firebaseapp.com",
+      "http://localhost:3000",
+      "http://127.0.0.1:3000"
+    ],
+    "method": ["GET", "HEAD"],
+    "maxAgeSeconds": 3600,
+    "responseHeader": [
+      "Content-Type",
+      "Content-Range",
+      "Accept-Ranges",
+      "Content-Length"
+    ]
+  }
+]

@@ -79,7 +79,7 @@ export const LAO_PROVINCES: LaoProvince[] = [
     id: "06",
     name: "ແຂວງຫຼວງພະບາງ",
     districts: [
-      { id: "0601", name: "ຫຼວງພະບາງ" },
+      { id: "0601", name: "ນະຄອນຫຼວງພະບາງ" },
       { id: "0602", name: "ຊຽງເງິນ" },
       { id: "0603", name: "ນານ" },
       { id: "0604", name: "ປາກອູ" },
