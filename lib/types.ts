@@ -222,6 +222,7 @@ export interface LeaveRequest {
   leaveUserUuid?: string;
   leaveUserName?: string;
   leaveImage?: string | null;
+  leaveGender?: string;
   species?: "owner" | "instead";
   type: string;
   policyUuid?: string;
@@ -251,6 +252,7 @@ export interface LeaveRequest {
   successorUid?: string;
   successorNameLo?: string;
   successorNameEn?: string;
+  successorGender?: string;
   taskDelegation?: TaskDelegation;
   jobTitle?: string;
   jobTitleLo?: string;

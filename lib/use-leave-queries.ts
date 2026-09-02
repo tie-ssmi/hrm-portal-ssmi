@@ -233,6 +233,7 @@ export function useAttachLeaveDocument() {
       if (userUuid) {
         queryClient.invalidateQueries({ queryKey: leaveKeys.pendingDoc(userUuid) })
         queryClient.invalidateQueries({ queryKey: leaveKeys.byUser(userUuid) })
+        queryClient.invalidateQueries({ queryKey: leaveKeys.upcoming(userUuid) })
       }
       queryClient.invalidateQueries({ queryKey: ['leave', leaveId] })
     },

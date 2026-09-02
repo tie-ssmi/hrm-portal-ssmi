@@ -85,7 +85,7 @@ const EDUCATION_LEVELS = [
   "ປະລິນຍາໂທ",
   "ປະລິນຍາເອກ",
 ];
-const HOUSING_TYPES = ["ຫ້ອງແຖວ", "ພັກກັບພີ່ນ້ອງ", "ເຮືອນຄອບຄົວ"];
+const HOUSING_TYPES = ["ຫ້ອງແຖວ", "ພັກກັບພີ່ນ້ອງ", "ເຮືອນຄອບຄົວ","ຫ້ອງການ ສກຈຮ ສຊ", "ອື່ນໆ"];
 const DRIVING_LICENSE_TYPES: ComboboxOption[] = [
   { value: "None", label: "ບໍ່ມີ" },
   { value: "A", label: "A" },
@@ -1222,7 +1222,7 @@ export default function EditProfilePage() {
                 ເອກະສານ
               </CardTitle>
               <CardDescription>
-                ຮູບບັດປະຈຳຕົວ, ຮູບ 3x4 ແລະ ເອກະສານລວມ (PDF)
+                ຮູບບັດປະຈຳຕົວ, ຮູບ 3x4 ແລະ ເອກະສານສະໝັກວຽກ (PDF)
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -1241,25 +1241,25 @@ export default function EditProfilePage() {
                   label="ຮູບ 3x4"
                   onUploaded={(url) => setField("photo3x4Url", url)}
                 />
-                <DocUploadSlot
+                {/* <DocUploadSlot
                   uid={uid}
                   folder="images/criminalRecords"
                   value={form.criminalRecordUrl}
                   label="ໃບແຈ້ງໂທດ"
                   onUploaded={(url) => setField("criminalRecordUrl", url)}
-                />
-                <DocUploadSlot
+                /> */}
+                {/* <DocUploadSlot
                   uid={uid}
                   folder="images/declarations"
                   value={form.declarationUrl}
                   label="ໃບປະກາດ"
                   onUploaded={(url) => setField("declarationUrl", url)}
-                />
+                /> */}
                 <DocUploadSlot
                   uid={uid}
                   folder="images/combinedDocs"
                   value={form.combinedDocumentUrl}
-                  label="ເອກະສານລວມ (PDF)"
+                  label="ເອກະສານສະໝັກວຽກ (PDF)"
                   accept="pdf"
                   onUploaded={(url) => setField("combinedDocumentUrl", url)}
                 />

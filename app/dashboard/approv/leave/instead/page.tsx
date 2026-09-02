@@ -325,6 +325,7 @@ export default function InsteadLeaveRequestForm() {
         leaveUserUuid: selectedLeaveFor.uuid || selectedLeaveFor.uid || selectedLeaveFor.id || undefined,
         leaveUserName,
          leaveImage: selectedLeaveFor?.profileImage || selectedLeaveFor?.photo3x4Url || null,
+        leaveGender: selectedLeaveFor?.gender,
 
         species: 'instead',
         type: selectedPolicy?.requestType || 'annual',
@@ -345,6 +346,7 @@ export default function InsteadLeaveRequestForm() {
         successorUid: selectedSuccessor?.uid,
         successorNameLo: selectedSuccessor ? [selectedSuccessor.firstNameLo, selectedSuccessor.lastNameLo].filter(Boolean).join(' ') : undefined,
         successorNameEn: selectedSuccessor ? [selectedSuccessor.firstNameEn, selectedSuccessor.lastNameEn].filter(Boolean).join(' ') : undefined,
+        successorGender: selectedSuccessor?.gender,
         jobTitle: selectedLeaveFor.jobTitle,
         jobTitleLo: selectedLeaveFor.jobTitleLo || undefined,
         workLocationUid: typeof selectedLeaveFor.workLocation === 'string'

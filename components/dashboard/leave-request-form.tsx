@@ -710,6 +710,7 @@ export default function LeaveRequestForm() {
           leaveUserUuid: loggedInUserUuid || undefined,
           leaveImage: user?.profileImage || user?.photo3x4Url || null,
           leaveUserName: createdBy,
+          leaveGender: user?.gender,
           species: "owner",
           createdByUid: loggedInUserUuid || undefined,
           type: selectedPolicy?.requestType || "annual",
@@ -737,6 +738,7 @@ export default function LeaveRequestForm() {
                 .filter(Boolean)
                 .join(" ")
             : undefined,
+          successorGender: selectedSuccessor?.gender,
           taskDelegation: selectedSuccessor
             ? {
                 responsibilities: delegateResponsibilities,
