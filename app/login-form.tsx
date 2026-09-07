@@ -60,11 +60,18 @@ export default function LoginForm() {
     setError(result.error ?? 'Google sign-in failed. Please try again.')
   }
 
+  // 'setup-password' is the one step that legitimately keeps an already
+  // authenticated user on this screen (they signed in with Google and still
+  // need a password). Every other step becomes obsolete the moment the session
+  // is live — notably 'link-google', which used to strand a signed-in user on
+  // an error message because the redirect was gated on authStep === 'idle'.
+  const shouldRedirectToDashboard = isAuthenticated && authStep !== 'setup-password'
+
   useEffect(() => {
-    if (isAuthenticated && authStep === 'idle') {
+    if (shouldRedirectToDashboard) {
       router.push('/dashboard')
     }
-  }, [authStep, isAuthenticated, router])
+  }, [shouldRedirectToDashboard, router])
 
   // Picks up the outcome of a Google sign-in that completed via full-page
   // redirect (iOS standalone PWA — see shouldUseGoogleRedirect in
@@ -77,7 +84,7 @@ export default function LoginForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [googleRedirectOutcome])
 
-  if (isAuthenticated && authStep === 'idle') {
+  if (shouldRedirectToDashboard) {
     return null
   }
 

@@ -108,6 +108,12 @@ const LiveClock = memo(function LiveClock() {
 // below it, the raw number isn't shown at all (meaningless to non-technical users).
 const GPS_ACCURACY_WARNING_METERS = 100;
 
+// Allowed distance from the work location's coordinates for check-in/check-out.
+// Mirrors OFFICE_RADIUS_METERS in functions/src/index.ts, which is the value
+// actually enforced — the client copy only gates the button and the progress
+// bar, so the two must move together.
+const OFFICE_RADIUS_METERS = 125;
+
 const LocationCard = memo(function LocationCard({
   location,
   isLoadingLocation,
@@ -201,16 +207,16 @@ const LocationCard = memo(function LocationCard({
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-muted-foreground">ໄກຈາກຫ້ອງການ</span>
                   <span
-                    className={`font-semibold tabular-nums ${officeDistance > 100 ? "text-destructive" : "text-emerald-600"}`}
+                    className={`font-semibold tabular-nums ${officeDistance > OFFICE_RADIUS_METERS ? "text-destructive" : "text-emerald-600"}`}
                   >
-                    {officeDistance} / 100 ແມັດ
+                    {officeDistance} / {OFFICE_RADIUS_METERS} ແມັດ
                   </span>
                 </div>
                 <div className="bg-muted h-1.5 w-full overflow-hidden rounded-full">
                   <div
-                    className={`h-full rounded-full transition-all duration-500 ${officeDistance > 100 ? "bg-destructive" : "bg-emerald-500"}`}
+                    className={`h-full rounded-full transition-all duration-500 ${officeDistance > OFFICE_RADIUS_METERS ? "bg-destructive" : "bg-emerald-500"}`}
                     style={{
-                      width: `${Math.max(Math.min((officeDistance / 100) * 100, 100), 4)}%`,
+                      width: `${Math.max(Math.min((officeDistance / OFFICE_RADIUS_METERS) * 100, 100), 4)}%`,
                     }}
                   />
                 </div>
@@ -663,9 +669,9 @@ export default function AttendancePage() {
         toast.error("ບໍ່ສາມາດໂຫຼດຂໍ້ມູນສະຖານທີ່ຫ້ອງການໄດ້. ກະລຸນາລອງໃໝ່.");
         return null;
       }
-      if (dist > 100) {
+      if (dist > OFFICE_RADIUS_METERS) {
         toast.error(
-          `ທ່ານຢູ່ຫ່າງຈາກຫ້ອງການ ${dist} ແມັດ. ຕ້ອງຢູ່ພາຍໃນ 100 ແມັດ.`,
+          `ທ່ານຢູ່ຫ່າງຈາກຫ້ອງການ ${dist} ແມັດ. ຕ້ອງຢູ່ພາຍໃນ ${OFFICE_RADIUS_METERS} ແມັດ.`,
         );
         return null;
       }
@@ -678,6 +684,7 @@ export default function AttendancePage() {
       return {
         blocked: true,
         reason: "ວັນນີ້ເປັນວັນພັກທ້າຍອາທິດ ບໍ່ສາມາດ Check-In ໄດ້",
+        title : "ວັນນີ້ເປັນວັນພັກທ້າຍອາທິດ",
       };
     // Range + scope aware (not just h.date, the legacy single-day field) —
     // a multi-day holiday (e.g. a 3-day Pi Mai Lao entry) must block every
@@ -691,11 +698,12 @@ export default function AttendancePage() {
         appliesToLocation(h.scope, workLocationUuid),
     );
     if (holiday)
-      return { blocked: true, reason: `ວັນນີ້ເປັນວັນພັກ: ${holiday.name}` };
+      return { blocked: true, reason: `ວັນນີ້ເປັນວັນພັກ: ${holiday.name}`, title: `ວັນພັກ: ${holiday.name}` };
     if (todayLeaveStatus === "blocked")
       return {
         blocked: true,
         reason: "ທ່ານມີວັນລາພັກທີ່ໄດ້ຮັບອະນຸມັດໃນວັນນີ້ ບໍ່ສາມາດ Check-In ໄດ້",
+        title: "ທ່ານມີການລາພັກ",
       };
     if (todayTrip)
       return {
@@ -703,8 +711,9 @@ export default function AttendancePage() {
         reason:
           todayTrip.reason ||
           "ທ່ານກຳລັງໄປທັດສະນະ/ວຽກນອກສະຖານທີ່ເປັນກຸ່ມ ບໍ່ສາມາດ Check-In ໄດ້",
+        title: "ທ່ານກຳລັງໄປທັດສະນະ",
       };
-    return { blocked: false, reason: "" };
+    return { blocked: false, reason: "", title: "" };
   }, [holidays, todayIso, todayLeaveStatus, todayTrip, workLocationUuid]);
 
   const handleAttendance = useCallback(
@@ -820,10 +829,10 @@ export default function AttendancePage() {
   const isWithinOffice = useMemo(() => {
     if (!location || !!location.error) return true;
     if (geoFenceStatus === "no_coordinates") return true;
-    // Must match the 100m limit enforced in getValidatedLocation — otherwise
+    // Must match the limit enforced in getValidatedLocation — otherwise
     // the button disables (and badge reads "outside office") for users who
     // are actually still within the allowed check-in radius.
-    return officeDistance !== null && officeDistance <= 100;
+    return officeDistance !== null && officeDistance <= OFFICE_RADIUS_METERS;
   }, [location, officeDistance, geoFenceStatus]);
 
   const weeklyHistory = useMemo(() => {
@@ -869,10 +878,10 @@ export default function AttendancePage() {
           <AlertTriangle className="text-destructive mt-0.5 h-4 w-4 shrink-0" />
           <div>
             <p className="text-destructive text-sm font-medium">
-              ລາພັກໄດ້ຮັບອະນຸມັດແລ້ວ
+              {isBlockedDay.title}
             </p>
             <p className="text-destructive/80 mt-0.5 text-xs">
-              ທ່ານມີການລາພັກໃນວັນນີ້ — ບໍ່ສາມາດ Check-In ໄດ້
+              {isBlockedDay.reason}
             </p>
           </div>
         </div>
@@ -896,7 +905,7 @@ export default function AttendancePage() {
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
           <div>
             <p className="text-sm font-medium text-amber-800 dark:text-amber-400">
-              ໄປທ່ຽວປະຈຳປີກັບບໍລິສັດ
+              {isBlockedDay.title}
             </p>
             <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-500">
               {isBlockedDay.reason}

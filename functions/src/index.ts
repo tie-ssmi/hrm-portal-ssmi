@@ -1,8 +1,38 @@
 import * as admin from "firebase-admin";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
-import { onDocumentCreated, onDocumentWritten } from "firebase-functions/v2/firestore";
+import { onDocumentCreated, onDocumentUpdated, onDocumentWritten } from "firebase-functions/v2/firestore";
 import webpush from "web-push";
+import { sendResendEmail } from "./email/resend";
+import {
+  ADMIN_LEAVE_URL,
+  APPROVER_ROLE_LABEL,
+  PORTAL_APPROVAL_URL,
+  PORTAL_DASHBOARD_URL,
+  renderLeaveEmailHtml,
+  type LeaveDecider,
+  type LeaveEmailData,
+  type LeaveEmailType,
+} from "./email/portal-leave-email";
+import {
+  emailsFromEmployeeDocs,
+  resolveEmployeesWithRoleFlag,
+  resolveLeaveApplicant,
+  resolveLeaveDepartmentHeadDocs,
+  resolveLeaveHrDocs,
+} from "./email/leave-recipient-resolver";
+import {
+  PORTAL_APPROVAL_OFFSITE_URL,
+  PORTAL_REQUEST_OFFSITE_URL,
+  renderOffsiteEmailHtml,
+  type OffsiteEmailType,
+} from "./email/portal-offsite-email";
+import {
+  resolveOffsiteRequesterRecipient,
+  resolveOffsiteTeammateRecipients,
+  type EmailRecipient,
+  type OffsiteRecipientSource,
+} from "./email/offsite-recipient-resolver";
 
 if (admin.apps.length === 0) {
   admin.initializeApp();
@@ -238,7 +268,26 @@ export const syncEmployeeMirrors = onDocumentWritten(
 
     const writes: Promise<unknown>[] = [];
 
-    if (after.rolesUid !== before?.rolesUid) {
+    // The `uid` field gets repointed at a different Firebase Auth user
+    // whenever an account is re-linked — lib/employees.ts
+    // updateEmployeeUidByEmail does exactly that after an email change, when
+    // the person signs in with a Google account the old uid never belonged
+    // to. Both mirrors are keyed by uid, so that rename used to orphan
+    // userRoles/{oldUid} and — since rolesUid/salary themselves did not
+    // change — nothing ever created userRoles/{newUid}. The employee could
+    // then sign in but resolve no role at all (no menus, no approval rights).
+    // Treat a uid change as "move both mirrors to the new key".
+    const previousUid: string | undefined = before?.uid;
+    const uidChanged = !!previousUid && previousUid !== uid;
+
+    if (uidChanged) {
+      writes.push(
+        db.collection("userRoles").doc(previousUid).delete(),
+        db.collection("employeeCompensation").doc(previousUid).delete(),
+      );
+    }
+
+    if (uidChanged || after.rolesUid !== before?.rolesUid) {
       writes.push(
         after.rolesUid
           ? db
@@ -253,7 +302,7 @@ export const syncEmployeeMirrors = onDocumentWritten(
       );
     }
 
-    if (after.salary !== before?.salary) {
+    if (uidChanged || after.salary !== before?.salary) {
       writes.push(
         after.salary != null
           ? db
@@ -555,58 +604,115 @@ async function sendPushToEmployeeDocs(
   return notified;
 }
 
-// Resolves employees who hold a given approval permission (approveBranch /
-// approveDepartment), scoped to a work location (and department, for the
-// department flag). Previously this queried
-// employees.where("rolePermissions.<flag>", "==", true) directly — but
-// nothing anywhere (this repo or the admin repo) ever writes
-// `rolePermissions` onto an employees doc, so that query silently matched
-// zero documents and approver push notifications never fired. Role is now
-// resolved the same way firestore.rules does: roles with the flag set →
-// userRoles pointing at one of those role ids → the matching employees.
-async function resolveApproversForFlag(
-  db: FirebaseFirestore.Firestore,
-  flag: "approveBranch" | "approveDepartment",
-  workLocationUid: string,
-  departmentUid?: string,
-): Promise<FirebaseFirestore.DocumentSnapshot[]> {
-  const rolesSnap = await db.collection("roles").get();
-  const roleIds = rolesSnap.docs
-    .filter((d) => d.data()?.role?.[flag] === true)
-    .map((d) => d.id);
-  if (roleIds.length === 0) return [];
-
-  const uids = new Set<string>();
-  for (let i = 0; i < roleIds.length; i += 30) {
-    const batch = roleIds.slice(i, i + 30);
-    const snap = await db
-      .collection("userRoles")
-      .where("roleId", "in", batch)
-      .get();
-    snap.docs.forEach((d) => uids.add(d.id));
-  }
-  if (uids.size === 0) return [];
-
-  const empRefs = [...uids].map((uid) => db.collection("employees").doc(uid));
-  const empDocs = await db.getAll(...empRefs);
-
-  return empDocs.filter((d) => {
-    if (!d.exists) return false;
-    const data = d.data()!;
-    if (data.workLocation?.uuid !== workLocationUid) return false;
-    if (departmentUid && data.department?.uuid !== departmentUid) return false;
-    return true;
-  });
-}
+// Role resolution used to live here as resolveApproversForFlag. It now sits
+// in ./email/leave-recipient-resolver so the push path and the email path
+// share one implementation — see that file for why permissions are read via
+// roles → userRoles → employees rather than off an employees field.
+const resolveApproversForFlag = resolveEmployeesWithRoleFlag;
 
 type LeaveCreatedDoc = {
   status?: string;
+  type?: string;
+  policyName?: string;
+  duration?: number;
+  startDate?: string;
+  endDate?: string;
   leaveUserUuid?: string;
   leaveUserName?: string;
+  createdByUid?: string;
   reason?: string;
   workLocationUid?: string;
   departmentUid?: string;
 };
+
+type LeaveApprovalStep = {
+  role?: string;
+  decision?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+};
+
+/** A leave document as the update trigger sees it — the chain included. */
+type LeaveDoc = LeaveCreatedDoc & {
+  approvals?: LeaveApprovalStep[];
+  rejectReason?: string;
+};
+
+function approvalSlot(leave: LeaveDoc, role: string): LeaveApprovalStep | undefined {
+  return leave.approvals?.find((a) => a?.role === role);
+}
+
+/** Employee docs → the {email, name} pairs sendLeaveEmails expects. */
+function recipientsFromDocs(
+  docs: FirebaseFirestore.DocumentSnapshot[],
+): { email: string; name: string }[] {
+  return docs
+    .map((d) => ({
+      email: String(d.data()?.email ?? "").trim().toLowerCase(),
+      name: employeeNameFromDoc(d),
+    }))
+    .filter((r) => r.email.includes("@"));
+}
+
+/** Narrows a leave document to just the fields the email template renders. */
+function toLeaveEmailData(leave: LeaveCreatedDoc): LeaveEmailData {
+  return {
+    leaveUserName: leave.leaveUserName,
+    type: leave.type,
+    policyName: leave.policyName,
+    duration: leave.duration,
+    startDate: leave.startDate,
+    endDate: leave.endDate,
+    reason: leave.reason,
+  };
+}
+
+/**
+ * One email per recipient so the greeting can be personalised and so no
+ * recipient sees the others' addresses. Sends run in parallel and each is
+ * independently failure-tolerant — sendResendEmail never throws.
+ */
+async function sendLeaveEmails(params: {
+  recipients: { email: string; name?: string }[];
+  subject: string;
+  leave: LeaveCreatedDoc;
+  actionUrl: string;
+  type: LeaveEmailType;
+  rejectReason?: string;
+  decidedBy?: LeaveDecider;
+  approvers?: LeaveDecider[];
+  tag: string;
+}): Promise<number> {
+  const {
+    recipients, subject, leave, actionUrl, type, rejectReason, decidedBy, approvers, tag,
+  } = params;
+  if (recipients.length === 0) {
+    console.log(`[email ${tag}]: no recipients resolved — skipped`);
+    return 0;
+  }
+
+  const results = await Promise.all(
+    recipients.map((recipient) =>
+      sendResendEmail({
+        to: [recipient.email],
+        subject,
+        html: renderLeaveEmailHtml({
+          recipientName: recipient.name,
+          applicantName: leave.leaveUserName,
+          leave: toLeaveEmailData(leave),
+          actionUrl,
+          type,
+          rejectReason,
+          decidedBy,
+          approvers,
+        }),
+        tag,
+      }),
+    ),
+  );
+
+  return results.filter(Boolean).length;
+}
 
 export const notifyNewLeaveRequest = onDocumentCreated(
   { document: "leaves/{leaveId}", region: "asia-southeast1" },
@@ -618,25 +724,9 @@ export const notifyNewLeaveRequest = onDocumentCreated(
     if (leave.status !== "pending" || !leave.workLocationUid) return;
 
     const db = admin.firestore();
-    const [branchDocs, deptDocs] = await Promise.all([
-      resolveApproversForFlag(db, "approveBranch", leave.workLocationUid),
-      leave.departmentUid
-        ? resolveApproversForFlag(
-            db,
-            "approveDepartment",
-            leave.workLocationUid,
-            leave.departmentUid,
-          )
-        : Promise.resolve([]),
-    ]);
-
-    const seen = new Set<string>();
-    const approverDocs: FirebaseFirestore.DocumentSnapshot[] = [];
-    for (const d of [...branchDocs, ...deptDocs]) {
-      if (d.id === leave.leaveUserUuid || seen.has(d.id)) continue;
-      seen.add(d.id);
-      approverDocs.push(d);
-    }
+    // Same resolution the email path uses — one round of role lookups feeds
+    // both the push and the email below.
+    const approverDocs = await resolveLeaveDepartmentHeadDocs(db, leave);
 
     if (approverDocs.length === 0) return;
 
@@ -652,6 +742,128 @@ export const notifyNewLeaveRequest = onDocumentCreated(
     console.log(
       `[leave-new]: notified ${notified}/${approverDocs.length} approvers for ${event.params.leaveId}`,
     );
+
+    // Touchpoint 1 — email the departmentHead approvers. Runs after the push
+    // and never rethrows, so a mail problem cannot affect the request itself.
+    const emailed = await sendLeaveEmails({
+      recipients: recipientsFromDocs(approverDocs),
+      subject: `[ລໍຖ້າອະນຸມັດ] ໃບລາພັກໃໝ່: ${leave.leaveUserName || "ບໍ່ມີຊື່"} (${leave.duration ?? "?"} ວັນ)`,
+      leave,
+      actionUrl: PORTAL_APPROVAL_URL,
+      type: "departmentHead",
+      tag: "leave-email-new",
+    });
+    console.log(
+      `[leave-email-new]: emailed ${emailed} approver(s) for ${event.params.leaveId}`,
+    );
+  },
+);
+
+/** Lao name first, English second, address last — matches the push payloads. */
+function employeeNameFromDoc(doc: FirebaseFirestore.DocumentSnapshot): string {
+  const data = doc.data() ?? {};
+  const lo = [data.firstNameLo, data.lastNameLo].filter(Boolean).join(" ").trim();
+  if (lo) return lo;
+  const en = [data.firstNameEn, data.lastNameEn].filter(Boolean).join(" ").trim();
+  return en || String(data.email ?? "");
+}
+
+// =========================================================================
+// 📧 Touchpoint 2 — the departmentHead slot gets decided
+//
+// Driven by the Firestore write rather than by the portal's click handler:
+// the portal is a static export with no server, so a Resend key placed in
+// page.tsx would ship to every browser (and Resend refuses browser origins
+// anyway). Watching the document also means the mail fires no matter which
+// client made the decision.
+// =========================================================================
+export const notifyLeaveDecisionEmail = onDocumentUpdated(
+  { document: "leaves/{leaveId}", region: "asia-southeast1" },
+  async (event) => {
+    const before = event.data?.before?.data() as LeaveDoc | undefined;
+    const after = event.data?.after?.data() as LeaveDoc | undefined;
+    if (!before || !after) return;
+
+    const db = admin.firestore();
+    const leaveId = event.params.leaveId;
+
+    // ── Step 1 cleared → hand the request to HR ──────────────────────────
+    // Keyed on the slot rather than on `status`, because the request stays
+    // `pending` until the whole chain signs off.
+    const dhBefore = approvalSlot(before, "departmentHead")?.decision;
+    const dhAfter = approvalSlot(after, "departmentHead")?.decision;
+    if (dhBefore === "pending" && dhAfter === "approved") {
+      const hrDocs = await resolveLeaveHrDocs(db, after);
+      const emailed = await sendLeaveEmails({
+        recipients: recipientsFromDocs(hrDocs),
+        subject: `[ລໍຖ້າກວດສອບ HR] ໃບລາພັກ: ${after.leaveUserName || "ບໍ່ມີຊື່"} (ຫົວໜ້າພະແນກອະນຸມັດແລ້ວ)`,
+        leave: after,
+        actionUrl: ADMIN_LEAVE_URL,
+        type: "hr",
+        tag: "leave-email-hr",
+      });
+      console.log(
+        `[leave-email-hr]: emailed ${emailed}/${emailsFromEmployeeDocs(hrDocs).length} HR for ${leaveId}`,
+      );
+    }
+
+    // ── Applicant notices ────────────────────────────────────────────────
+    // Driven by `status`, which services/leave-approval.ts recomputes from
+    // the whole chain: any rejection anywhere → 'rejected', every slot
+    // approved → 'approved'. So these fire for an HR or manager decision
+    // too, not only the departmentHead's, and only on the transition — a
+    // later write to the same document cannot re-send them.
+    const becameApproved = before.status !== "approved" && after.status === "approved";
+    const becameRejected = before.status !== "rejected" && after.status === "rejected";
+    if (!becameApproved && !becameRejected) return;
+
+    const applicant = await resolveLeaveApplicant(db, after);
+    if (!applicant) {
+      console.error(
+        `[leave-email-applicant]: no applicant email resolved for ${leaveId}`,
+      );
+      return;
+    }
+    const recipients = [{ email: applicant.email, name: applicant.name }];
+
+    if (becameApproved) {
+      const emailed = await sendLeaveEmails({
+        recipients,
+        subject: `✅ ໃບລາພັກຂອງທ່ານໄດ້ຮັບການອະນຸມັດແລ້ວ (${after.duration ?? "?"} ວັນ)`,
+        leave: after,
+        actionUrl: PORTAL_DASHBOARD_URL,
+        type: "approved",
+        // The full chain, so the applicant sees every signature.
+        approvers: (after.approvals ?? [])
+          .filter((a) => a?.decision === "approved")
+          .map((a) => ({ role: a.role, name: a.reviewedBy, at: a.reviewedAt })),
+        tag: "leave-email-approved",
+      });
+      console.log(`[leave-email-approved]: emailed ${emailed} applicant for ${leaveId}`);
+      return;
+    }
+
+    // Rejected: name the decider. The last rejected slot is the one that
+    // ended the chain.
+    const rejecter = [...(after.approvals ?? [])]
+      .reverse()
+      .find((a) => a?.decision === "rejected");
+
+    const emailed = await sendLeaveEmails({
+      recipients,
+      subject: `❌ ໃບລາພັກຂອງທ່ານບໍ່ໄດ້ຮັບການອະນຸມັດ${
+        rejecter?.role ? ` (${APPROVER_ROLE_LABEL[rejecter.role] ?? rejecter.role})` : ""
+      }`,
+      leave: after,
+      actionUrl: PORTAL_DASHBOARD_URL,
+      type: "rejected",
+      rejectReason: after.rejectReason,
+      decidedBy: rejecter
+        ? { role: rejecter.role, name: rejecter.reviewedBy, at: rejecter.reviewedAt }
+        : undefined,
+      tag: "leave-email-reject",
+    });
+    console.log(`[leave-email-reject]: emailed ${emailed} applicant for ${leaveId}`);
   },
 );
 
@@ -716,6 +928,173 @@ export const notifyNewOffsiteRequest = onDocumentCreated(
     console.log(
       `[offsite-new]: notified ${notified}/${approverDocs.length} approvers for ${event.params.requestId}`,
     );
+
+    // Email the same departmentHead approvers. Runs after the push and never
+    // rethrows, so a mail problem cannot affect the request itself.
+    const offsite = work as OffsiteDoc;
+    const requestNo = offsite.requestNo || event.params.requestId;
+    const emailed = await sendOffsiteEmails({
+      recipients: recipientsFromDocs(approverDocs),
+      subject: `[ລໍຖ້າອະນຸມັດ] ໃບສະເໜີອອກວຽກນອກໃໝ່ ${requestNo}: ${work.createdBy || "ບໍ່ມີຊື່"}`,
+      offsite,
+      type: "departmentHead",
+      // The approval page opens on its leave tab — without ?tab=offsite the
+      // approver lands on the wrong queue.
+      actionUrl: PORTAL_APPROVAL_OFFSITE_URL,
+      tag: "offsite-email-new",
+    });
+    console.log(
+      `[offsite-email-new]: emailed ${emailed} approver(s) for ${event.params.requestId}`,
+    );
+  },
+);
+
+// =========================================================================
+// 📧 Work-outside status emails
+//
+// Routing is deliberately asymmetric:
+//   approved → every teammate on the trip (`teammate[]`)
+//   rejected → the requester ALONE — teammates are not told
+// =========================================================================
+
+type OffsiteDoc = OffsiteRecipientSource & {
+  status?: string;
+  requestNo?: string;
+  subject?: string;
+  startDate?: string;
+  endDate?: string;
+  durationDays?: number;
+  rejectReason?: string | null;
+  activityType?: { code?: string; name?: string };
+  approvals?: LeaveApprovalStep[];
+};
+
+/**
+ * One email per recipient — personalised greeting, and nobody sees anyone
+ * else's address. Each send is independently failure-tolerant.
+ */
+async function sendOffsiteEmails(params: {
+  recipients: EmailRecipient[];
+  subject: string;
+  offsite: OffsiteDoc;
+  type: OffsiteEmailType;
+  /** Where the CTA points. Ignored by the outcome notices, which always
+   *  send the reader to their own dashboard. */
+  actionUrl?: string;
+  rejectReason?: string;
+  decidedBy?: LeaveDecider;
+  approvers?: LeaveDecider[];
+  tag: string;
+}): Promise<number> {
+  const {
+    recipients, subject, offsite, type, actionUrl, rejectReason, decidedBy, approvers, tag,
+  } = params;
+  if (recipients.length === 0) {
+    console.log(`[email ${tag}]: no recipients resolved — skipped`);
+    return 0;
+  }
+
+  const results = await Promise.all(
+    recipients.map((recipient) =>
+      sendResendEmail({
+        to: [recipient.email],
+        subject,
+        html: renderOffsiteEmailHtml({
+          recipientName: recipient.name,
+          offsite: {
+            requestNo: offsite.requestNo,
+            requesterName:
+              offsite.requester?.fullNameLo ||
+              offsite.requester?.fullNameEn ||
+              offsite.createdBy,
+            activityTypeName: offsite.activityType?.name,
+            subject: offsite.subject,
+            startDate: offsite.startDate,
+            endDate: offsite.endDate,
+            durationDays: offsite.durationDays,
+            teammateCount: offsite.teammate?.length,
+          },
+          actionUrl: actionUrl ?? PORTAL_REQUEST_OFFSITE_URL,
+          type,
+          rejectReason,
+          decidedBy,
+          approvers,
+        }),
+        tag,
+      }),
+    ),
+  );
+
+  return results.filter(Boolean).length;
+}
+
+export const notifyOffsiteDecisionEmail = onDocumentUpdated(
+  { document: "workOutside/{requestId}", region: "asia-southeast1" },
+  async (event) => {
+    const before = event.data?.before?.data() as OffsiteDoc | undefined;
+    const after = event.data?.after?.data() as OffsiteDoc | undefined;
+    if (!before || !after) return;
+
+    // Only the transition sends mail — later edits to a decided request must
+    // not re-notify anyone.
+    const becameApproved = before.status !== "approved" && after.status === "approved";
+    const becameRejected = before.status !== "rejected" && after.status === "rejected";
+    if (!becameApproved && !becameRejected) return;
+
+    const requestId = event.params.requestId;
+    const requestNo = after.requestNo || requestId;
+
+    if (becameApproved) {
+      const recipients = resolveOffsiteTeammateRecipients(after);
+      const emailed = await sendOffsiteEmails({
+        recipients,
+        subject: `🎉 ໃບສະເໜີອອກວຽກນອກ ${requestNo} ໄດ້ຮັບການອະນຸມັດສົມບູນແລ້ວ`,
+        offsite: after,
+        type: "approved",
+        actionUrl: PORTAL_REQUEST_OFFSITE_URL,
+        approvers: (after.approvals ?? [])
+          .filter((a) => a?.decision === "approved")
+          .map((a) => ({ role: a.role, name: a.reviewedBy, at: a.reviewedAt })),
+        tag: "offsite-email-approved",
+      });
+      console.log(
+        `[offsite-email-approved]: emailed ${emailed}/${recipients.length} teammate(s) for ${requestId}`,
+      );
+      return;
+    }
+
+    // Rejected — requester only. resolveOffsiteTeammateRecipients is
+    // deliberately not consulted here.
+    const requester = await resolveOffsiteRequesterRecipient(
+      admin.firestore(),
+      after,
+    );
+    if (!requester) {
+      console.error(
+        `[offsite-email-reject]: no requester email resolved for ${requestId}`,
+      );
+      return;
+    }
+
+    const rejecter = [...(after.approvals ?? [])]
+      .reverse()
+      .find((a) => a?.decision === "rejected");
+
+    const emailed = await sendOffsiteEmails({
+      recipients: [requester],
+      subject: `❌ ໃບສະເໜີອອກວຽກນອກ ${requestNo} ບໍ່ໄດ້ຮັບການອະນຸມັດ`,
+      offsite: after,
+      type: "rejected",
+      actionUrl: PORTAL_REQUEST_OFFSITE_URL,
+      rejectReason: after.rejectReason ?? undefined,
+      decidedBy: rejecter
+        ? { role: rejecter.role, name: rejecter.reviewedBy, at: rejecter.reviewedAt }
+        : undefined,
+      tag: "offsite-email-reject",
+    });
+    console.log(
+      `[offsite-email-reject]: emailed ${emailed} requester for ${requestId}`,
+    );
   },
 );
 
@@ -747,6 +1126,11 @@ const IMPLAUSIBLE_SPEED_KMH = 200;
 // Mock-location apps often report suspiciously clean accuracy values;
 // genuine outdoor phone GPS rarely holds this tight consistently.
 const SUSPICIOUSLY_PRECISE_ACCURACY_M = 3;
+// How far from the work location's coordinates a check-in is still accepted.
+// Authoritative value — the client mirrors it in app/dashboard/attendance/page.tsx
+// (OFFICE_RADIUS_METERS); keep the two in sync or the button enables for
+// distances the server then rejects.
+const OFFICE_RADIUS_METERS = 125;
 
 function timestampFromParts(isoDate: string, time: string): number {
   return new Date(`${isoDate}T${time}:00+07:00`).getTime();
@@ -1070,10 +1454,10 @@ export const recordCheckIn = onCall(
                 locData.lng as number,
               ),
             );
-            if (dist > 100) {
+            if (dist > OFFICE_RADIUS_METERS) {
               throw new HttpsError(
                 "failed-precondition",
-                `ທ່ານຢູ່ຫ່າງຈາກຫ້ອງການ ${dist} ແມັດ. ຕ້ອງຢູ່ພາຍໃນ 100 ແມັດ.`,
+                `ທ່ານຢູ່ຫ່າງຈາກຫ້ອງການ ${dist} ແມັດ. ຕ້ອງຢູ່ພາຍໃນ ${OFFICE_RADIUS_METERS} ແມັດ.`,
               );
             }
           }

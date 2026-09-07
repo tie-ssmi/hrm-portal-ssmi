@@ -283,7 +283,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { success: false, error: 'Unable to verify account. Please try again.' }
     }
 
-    await linkWithCredential(auth.currentUser, credential)
+    // The password sign-in above already established the session — linking the
+    // Google credential on top of it is a convenience, not a requirement. When
+    // Google is already on this account Firebase throws
+    // auth/provider-already-linked; letting that escape used to fail the whole
+    // login and strand the user on the login screen while actually signed in.
+    try {
+      await linkWithCredential(auth.currentUser, credential)
+    } catch (linkError: any) {
+      if (linkError?.code !== 'auth/provider-already-linked') throw linkError
+    }
 
     const employeeData = await resolveEmployeeForFirebaseUser(auth.currentUser)
     if (!employeeData) {
@@ -449,11 +458,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    // Raised when the SDK runs a *link* task for a provider the signed-in
+    // account already holds (stale popup/redirect state, or a re-linking
+    // attempt). The session is valid at this point — the only thing that
+    // failed is a redundant link — so continue through the normal employee
+    // gate instead of reporting a sign-in failure.
+    if (error?.code === 'auth/provider-already-linked' && auth.currentUser) {
+      clearPendingGoogleLink()
+      return await processGoogleCredentialResult({ user: auth.currentUser } as UserCredential)
+    }
+
     console.error('Google login error:', error)
     clearPendingGoogleLink()
     setIsLoading(false)
     return { success: false, error: 'Google sign-in failed. Please try again.' }
-  }, [clearPendingGoogleLink, completeGoogleLink])
+  }, [clearPendingGoogleLink, completeGoogleLink, processGoogleCredentialResult])
 
   const loginWithGoogle = useCallback(async (linkPassword?: string): Promise<GoogleLoginOutcome> => {
     setIsLoading(true)
