@@ -15,9 +15,14 @@ export function PdfThumbnail({
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
     "loading",
   );
+  // surfaced in the error state on purpose: this renders on phones where the
+  // console is out of reach, and a bare "preview failed" hid a real bug for a
+  // long time.
+  const [errorDetail, setErrorDetail] = useState("");
 
   useEffect(() => {
     if (!url) {
+      setErrorDetail("no url");
       setStatus("error");
       return;
     }
@@ -25,6 +30,7 @@ export function PdfThumbnail({
     let cancelled = false;
     let renderTask: { cancel: () => void; promise: Promise<void> } | null =
       null;
+    setErrorDetail("");
     setStatus("loading");
 
     (async () => {
@@ -35,14 +41,29 @@ export function PdfThumbnail({
           import.meta.url,
         ).toString();
 
-        const pdf = await pdfjsLib.getDocument({ url }).promise;
+        // pdfjs-dist v6 fetches its decoders and font data at runtime instead
+        // of bundling them. Leaving these unset makes every scanned PDF
+        // (CCITTFax/JBIG2/JPX images) fail to render, so point them at the
+        // copies scripts/copy-pdfjs-assets.js mirrors into public/pdfjs/.
+        const pdf = await pdfjsLib.getDocument({
+          url,
+          wasmUrl: "/pdfjs/wasm/",
+          standardFontDataUrl: "/pdfjs/standard_fonts/",
+          cMapUrl: "/pdfjs/cmaps/",
+          cMapPacked: true,
+          iccUrl: "/pdfjs/iccs/",
+        }).promise;
         if (cancelled) return;
         const page = await pdf.getPage(1);
         if (cancelled) return;
 
         const canvas = canvasRef.current;
         const context = canvas?.getContext("2d");
-        if (!canvas || !context) return;
+        if (!canvas || !context) {
+          setErrorDetail("canvas unavailable");
+          setStatus("error");
+          return;
+        }
 
         const baseViewport = page.getViewport({ scale: 1 });
         const scale = 300 / baseViewport.width;
@@ -54,8 +75,15 @@ export function PdfThumbnail({
         await renderTask.promise;
         if (!cancelled) setStatus("ready");
       } catch (err) {
-        console.error(err);
-        if (!cancelled) setStatus("error");
+        console.error("[PdfThumbnail]", url, err);
+        if (!cancelled) {
+          setErrorDetail(
+            err instanceof Error
+              ? `${err.name}: ${err.message}`
+              : String(err),
+          );
+          setStatus("error");
+        }
       }
     })();
 
@@ -75,6 +103,11 @@ export function PdfThumbnail({
       >
         <FileText className="h-8 w-8" />
         ບໍ່ສາມາດສະແດງຕົວຢ່າງໄດ້
+        {errorDetail && (
+          <span className="line-clamp-3 px-2 text-center text-[10px] break-all opacity-70">
+            {errorDetail}
+          </span>
+        )}
       </div>
     );
   }

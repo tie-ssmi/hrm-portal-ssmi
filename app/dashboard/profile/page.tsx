@@ -505,7 +505,7 @@ export default function ProfilePage() {
             ເບິ່ງແລະຮ້ອງຂໍການອັບເດດຂໍ້ມູນສ່ວນຕົວຂອງທ່ານ
           </p>
         </div>
-        {/* <Button
+        <Button
           type="button"
           variant="outline"
           size="sm"
@@ -514,7 +514,7 @@ export default function ProfilePage() {
         >
           <Pencil className="h-4 w-4" />
           ແກ້ໄຂ
-        </Button> */}
+        </Button>
       </div>
 
       {/* Profile card */}
@@ -612,7 +612,7 @@ export default function ProfilePage() {
                 )}
               </div>
             </div>
-            {/* <Button
+            <Button
               type="button"
               variant="outline"
               size="sm"
@@ -621,7 +621,7 @@ export default function ProfilePage() {
             >
               <Pencil className="h-4 w-4" />
               ແກ້ໄຂ
-            </Button> */}
+            </Button>
           </div>
         </CardContent>
       </Card>

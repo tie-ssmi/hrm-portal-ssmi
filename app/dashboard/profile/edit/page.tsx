@@ -250,6 +250,19 @@ function toFormValue(profileUser: Employee | null): EditableFields {
 const LAO_PHONE_REGEX =
   /^(020|030|021|031|032|033|034|041|042|050|054|055|056|058|071|072)\d{7,8}$/;
 
+// The preview has to follow the stored file, not the slot's configuration:
+// documents uploaded through the admin portal land under doc/<uuid>.pdf and
+// show up in slots that were declared image-only, where <img src="...pdf">
+// can never render.
+function isPdfUrl(value: string): boolean {
+  if (!value) return false;
+  try {
+    return decodeURIComponent(value.split("?")[0]).toLowerCase().endsWith(".pdf");
+  } catch {
+    return value.split("?")[0].toLowerCase().endsWith(".pdf");
+  }
+}
+
 function DocUploadSlot({
   uid,
   folder,
@@ -263,7 +276,7 @@ function DocUploadSlot({
   value: string;
   label: string;
   onUploaded: (url: string) => void;
-  accept?: "image" | "pdf";
+  accept?: "image" | "pdf" | "any";
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -271,14 +284,23 @@ function DocUploadSlot({
 
   const handleSelect = async (file?: File) => {
     if (!file) return;
+    const isPdfFile =
+      file.type === "application/pdf" ||
+      file.name.toLowerCase().endsWith(".pdf");
+    const isImageFile = file.type.startsWith("image/");
     const isValid =
       accept === "pdf"
-        ? file.type === "application/pdf" ||
-          file.name.toLowerCase().endsWith(".pdf")
-        : file.type.startsWith("image/");
+        ? isPdfFile
+        : accept === "any"
+          ? isPdfFile || isImageFile
+          : isImageFile;
     if (!isValid) {
       toast.error(
-        accept === "pdf" ? "ກະລຸນາເລືອກໄຟລ໌ PDF" : "ກະລຸນາເລືອກໄຟລ໌ຮູບພາບ",
+        accept === "pdf"
+          ? "ກະລຸນາເລືອກໄຟລ໌ PDF"
+          : accept === "any"
+            ? "ກະລຸນາເລືອກໄຟລ໌ຮູບພາບ ຫຼື PDF"
+            : "ກະລຸນາເລືອກໄຟລ໌ຮູບພາບ",
       );
       return;
     }
@@ -305,7 +327,7 @@ function DocUploadSlot({
     <div className="space-y-2">
       <p className="text-sm font-medium">{label}</p>
       {value ? (
-        accept === "pdf" ? (
+        isPdfUrl(value) || accept === "pdf" ? (
           <a
             href={value}
             target="_blank"
@@ -354,7 +376,13 @@ function DocUploadSlot({
       <input
         ref={inputRef}
         type="file"
-        accept={accept === "pdf" ? "application/pdf,.pdf" : "image/*"}
+        accept={
+          accept === "pdf"
+            ? "application/pdf,.pdf"
+            : accept === "any"
+              ? "image/*,application/pdf,.pdf"
+              : "image/*"
+        }
         className="hidden"
         onChange={(e) => handleSelect(e.target.files?.[0])}
       />
@@ -1320,6 +1348,7 @@ export default function EditProfilePage() {
                         folder="images/docs"
                         value={doc.url}
                         label="ໄຟລ໌"
+                        accept="any"
                         onUploaded={(url) => setDocField(doc.id, "url", url)}
                       />
                     </div>

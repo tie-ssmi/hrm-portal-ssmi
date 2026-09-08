@@ -11,6 +11,10 @@ if (target === 'staging' && existsSync('.env.development')) {
   writeFileSync('.env.local', `NEXT_PUBLIC_DEPLOY_TARGET=${deployTarget}\n`)
 }
 
+// deploy runs next build directly, so the pdfjs runtime assets have to be
+// mirrored here too — pnpm build's copy step never fires on this path.
+execSync('node scripts/copy-pdfjs-assets.js', { stdio: 'inherit' })
+
 try {
   execSync('next build', { stdio: 'inherit' })
 } finally {

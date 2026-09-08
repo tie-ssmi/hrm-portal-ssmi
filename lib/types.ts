@@ -245,10 +245,11 @@ export interface LeaveRequest {
   // is addressed to. Computed at submission time from duration + LPB scope,
   // see getLeaveRecipientText in services/leave-approval.ts.
   to?: string;
-  // Remaining balance for this policy at submission time, BEFORE this
-  // request's own duration is subtracted — a snapshot, not the post-
-  // deduction figure (e.g. 15 days available, request 5 -> saves 15).
+  // Two snapshots of the policy balance, both taken at submission time:
+  // what was left going in, and what is left once this request's own
+  // duration comes off it (e.g. 5 available, request 4 -> before 5, after 1).
   remainingDaysBeforeRequest?: number;
+  remainingDaysAfterRequest?: number;
   successorUid?: string;
   successorNameLo?: string;
   successorNameEn?: string;

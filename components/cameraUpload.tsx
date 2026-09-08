@@ -25,6 +25,25 @@ type CameraUploadProps = {
   actor?: CameraUploadActor
 }
 
+// Android file pickers routinely hand back a File with an empty `type`, so
+// falling straight back to image/jpeg would store a PDF as an image and the
+// browser would refuse to display it when the download URL is opened.
+const EXT_CONTENT_TYPES: Record<string, string> = {
+  pdf: 'application/pdf',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  heic: 'image/heic',
+  heif: 'image/heif',
+}
+
+function resolveContentType(file: File, ext: string): string {
+  if (file.type) return file.type
+  return EXT_CONTENT_TYPES[ext.toLowerCase()] || 'application/octet-stream'
+}
+
 export async function uploadImageFile(params: {
   file: File
   uid: string
@@ -38,7 +57,7 @@ export async function uploadImageFile(params: {
 
   return new Promise((resolve, reject) => {
     const task = uploadBytesResumable(storageRef, file, {
-      contentType: file.type || 'image/jpeg',
+      contentType: resolveContentType(file, ext),
       cacheControl: 'public,max-age=3600',
     })
 

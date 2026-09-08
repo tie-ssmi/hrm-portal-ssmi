@@ -79,7 +79,7 @@ import {
   fetchOfficialHolidays,
   buildHolidayDateKeySet,
 } from "@/services/officialHolidays";
-import { calcLeaveDuration } from "@/lib/leave-duration";
+import { calcLeaveDuration, getMaxLeaveEndDate } from "@/lib/leave-duration";
 import { fetchPoliciesForGender, resolveEmployeePolicyLimit } from "@/services/policies";
 import { fetchCurrentLeaveBalancesV2 } from "@/services/leave-balances";
 import { resolveEmployeeEmploymentStatus } from "@/lib/employment-status";
@@ -96,10 +96,11 @@ type LeaveTypeOption = {
   label: string;
   documentRequired?: "yes" | "option" | "no";
   countMode?: "workingDays" | "calendarDays";
-  // Balance remaining for this policy at render time — i.e. BEFORE this
-  // request's own duration is subtracted. Saved on the leave doc as
-  // remainingDaysBeforeRequest so history shows what was left going in,
-  // not the post-deduction number.
+  // Balance remaining for this policy at render time, before this request's
+  // own duration comes off it. Saved on the leave doc as both
+  // remainingDaysBeforeRequest and (minus the duration)
+  // remainingDaysAfterRequest, and it caps how far the end-date calendar
+  // will let the request run — see getMaxLeaveEndDate.
   remainingDays?: number;
 };
 
@@ -466,6 +467,72 @@ export default function LeaveRequestForm() {
     ],
   );
 
+  // Latest end date the policy balance still covers. Weekends and holidays
+  // cost nothing, so this reaches past them — 5 days from Mon 07/09 normally
+  // ends Fri 11/09, but a holiday on 11/09 pushes it to Mon 14/09.
+  //
+  // fitEndPeriod lets a half-day balance reach the further date (4.5 days
+  // gets to 11/09 by finishing at midday); the effect below then sets the
+  // period that makes it fit, so the offered date is never overrun.
+  const maxEndDate = useMemo(
+    () =>
+      getMaxLeaveEndDate({
+        startDate: leaveStartDate,
+        startPeriod,
+        holidayDateKeys: holidaySet,
+        countMode: selectedPolicy?.countMode,
+        remainingDays: selectedPolicy?.remainingDays,
+        fitEndPeriod: true,
+      }),
+    [
+      leaveStartDate,
+      startPeriod,
+      holidaySet,
+      selectedPolicy?.countMode,
+      selectedPolicy?.remainingDays,
+    ],
+  );
+
+  // Switching policy, start date or period can shrink the window under an
+  // already-picked end date — drop it rather than submit an over-budget range.
+  useEffect(() => {
+    if (leaveEndDate && maxEndDate && leaveEndDate > maxEndDate) {
+      setLeaveEndDate(undefined);
+    }
+  }, [leaveEndDate, maxEndDate]);
+
+  // Fit the end period to what is left. A 4.5-day balance running to 11/09
+  // only works as a half day, so finishing in the morning (or, having started
+  // in the afternoon, staying on afternoons) is chosen for the user rather
+  // than left as an over-budget range they have to notice and fix. Only steps
+  // in when the current pairing actually overruns — a choice that fits is
+  // left alone.
+  const remainingDays = selectedPolicy?.remainingDays;
+  const countMode = selectedPolicy?.countMode;
+  useEffect(() => {
+    if (!leaveStartDate || !leaveEndDate || remainingDays == null) return;
+    const args = {
+      startDate: leaveStartDate,
+      startPeriod,
+      endDate: leaveEndDate,
+      holidayDateKeys: holidaySet,
+      countMode,
+    };
+    const current = calcLeaveDuration({ ...args, endPeriod });
+    if (current != null && current <= remainingDays) return;
+
+    const trimmed = calcLeaveDuration({ ...args, endPeriod: "morning" });
+    if (trimmed != null && trimmed <= remainingDays) setEndPeriod("morning");
+  }, [
+    leaveStartDate,
+    leaveEndDate,
+    startPeriod,
+    endPeriod,
+    holidaySet,
+    countMode,
+    remainingDays,
+  ]);
+
   const approverRuleText = useMemo(
     () => getLeaveApproverRuleText(duration),
     [duration],
@@ -753,7 +820,16 @@ export default function LeaveRequestForm() {
           workLocationUid: workLocationUuid,
           workLocationNameLo: workLocationNameLo,
           to: getLeaveRecipientText(duration, isLPB, workLocationNameLo),
+          // Both sides of the deduction: what was left going in, and what is
+          // left after this request. 5 available minus a 4-day request saves
+          // before 5, after 1. The "after" figure falls back to the raw
+          // balance only when there is no duration to subtract (dates
+          // incomplete), which the submit guard already rules out.
           remainingDaysBeforeRequest: selectedPolicy?.remainingDays,
+          remainingDaysAfterRequest:
+            selectedPolicy?.remainingDays != null && duration != null
+              ? selectedPolicy.remainingDays - duration
+              : selectedPolicy?.remainingDays,
           docStatus:
             docUploadChoice === "now"
               ? "now"
@@ -922,7 +998,10 @@ export default function LeaveRequestForm() {
                         disabled={(d) =>
                           isWeekend(d) ||
                           holidaySet.has(format(d, "yyyy-MM-dd")) ||
-                          (!!leaveStartDate && d < leaveStartDate)
+                          (!!leaveStartDate && d < leaveStartDate) ||
+                          // Past the policy balance — greyed out rather than
+                          // rejected after the fact on submit.
+                          (!!maxEndDate && d > maxEndDate)
                         }
                       />
                     </PopoverContent>
@@ -963,6 +1042,12 @@ export default function LeaveRequestForm() {
                       </button>
                     ))}
                   </div>
+                  {maxEndDate && (
+                    <p className="text-muted-foreground mt-1.5 text-xs">
+                      ເລືອກໄດ້ສູງສຸດ {format(maxEndDate, "dd/MM/yyyy")} (ຍອດຄົງເຫຼືອ{" "}
+                      {selectedPolicy?.remainingDays} ວັນ)
+                    </p>
+                  )}
                 </Field>
               </div>
 
