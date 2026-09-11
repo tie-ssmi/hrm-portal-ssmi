@@ -92,11 +92,23 @@ async function resolveEmployeeForFirebaseUser(firebaseUser: FirebaseUser): Promi
     }
   }
 
-  // Resolved from userRoles (synced by the syncEmployeeMirrors Cloud
-  // Function), not employeeData.rolesUid directly — see firestore.rules,
-  // which stopped trusting that field for the same reason.
+  // Prefer the userRoles mirror (written by the syncEmployeeMirrors Cloud
+  // Function), but fall back to employees.rolesUid when it is missing.
+  //
+  // The mirror is only written when rolesUid actually *changes*
+  // (functions/src/index.ts) — it is never created retroactively, so every
+  // employee whose role has not been touched since that trigger shipped has
+  // no mirror at all. Without a fallback those accounts resolve no
+  // permissions whatsoever: no approval nav, no admin panel, nothing.
+  //
+  // Falling back is not a privilege escalation: firestore.rules resolves
+  // rolesUid off employees/{uid} in exactly the same way (see isAdmin() and
+  // friends), and self-update is blocked from touching rolesUid, so a user
+  // cannot point this at a role they were not granted. Client-side
+  // rolePermissions only decides which UI is rendered — the rules remain the
+  // enforcement boundary either way.
   const resolvedUid = employeeData?.uid || firebaseUser.uid
-  const roleId = await fetchUserRoleId(resolvedUid)
+  const roleId = (await fetchUserRoleId(resolvedUid)) || employeeData?.rolesUid || null
   if (roleId) {
     const rolePermissions = await fetchRoleByUid(roleId)
     if (rolePermissions && employeeData) {

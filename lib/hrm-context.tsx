@@ -25,12 +25,8 @@ import {
   getRequiredLeaveApprovers,
   resolveLeaveRequestStatus,
 } from '@/services/leave-approval'
-import {
-  formatAttendanceDocumentDate,
-  updateAttendanceCheckInTime,
-  updateAttendanceCheckOutTime,
-} from '@/services/attendance'
 import { createLeaveRequest } from '@/services/leaves'
+import { getVientianeIsoDate } from '@/lib/server-time'
 import { fetchWorkLocationGeoFence, type WorkLocationFenceResult } from '@/services/workLocations'
 import { useAuth } from './auth-context'
 import { useAttendanceHistory } from './use-attendance-queries'
@@ -54,47 +50,6 @@ function calculateDistance(
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
-function formatLocalIsoDate(date: Date): string {
-  const y = date.getFullYear()
-  const m = (date.getMonth() + 1).toString().padStart(2, '0')
-  const d = date.getDate().toString().padStart(2, '0')
-  return `${y}-${m}-${d}`
-}
-
-function toDepartmentPayload(department: unknown): { name: string; uid: string } | undefined {
-  if (!department) return undefined
-  if (typeof department === 'string') return { name: department, uid: '' }
-  if (typeof department === 'object') {
-    const v = department as Record<string, unknown>
-    const name =
-      typeof v.nameLo === 'string' ? v.nameLo
-        : typeof v.name === 'string' ? v.name
-        : typeof v.department === 'string' ? v.department
-        : ''
-    if (!name) return undefined
-    return { name, uid: typeof v.uid === 'string' ? v.uid : '' }
-  }
-  return undefined
-}
-
-function toWorkLocationPayload(
-  workLocation: unknown,
-): { code?: string; name: string; uid?: string } | undefined {
-  if (!workLocation) return undefined
-  if (typeof workLocation === 'string') return { name: workLocation }
-  if (typeof workLocation === 'object') {
-    const v = workLocation as Record<string, unknown>
-    const name = typeof v.name === 'string' ? v.name : ''
-    if (!name) return undefined
-    return {
-      name,
-      ...(typeof v.code === 'string' ? { code: v.code } : {}),
-      ...(typeof v.uid === 'string' ? { uid: v.uid } : {}),
-    }
-  }
-  return undefined
-}
-
 export function HRMProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
@@ -103,7 +58,10 @@ export function HRMProvider({ children }: { children: ReactNode }) {
   const { data: attendanceHistory = [] } = useAttendanceHistory(user?.uuid)
 
   const todayAttendance = useMemo<AttendanceRecord | null>(() => {
-    const today = formatLocalIsoDate(new Date())
+    // Vientiane, matching the dateKey the server stamps on the record and the
+    // lookup in useTodayAttendance — the device's own date silently missed
+    // today's row whenever the viewer's timezone/clock differed.
+    const today = getVientianeIsoDate()
     return attendanceHistory.find((r) => r.date === today) ?? null
   }, [attendanceHistory])
 
@@ -160,81 +118,6 @@ export function HRMProvider({ children }: { children: ReactNode }) {
       return calculateDistance(lat, lng, geoFence.lat, geoFence.lng) <= geoFence.radius
     },
     [geoFence, geoFenceStatus],
-  )
-
-  // ── Check-in / Check-out ──────────────────────────────────────────────────
-  const checkIn = useCallback(
-    async (location?: { lat: number; lng: number }) => {
-      if (todayAttendance?.checkIn) return { success: false, message: 'Already checked in today' }
-      if (!user?.uuid) return { success: false, message: 'User uuid is missing.' }
-
-      const now = new Date()
-      const attendanceDate = formatAttendanceDocumentDate(now)
-      const checkInTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`
-      const nowMin = now.getHours() * 60 + now.getMinutes()
-      const checkInStatus: 'present' | 'late' | 'not_check_in' =
-        nowMin <= 8 * 60 + 15 ? 'present'
-        : nowMin < 10 * 60 ? 'late'
-        : 'not_check_in'
-
-      await updateAttendanceCheckInTime({
-        userUuid: user.uuid,
-        uid: user.uid || user.uuid,
-        date: attendanceDate,
-        checkInTime,
-        status: checkInStatus,
-        location,
-        createdBy: 'system',
-        fullNameEn: `${user.firstNameEn || user.firstName} ${user.lastNameEn || user.lastName}`.trim(),
-        fullNameLo: `${user.firstNameLo || ''} ${user.lastNameLo || ''}`.trim() || undefined,
-        jobTitle: user.jobTitle || user.position,
-        employeeImage: user.profileImage || user.photo3x4Url || user.avatar,
-        note: null,
-        department: toDepartmentPayload(user.department),
-        workLocation: toWorkLocationPayload(user.workLocation),
-      })
-
-      // Invalidate → re-fetch from Firestore to stay in sync
-      queryClient.invalidateQueries({ queryKey: attendanceKeys.history(user.uuid) })
-
-      return {
-        success: true,
-        message: checkInStatus !== 'present' ? `Checked in late at ${checkInTime}` : `Checked in at ${checkInTime}`,
-      }
-    },
-    [todayAttendance, user, queryClient],
-  )
-
-  const checkOut = useCallback(
-    async (location?: { lat: number; lng: number }) => {
-      if (!todayAttendance?.checkIn) return { success: false, message: 'Please check in first' }
-      if (todayAttendance?.checkOut) return { success: false, message: 'Already checked out today' }
-      if (!user?.uuid) return { success: false, message: 'User uuid is missing.' }
-
-      const now = new Date()
-      const attendanceDate = formatAttendanceDocumentDate(now)
-      const checkOutTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`
-
-      await updateAttendanceCheckOutTime({
-        userUuid: user.uuid,
-        uid: user.uid || user.uuid,
-        date: attendanceDate,
-        checkOutTime,
-        workHours: 8,
-        location: location || todayAttendance.checkInLocation,
-        fullNameEn: `${user.firstNameEn || user.firstName} ${user.lastNameEn || user.lastName}`.trim(),
-        fullNameLo: `${user.firstNameLo || ''} ${user.lastNameLo || ''}`.trim() || undefined,
-        jobTitle: user.jobTitle || user.position,
-        employeeImage: user.profileImage || user.photo3x4Url || user.avatar,
-        department: toDepartmentPayload(user.department),
-        workLocation: toWorkLocationPayload(user.workLocation),
-      })
-
-      queryClient.invalidateQueries({ queryKey: attendanceKeys.history(user.uuid) })
-
-      return { success: true, message: `Checked out at ${checkOutTime}` }
-    },
-    [todayAttendance, user, queryClient],
   )
 
   // ── Submit leave (invalidates query cache) ────────────────────────────────
@@ -309,8 +192,6 @@ export function HRMProvider({ children }: { children: ReactNode }) {
   const contextValue = useMemo(() => ({
     todayAttendance,
     attendanceHistory,
-    checkIn,
-    checkOut,
     leaveBalance,
     leaveRequests: [] as never[],
     submitLeaveRequest,
@@ -328,8 +209,6 @@ export function HRMProvider({ children }: { children: ReactNode }) {
   }), [
     todayAttendance,
     attendanceHistory,
-    checkIn,
-    checkOut,
     leaveBalance,
     submitLeaveRequest,
     reviewLeaveRequest,

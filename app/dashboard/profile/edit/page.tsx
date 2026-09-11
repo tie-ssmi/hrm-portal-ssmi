@@ -3,6 +3,7 @@
 // ** core
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useEmployeeSelfEditEnabled } from "@/lib/use-admin-settings-query";
 
 // ** assets / icons
 import {
@@ -392,6 +393,8 @@ function DocUploadSlot({
 
 export default function EditProfilePage() {
   const router = useRouter();
+  const { data: selfEditEnabled, isLoading: selfEditLoading } =
+    useEmployeeSelfEditEnabled();
   const { user, firebaseUser, updateProfile } = useAuth();
   const profileUser: Employee | null = user;
 
@@ -513,8 +516,24 @@ export default function EditProfilePage() {
       docs: prev.docs.filter((d) => d.id !== id),
     }));
 
-  if (!profileUser) {
+  if (!profileUser || selfEditLoading) {
     return <ProfileSkeleton />;
+  }
+
+  // Hiding the entry buttons on the profile page is not a guard — this route
+  // is reachable by typing the URL. adminSettings/employeeSelfEdit is the
+  // switch, so honour it here too.
+  if (selfEditEnabled === false) {
+    return (
+      <div className="space-y-4 py-10 text-center">
+        <p className="text-muted-foreground">
+          ຜູ້ດູແລລະບົບປິດການແກ້ໄຂຂໍ້ມູນສ່ວນຕົວດ້ວຍຕົນເອງໄວ້
+        </p>
+        <Button type="button" variant="outline" onClick={() => router.back()}>
+          ກັບຄືນ
+        </Button>
+      </div>
+    );
   }
 
   const uid = firebaseUser?.uid || profileUser.id;

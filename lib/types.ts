@@ -410,14 +410,6 @@ export interface AuthContextType {
 export interface HRMContextType {
   todayAttendance: AttendanceRecord | null;
   attendanceHistory: AttendanceRecord[];
-  checkIn: (location?: {
-    lat: number;
-    lng: number;
-  }) => Promise<{ success: boolean; message: string }>;
-  checkOut: (location?: {
-    lat: number;
-    lng: number;
-  }) => Promise<{ success: boolean; message: string }>;
   leaveBalance: LeaveBalance;
   leaveRequests: LeaveRequest[];
   submitLeaveRequest: (

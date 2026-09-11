@@ -11,7 +11,7 @@ import {
   updateAttendanceCheckOutTime,
   uploadAttendanceImage,
 } from '@/services/attendance'
-import { fetchServerTime } from '@/lib/server-time'
+import { fetchServerTime, getVientianeIsoDate } from '@/lib/server-time'
 import { fetchTodayLeaveStatus, type DayLeaveStatus } from '@/services/leaves'
 import { fetchActiveTripForUser } from '@/services/trip'
 import { getDeviceInfo } from '@/lib/device'
@@ -29,13 +29,6 @@ export const attendanceKeys = {
   all: ['attendance'] as const,
   history: (userUuid: string) => [...attendanceKeys.all, 'history', userUuid] as const,
   todayCheckIn: ['attendance', 'today-check-in'] as const,
-}
-
-function formatLocalIsoDate(date: Date): string {
-  const year = date.getFullYear()
-  const month = (date.getMonth() + 1).toString().padStart(2, '0')
-  const day = date.getDate().toString().padStart(2, '0')
-  return `${year}-${month}-${day}`
 }
 
 function upsertAttendanceRecord(
@@ -112,7 +105,12 @@ export function useTodayAttendance(userUuid: string | null | undefined) {
   const { data: history = [], ...query } = useAttendanceHistory(userUuid)
 
   const todayAttendance = useMemo(() => {
-    const todayIso = formatLocalIsoDate(new Date())
+    // Vientiane — the same anchor the check-in mutation writes (fetchServerTime's
+    // isoDate) and the server stamps as dateKey. Matching on the DEVICE's local
+    // date meant a viewer whose timezone/clock differs never found today's row:
+    // Check In stayed enabled after a successful check-in, Check Out stayed
+    // disabled, and the daily summary showed --:--.
+    const todayIso = getVientianeIsoDate()
     return history.find((r) => r.date === todayIso) ?? null
   }, [history])
 

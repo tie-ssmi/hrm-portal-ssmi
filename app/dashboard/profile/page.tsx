@@ -4,6 +4,7 @@
 import { useState, useMemo, useCallback, memo, lazy, Suspense } from "react";
 import type { ElementType } from "react";
 import { useRouter } from "next/navigation";
+import { useEmployeeSelfEditEnabled } from "@/lib/use-admin-settings-query";
 
 // ** assets / icons
 import {
@@ -288,6 +289,10 @@ const EmploymentRow = memo(function EmploymentRow({
 
 export default function ProfilePage() {
   const router = useRouter();
+  // adminSettings/employeeSelfEdit gates the self-service editor; while the
+  // query is still loading `data` is undefined, so keep the button hidden
+  // rather than flashing it and then pulling it away.
+  const { data: selfEditEnabled } = useEmployeeSelfEditEnabled();
   const { user, firebaseUser } = useAuth();
   const [showSalary, setShowSalary] = useState(false);
   const [uploadedAvatarUrl, setUploadedAvatarUrl] = useState<string | null>(
@@ -505,16 +510,18 @@ export default function ProfilePage() {
             ເບິ່ງແລະຮ້ອງຂໍການອັບເດດຂໍ້ມູນສ່ວນຕົວຂອງທ່ານ
           </p>
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => router.push("/dashboard/profile/edit")}
-          className="hidden shrink-0 items-center gap-2 md:flex"
-        >
-          <Pencil className="h-4 w-4" />
-          ແກ້ໄຂ
-        </Button>
+        {selfEditEnabled && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => router.push("/dashboard/profile/edit")}
+            className="hidden shrink-0 items-center gap-2 md:flex"
+          >
+            <Pencil className="h-4 w-4" />
+            ແກ້ໄຂ
+          </Button>
+        )}
       </div>
 
       {/* Profile card */}
@@ -612,16 +619,18 @@ export default function ProfilePage() {
                 )}
               </div>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => router.push("/dashboard/profile/edit")}
-              className="flex shrink-0 items-center md:hidden"
-            >
-              <Pencil className="h-4 w-4" />
-              ແກ້ໄຂ
-            </Button>
+            {selfEditEnabled && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => router.push("/dashboard/profile/edit")}
+                className="flex shrink-0 items-center md:hidden"
+              >
+                <Pencil className="h-4 w-4" />
+                ແກ້ໄຂ
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>

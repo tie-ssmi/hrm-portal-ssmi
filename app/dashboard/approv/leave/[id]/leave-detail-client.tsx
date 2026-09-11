@@ -229,9 +229,15 @@ export default function LeaveDetailClient({ leaveId }: { leaveId?: string }) {
 
   const canApproveDept = user?.rolePermissions?.approveDepartment ?? false;
   const canApproveBranch = user?.rolePermissions?.approveBranch ?? false;
+  // The portal approves the `departmentHead` slot ONLY — by design. The `hr` and
+  // `manager` slots are approved in the admin app (tie-ssmi/HRM-System-SSMI), a
+  // separate repo, so a leave sitting at one of those steps is not stalled; it is
+  // simply waiting on the other app. `approveDepartment` and `approveBranch`
+  // differ in data scope (own department vs whole branch), not in which slot they
+  // fill, so both map to `departmentHead` here — do not add "hr" back, that let
+  // one person clear two steps of the chain by themselves.
   const myRoles: LeaveApproverRole[] = [];
   if (canApproveDept || canApproveBranch) myRoles.push("departmentHead");
-  if (canApproveDept || canApproveBranch) myRoles.push("hr");
 
   const pendingSlot = (leave?.approvals ?? []).find(
     (a) => a?.decision === "pending" && myRoles.includes(a.role),
@@ -240,7 +246,43 @@ export default function LeaveDetailClient({ leaveId }: { leaveId?: string }) {
     leave?.approvals?.findIndex(
       (a) => a?.decision === "pending" && myRoles.includes(a.role),
     ) ?? -1;
-  const canAct = leave?.status === "pending" && !!pendingSlot;
+
+  // The approval LIST gets scope and self-approval filtering for free from its
+  // Firestore query (fetchLeavesForApproval: workLocationUid/departmentUid
+  // filters + excludeUserUuid). This page is reachable by direct URL with any
+  // leave id — `leaves` read is open to every signed-in user — so it has to
+  // re-check both itself, with the same rules the list query applies.
+  const loggedInUserUuid = user?.uid || user?.id || "";
+  const approverDepartmentUuid =
+    typeof user?.department === "object"
+      ? (user.department as { uuid?: string })?.uuid
+      : undefined;
+  const approverWorkLocationUuid =
+    typeof user?.workLocation === "object"
+      ? (user.workLocation as { uuid?: string })?.uuid
+      : undefined;
+
+  const isOwnRequest =
+    !!loggedInUserUuid && leave?.leaveUserUuid === loggedInUserUuid;
+
+  // approveBranch → same work location, any department (skips the dept filter,
+  // mirroring fetchLeavesForApproval); approveDepartment → same location AND
+  // same department. A leave doc missing either uid is out of scope for both,
+  // which is already how the list behaves — an equality `where` never matches
+  // a document that lacks the field.
+  const isInApprovalScope =
+    !!leave &&
+    !!approverWorkLocationUuid &&
+    leave.workLocationUid === approverWorkLocationUuid &&
+    (canApproveBranch ||
+      (!!approverDepartmentUuid &&
+        leave.departmentUid === approverDepartmentUuid));
+
+  const canAct =
+    leave?.status === "pending" &&
+    !!pendingSlot &&
+    !isOwnRequest &&
+    isInApprovalScope;
 
   const reviewedBy =
     [user?.firstNameLo || user?.firstName, user?.lastNameLo || user?.lastName]
@@ -481,6 +523,22 @@ export default function LeaveDetailClient({ leaveId }: { leaveId?: string }) {
             </CardContent>
           </Card>
         )}
+
+        {/* Why the action bar is hidden even though this slot is still pending
+            and matches the viewer's role — without this the buttons just vanish
+            with no explanation. */}
+        {leave.status === "pending" &&
+          !!pendingSlot &&
+          (isOwnRequest || !isInApprovalScope) && (
+            <div className="text-muted-foreground bg-muted/40 flex items-start gap-2 rounded-lg border p-3 text-sm">
+              <ShieldUser className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                {isOwnRequest
+                  ? "ທ່ານບໍ່ສາມາດອະນຸມັດຄຳຮ້ອງຂອງຕົນເອງໄດ້"
+                  : "ຄຳຮ້ອງນີ້ຢູ່ນອກຂອບເຂດການອະນຸມັດຂອງທ່ານ"}
+              </span>
+            </div>
+          )}
 
         {/* Meta */}
         <p className="text-muted-foreground/40 text-center text-xs">

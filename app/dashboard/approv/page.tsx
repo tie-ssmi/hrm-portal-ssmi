@@ -400,12 +400,23 @@ function ApprovePageContent() {
     // FIX #3: approvalIndex ເກົ່າ hardcode ເປັນ 0 ສະເໝີ
     // ຖ້າ user ເປັນ approver ທີ່ 2 (index 1) ຈະເຂียນໄປ slot ຜິດ
     // ແກ້: ຊອກຫາ index ຂອງ slot ທີ່ກົງກັບ role ຂອງ user ປັດຈຸບັນ
+    // ໝາຍເຫດ: findIndex ຄືນ -1 (ບໍ່ແມ່ນ undefined) ຕອນຫາບໍ່ພົບ — `?? 0` ຈຶ່ງບໍ່ເຄີຍ
+    // ເຮັດວຽກ ແລະ index -1 ຖືກສົ່ງຕໍ່ໄປ ເຮັດໃຫ້ຂຽນທັບແບບບໍ່ປ່ຽນຫຍັງ ແຕ່ຍັງຂຶ້ນວ່າສຳເລັດ
     const approvalRole = "departmentHead";
     const fullLeave = leaveRequests.find((r) => r.id === pendingApproveItem.id);
     const approvalIndex =
       fullLeave?.approvals?.findIndex(
         (ap) => ap.role === approvalRole && ap.decision === "pending",
-      ) ?? 0;
+      ) ?? -1;
+
+    if (!fullLeave || approvalIndex < 0) {
+      toast.error("ຂັ້ນຕອນນີ້ຖືກດຳເນີນການໄປແລ້ວ ຫຼື ຂໍ້ມູນບໍ່ທັນສະໄໝ");
+      await queryClient.invalidateQueries({ queryKey: leaveQueryKey });
+      setOpenConfirmDialog(false);
+      setConfirmLeave(false);
+      setPendingApproveItem(null);
+      return;
+    }
 
     setIsApproving(true);
     try {
@@ -421,8 +432,16 @@ function ApprovePageContent() {
       });
       await queryClient.invalidateQueries({ queryKey: leaveQueryKey });
       toast.success("ອະນຸມັດສຳເລັດ");
-    } catch {
-      toast.error("ເກີດຂໍ້ຜິດພາດ ກະລຸນາລອງໃໝ່");
+    } catch (error) {
+      // updateLeaveApproval ປະຕິເສດ slot ທີ່ຖືກຕັດສິນໄປແລ້ວ (ຜູ້ອະນຸມັດອີກຄົນກົດກ່ອນ,
+      // ຫຼື ກົດຊ້ຳ) — ບອກໃຫ້ຊັດແທນຂໍ້ຄວາມກາງໆ ແລ້ວດຶງຂໍ້ມູນໃໝ່ໃຫ້ເລີຍ
+      const message = error instanceof Error ? error.message : "";
+      toast.error(
+        message.includes("already")
+          ? "ຂັ້ນຕອນນີ້ຖືກດຳເນີນການໄປແລ້ວໂດຍຜູ້ອະນຸມັດອື່ນ"
+          : "ເກີດຂໍ້ຜິດພາດ ກະລຸນາລອງໃໝ່",
+      );
+      await queryClient.invalidateQueries({ queryKey: leaveQueryKey });
     } finally {
       setIsApproving(false);
       setOpenConfirmDialog(false);

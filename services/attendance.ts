@@ -2,6 +2,7 @@ import { collection, getDocs, query, where, type QueryDocumentSnapshot, type Doc
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import app, { db, storage } from '@/lib/firebase'
+import { getVientianeIsoDate } from '@/lib/server-time'
 import type { AttendanceRecord } from '@/lib/types'
 
 let _fns: ReturnType<typeof getFunctions> | null = null
@@ -140,10 +141,6 @@ function parseAttendanceDocumentDate(value: string, dateKey?: string): Date | nu
   return Number.isNaN(parsed.getTime()) ? null : parsed
 }
 
-function isSameMonth(date: Date, target: Date): boolean {
-  return date.getFullYear() === target.getFullYear() && date.getMonth() === target.getMonth()
-}
-
 function normalizeAttendanceStatus(status: AttendanceDoc['status']): AttendanceRecord['status'] {
   if (status === 'late') return 'late'
   if (status === 'absent') return 'absent'
@@ -253,8 +250,11 @@ async function fetchAttendanceDocs(userUuid: string, sinceIsoDate?: string) {
 export async function fetchAttendanceByUserThisMonth(userUuid: string): Promise<AttendanceRecord[]> {
   if (!userUuid) return []
 
-  const now = new Date()
-  const monthStart = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-01`
+  // "This month" is the employee's month in Vientiane, not the viewer's device
+  // month — the bound sent to Firestore and the filter applied to the results
+  // now come from the same anchor instead of two different clocks.
+  const monthPrefix = getVientianeIsoDate().slice(0, 7)
+  const monthStart = `${monthPrefix}-01`
   const docs = await fetchAttendanceDocs(userUuid, monthStart)
 
   const rows: AttendanceRecord[] = []
@@ -262,14 +262,14 @@ export async function fetchAttendanceByUserThisMonth(userUuid: string): Promise<
   for (const docSnapshot of docs) {
     const data = docSnapshot.data() as AttendanceDoc
     const parsedDate = parseAttendanceDocumentDate(data.date || '', data.dateKey)
+    if (!parsedDate) continue
 
-    if (!parsedDate || !isSameMonth(parsedDate, now)) {
-      continue
-    }
+    const rowIsoDate = formatLocalIsoDate(parsedDate)
+    if (!rowIsoDate.startsWith(monthPrefix)) continue
 
     rows.push({
       id: docSnapshot.id,
-      date: formatLocalIsoDate(parsedDate),
+      date: rowIsoDate,
       ...(data.checkInTime ? { checkIn: data.checkInTime, checkInTime: data.checkInTime } : {}),
       checkOut: data.checkOutTime ?? undefined,
       checkOutTime: data.checkOutTime ?? null,
@@ -322,7 +322,7 @@ export async function fetchAttendanceByUser(userUuid: string): Promise<Attendanc
   // history/page.tsx only ever shows the trailing 12 months (month dropdown) +
   // the current calendar year (year-to-date stats) — Jan 1 of last year covers
   // both with margin, so there's no need to download the user's full tenure.
-  const sinceIsoDate = `${new Date().getFullYear() - 1}-01-01`
+  const sinceIsoDate = `${Number(getVientianeIsoDate().slice(0, 4)) - 1}-01-01`
   const docs = await fetchAttendanceDocs(userUuid, sinceIsoDate)
   const rows: AttendanceRecord[] = []
 
@@ -350,10 +350,22 @@ export async function fetchAttendanceByUser(userUuid: string): Promise<Attendanc
   return rows.sort((a, b) => b.date.localeCompare(a.date))
 }
 
+// "YYYY-MM-DD" -> "DD-MM-YYYY", the legacy `date` field's format. Pure string
+// work on purpose: going through a Date would re-introduce a timezone shift on
+// the way out, which is exactly the bug this replaced.
+function isoDateToDocumentDate(isoDate: string): string {
+  const [year, month, day] = isoDate.split('-')
+  return `${day}-${month}-${year}`
+}
+
 export async function fetchTodayCheckInAttendance(isoDate?: string): Promise<AttendanceRecord[]> {
-  const target = isoDate ? new Date(`${isoDate}T00:00:00`) : new Date()
-  const todayDateStr = formatAttendanceDocumentDate(target)
-  const todayIsoStr = isoDate ?? target.toISOString().split('T')[0]
+  // Both keys must describe the SAME calendar day. They used to be derived
+  // separately — `date` from the device's local time, `dateKey` from
+  // `toISOString()` (UTC) — so between 00:00 and 07:00 in Vientiane the UTC half
+  // still pointed at yesterday and the dateKey query silently missed that
+  // morning's check-ins. Anchor once to Vientiane, then derive the other format.
+  const todayIsoStr = isoDate ?? getVientianeIsoDate()
+  const todayDateStr = isoDateToDocumentDate(todayIsoStr)
 
   // Query by DD-MM-YYYY date field; also OR by dateKey (YYYY-MM-DD) to catch all formats
   const col = collection(db, 'attendance')
@@ -495,7 +507,13 @@ export async function fetchLateRankingForMonth(monthKey: string): Promise<LateRa
   const year = parseInt(yearStr, 10)
   const month = parseInt(monthStr, 10)
   const monthStart = `${monthKey}-01`
-  const nextMonthStart = new Date(year, month, 1).toISOString().split('T')[0]
+  // String math, NOT `new Date(year, month, 1).toISOString()`: that builds a
+  // local date and serialises it as UTC, so at UTC+7 it came back as the last
+  // day of THIS month rather than the first of the next one — and the
+  // `dateKey < nextMonthStart` bound then dropped every record dated on the
+  // final day of every month from the ranking.
+  const nextMonthStart =
+    month === 12 ? `${year + 1}-01-01` : `${year}-${(month + 1).toString().padStart(2, '0')}-01`
 
   // Try indexed query first (requires composite index on status + dateKey in Firestore console).
   // Only fall back to a full company-wide scan if the query itself fails (e.g. the

@@ -1,4 +1,4 @@
-import { addDoc, collection, doc, getDoc, getDocs, query, updateDoc, where, type QuerySnapshot, type DocumentData } from 'firebase/firestore'
+import { addDoc, collection, doc, getDoc, getDocs, query, runTransaction, updateDoc, where, type QuerySnapshot, type DocumentData } from 'firebase/firestore'
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
 import { db, storage } from '@/lib/firebase'
 import type { LeaveApprovalStep, LeaveRequest } from '@/lib/types'
@@ -74,25 +74,48 @@ export async function updateLeaveApproval(params: {
   const leaveRef = doc(db, 'leaves', leaveId)
 
   try {
-    const snapshot = await getDoc(leaveRef)
-    if (!snapshot.exists()) throw new Error('Leave request not found')
+    // Read and write in ONE transaction. Approval is a multi-step flow, so two
+    // approvers deciding at nearly the same time is normal — and each one writes
+    // the whole `approvals` array. With a plain getDoc -> updateDoc, whoever
+    // committed second would write their own stale snapshot over the first
+    // decision, dropping it with no error anywhere. The transaction re-reads and
+    // retries on contention, so the second writer always sees the first decision.
+    const { data, approvals, status, updatedApprovals } = await runTransaction(db, async (tx) => {
+      const snapshot = await tx.get(leaveRef)
+      if (!snapshot.exists()) throw new Error('Leave request not found')
 
-    const data = snapshot.data() as Omit<LeaveRequest, 'id'>
-    const approvals: LeaveApprovalStep[] = data.approvals ?? []
+      const data = snapshot.data() as Omit<LeaveRequest, 'id'>
+      const approvals: LeaveApprovalStep[] = data.approvals ?? []
 
-    const updatedApprovals = approvals.map((a, i) =>
-      i === approvalIndex
-        ? { ...a, decision, reviewedBy, reviewedAt: new Date().toISOString() }
-        : a
-    )
+      // Both checks belong INSIDE the transaction: approvalIndex is resolved on
+      // the client against a cached copy of the request, which may already be
+      // out of date by the time this runs (another approver decided, or the same
+      // approver double-tapped). Writing anyway used to be a silent no-op that
+      // still reported success and still wrote a SUCCESS audit entry.
+      const slot = approvals[approvalIndex]
+      if (!slot) {
+        throw new Error(`Approval slot ${approvalIndex} does not exist on this leave request`)
+      }
+      if (slot.decision !== 'pending') {
+        throw new Error(`This approval step was already ${slot.decision}`)
+      }
 
-    const status = resolveLeaveRequestStatus(updatedApprovals)
+      const updatedApprovals = approvals.map((a, i) =>
+        i === approvalIndex
+          ? { ...a, decision, reviewedBy, reviewedAt: new Date().toISOString() }
+          : a
+      )
 
-    await updateDoc(leaveRef, {
-      approvals: updatedApprovals,
-      status,
-      ...(status !== 'pending' ? { reviewedBy, reviewedByUid, reviewedAt: new Date().toISOString() } : {}),
-      ...(decision === 'rejected' && rejectReason ? { rejectReason } : {}),
+      const status = resolveLeaveRequestStatus(updatedApprovals)
+
+      tx.update(leaveRef, {
+        approvals: updatedApprovals,
+        status,
+        ...(status !== 'pending' ? { reviewedBy, reviewedByUid, reviewedAt: new Date().toISOString() } : {}),
+        ...(decision === 'rejected' && rejectReason ? { rejectReason } : {}),
+      })
+
+      return { data, approvals, status, updatedApprovals }
     })
 
     await logAudit({
