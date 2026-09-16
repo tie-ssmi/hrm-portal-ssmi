@@ -54,7 +54,7 @@ export function getLeaveRecipientText(
   workLocationNameLo?: string,
 ): string {
   if (duration !== null && duration !== undefined && duration >= 3) {
-    return 'ທ່ານ ຮອງຜູ້ອຳນວຍການຝ່າຍປະຕິບັດການ ທີ່ນັບຖື'
+    return 'ທ່ານ ຮອງຜູ້ອຳນວຍການຝ່າຍການປະຕິບັດການ ທີ່ນັບຖື'
   }
   if (isLPB) {
     return 'ທ່ານ ຫົວໜ້າພະແນກ ບໍລິຫານ ແລະ ບຸກຄະລາກອນ ທີ່ນັບຖື'

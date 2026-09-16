@@ -697,7 +697,7 @@ exports.notifyNewOffsiteRequest = (0, firestore_1.onDocumentCreated)({ document:
         body: `ພະນັກງານ: ${work.createdBy || "ບໍ່ມີຊື່"} — ${work.subject || "ບໍ່ລະບຸ"}`,
         icon: "/apple-icon.png",
         badge: "/SSMI.svg",
-        url: "/dashboard/approv",
+        url: "/dashboard/approv?tab=offsite",
     });
     const notified = await sendPushToEmployeeDocs(approverDocs, payload, "offsite-new");
     console.log(`[offsite-new]: notified ${notified}/${approverDocs.length} approvers for ${event.params.requestId}`);

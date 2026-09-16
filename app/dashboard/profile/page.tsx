@@ -4,7 +4,6 @@
 import { useState, useMemo, useCallback, memo, lazy, Suspense } from "react";
 import type { ElementType } from "react";
 import { useRouter } from "next/navigation";
-import { useEmployeeSelfEditEnabled } from "@/lib/use-admin-settings-query";
 
 // ** assets / icons
 import {
@@ -92,6 +91,7 @@ const ImageDialog = lazy(() =>
 import { toast } from "sonner";
 
 // ** config / utils / types / hooks
+import { useEmployeeSelfEditEnabled } from "@/lib/use-admin-settings-query";
 import { useAuth } from "@/lib/auth-context";
 import { useEmployeeCompensation } from "@/lib/use-compensation-query";
 import { resolveTenureLabel } from "@/lib/employment-status";
@@ -349,7 +349,11 @@ export default function ProfilePage() {
       },
       {
         label: "ຕຳແໜ່ງວຽກ",
-        value: toStr(profileUser?.jobTitle || profileUser?.position),
+        value:
+          toStr(profileUser?.jobTitleLo) ||
+          translateJobTitle(profileUser?.jobTitle) ||
+          toStr(profileUser?.jobTitle) ||
+          toStr(profileUser?.position),
         icon: Briefcase,
       },
       {
@@ -594,10 +598,11 @@ export default function ProfilePage() {
                 </p>
               )}
               <p className="text-muted-foreground">
-                {toStr(
+                {toStr(profileUser.jobTitleLo) ||
+                  toStr(profileUser.jobTitle) ||
                   translateJobTitle(profileUser.jobTitle) ||
-                    profileUser.position,
-                )}
+                  profileUser.position ||
+                  ""}
               </p>
               <p className="text-muted-foreground mt-1 text-sm">
                 {toStr(profileUser.workLocation || profileUser.department)}

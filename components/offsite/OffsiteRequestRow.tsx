@@ -17,6 +17,7 @@ import { ActivityTypeBadge } from './ActivityTypeBadge'
 
 // ** config / utils / types / hooks
 import { formatDateRange } from '@/lib/format'
+import { hasNoOffsiteDecisionYet } from '@/services/offsite-approval'
 import type { OffsiteRequestDoc } from '@/types/workOutside'
 
 interface Props {
@@ -57,7 +58,10 @@ function AvatarGroup({ names, total }: { names: string[]; total: number }) {
 
 export function OffsiteRequestRow({ doc, currentUid, onView, onEdit, onCancel }: Props) {
   const isOwner = doc.createdByUid === currentUid
-  const canModify = isOwner && doc.status === 'pending'
+  // Cancel stays open for the whole pending phase; editing locks as soon as any
+  // approver has decided (see hasNoOffsiteDecisionYet).
+  const canCancel = isOwner && doc.status === 'pending'
+  const canEdit = canCancel && hasNoOffsiteDecisionYet(doc.approvals)
   const allNames = [doc.requester.fullNameLo, ...doc.teammate.map((t) => t.fullNameLo)]
 
   return (
@@ -133,13 +137,15 @@ export function OffsiteRequestRow({ doc, currentUid, onView, onEdit, onCancel }:
               <Eye className="w-4 h-4 mr-2" />
               ເບິ່ງລາຍລະອຽດ
             </DropdownMenuItem>
-            {canModify && (
+            {canCancel && (
               <>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => onEdit(doc)}>
-                  <Pencil className="w-4 h-4 mr-2" />
-                  ແກ້ໄຂ
-                </DropdownMenuItem>
+                {canEdit && (
+                  <DropdownMenuItem onClick={() => onEdit(doc)}>
+                    <Pencil className="w-4 h-4 mr-2" />
+                    ແກ້ໄຂ
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem
                   onClick={() => onCancel(doc)}
                   className="text-destructive focus:text-destructive"
@@ -160,7 +166,10 @@ export function OffsiteRequestRow({ doc, currentUid, onView, onEdit, onCancel }:
 
 export function OffsiteRequestCard({ doc, currentUid, onView, onEdit, onCancel }: Props) {
   const isOwner = doc.createdByUid === currentUid
-  const canModify = isOwner && doc.status === 'pending'
+  // Cancel stays open for the whole pending phase; editing locks as soon as any
+  // approver has decided (see hasNoOffsiteDecisionYet).
+  const canCancel = isOwner && doc.status === 'pending'
+  const canEdit = canCancel && hasNoOffsiteDecisionYet(doc.approvals)
 
   return (
     <div className="rounded-xl border bg-card p-4 space-y-3">
@@ -194,13 +203,15 @@ export function OffsiteRequestCard({ doc, currentUid, onView, onEdit, onCancel }
               <Eye className="w-4 h-4 mr-2" />
               ເບິ່ງລາຍລະອຽດ
             </DropdownMenuItem>
-            {canModify && (
+            {canCancel && (
               <>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => onEdit(doc)}>
-                  <Pencil className="w-4 h-4 mr-2" />
-                  ແກ້ໄຂ
-                </DropdownMenuItem>
+                {canEdit && (
+                  <DropdownMenuItem onClick={() => onEdit(doc)}>
+                    <Pencil className="w-4 h-4 mr-2" />
+                    ແກ້ໄຂ
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem
                   onClick={() => onCancel(doc)}
                   className="text-destructive focus:text-destructive"

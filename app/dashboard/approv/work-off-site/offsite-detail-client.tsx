@@ -1,12 +1,28 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { doc, getDoc, updateDoc, type DocumentData } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { useAuth } from "@/lib/auth-context";
-import { logAudit, extractWorkLocationLog } from "@/services/audit-log";
+// ** core
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+
+// ** assets / icons
+import {
+  ArrowLeft,
+  Briefcase,
+  Building2,
+  BookMarked,
+  CalendarRange,
+  CheckCircle2,
+  ClipboardList,
+  Clock,
+  ExternalLink,
+  FileText,
+  Users,
+  Wrench,
+  ShieldUser,
+  XCircle,
+} from "lucide-react";
+
+// ** shared components
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,24 +40,28 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { ActivityTypeBadge } from "@/components/offsite/ActivityTypeBadge";
-import { formatDateRange, formatLaoDate } from "@/lib/format";
+
+// ** third party
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { doc, getDoc } from "firebase/firestore";
 import { toast } from "sonner";
-import {
-  ArrowLeft,
-  Briefcase,
-  Building2,
-  BookMarked,
-  CalendarRange,
-  CheckCircle2,
-  ClipboardList,
-  Clock,
-  ExternalLink,
-  FileText,
-  Users,
-  Wrench,
-  XCircle,
-} from "lucide-react";
+
+// ** config / utils / types / hooks
+import { db } from "@/lib/firebase";
+import { useAuth } from "@/lib/auth-context";
+import { formatDateRange, formatLaoDate } from "@/lib/format";
 import type { OffsiteRequestDoc } from "@/types/workOutside";
+
+// ** services
+import { extractWorkLocationLog } from "@/services/audit-log";
+import {
+  getOffsiteApprovalBlock,
+  OFFSITE_APPROVAL_BLOCK_MESSAGE,
+  OffsiteApprovalError,
+  offsiteApprovalErrorMessage,
+  type OffsiteApprover,
+} from "@/services/offsite-approval";
+import { updateOffsiteApproval } from "@/services/workOutside";
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -200,8 +220,14 @@ export default function OffsiteDetailClient() {
   const router = useRouter();
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const searchParams = useSearchParams();
-  const id = searchParams.get("id") ?? "";
+  // Read the id from window.location after mount, not useSearchParams() — in
+  // this static export useSearchParams() causes a hydration mismatch (see
+  // CLAUDE.md). null = not read yet, so the page shows a skeleton instead of
+  // flashing "not found" for one render.
+  const [id, setId] = useState<string | null>(null);
+  useEffect(() => {
+    setId(new URLSearchParams(window.location.search).get("id") ?? "");
+  }, []);
 
   const [action, setAction] = useState<"approve" | "reject" | null>(null);
   const [confirmed, setConfirmed] = useState(false);
@@ -225,15 +251,41 @@ export default function OffsiteDetailClient() {
 
   const canApproveDept = user?.rolePermissions?.approveDepartment ?? false;
   const canApproveBranch = user?.rolePermissions?.approveBranch ?? false;
+  // The portal fills the `departmentHead` slot ONLY, for both permissions —
+  // approveDepartment and approveBranch differ in data scope (own department vs
+  // whole branch), not in which slot they fill. `hr` (approvals[1]) and
+  // `manager` (approvals[2]) are approved in the admin app. Mapping
+  // approveBranch -> "manager" and adding "hr" here let one person clear several
+  // steps of the chain, or skip the department head entirely.
   const myRoles: string[] = [];
-  if (canApproveDept) myRoles.push("departmentHead");
-  if (canApproveBranch) myRoles.push("manager");
-  if (canApproveDept || canApproveBranch) myRoles.push("hr");
+  if (canApproveDept || canApproveBranch) myRoles.push("departmentHead");
 
-  const pendingSlot = (record?.approvals ?? []).find(
+  // The admin app pads a 2-step `approvals` array to length 3 with null when it
+  // writes the HR decision. Reading `.role` / `.decision` straight off those
+  // entries threw and took the whole page down for any such request.
+  const approvals = (record?.approvals ?? []).filter(Boolean);
+
+  const pendingSlot = approvals.find(
     (ap) => ap.decision === "pending" && myRoles.includes(ap.role),
   );
-  const canAct = record?.status === "pending" && !!pendingSlot;
+
+  const approver: OffsiteApprover = {
+    uid: user?.uid || user?.id || "",
+    workLocationUuid:
+      typeof user?.workLocation === "object"
+        ? (user.workLocation as { uuid?: string })?.uuid
+        : undefined,
+    departmentUuid:
+      typeof user?.department === "object"
+        ? (user.department as { uuid?: string })?.uuid
+        : undefined,
+    canApproveDepartment: canApproveDept,
+    canApproveBranch,
+  };
+  // Reachable by direct URL with any id — re-apply the list's scope, and refuse
+  // the requester and anyone on the trip (see getOffsiteApprovalBlock).
+  const approvalBlock = record ? getOffsiteApprovalBlock(record, approver) : null;
+  const canAct = record?.status === "pending" && !!pendingSlot && !approvalBlock;
 
   async function handleConfirm() {
     if (!action || !confirmed || !record) return;
@@ -241,92 +293,42 @@ export default function OffsiteDetailClient() {
       [user?.firstNameLo || user?.firstName, user?.lastNameLo || user?.lastName]
         .filter(Boolean)
         .join(" ") ||
-      user?.uid ||
-      "";
-    const now = new Date().toISOString();
-    const decision = action === "approve" ? "approved" : "rejected";
+      approver.uid;
 
     setIsProcessing(true);
     try {
-      const approvalRole =
-        pendingSlot?.role ?? (canApproveDept ? "departmentHead" : "manager");
-      const approvalIndex = record.approvals.findIndex(
-        (ap) => ap.role === approvalRole,
-      );
-
-      const payload: Record<string, unknown> = {
-        updatedAt: now,
-        updatedBy: reviewedBy,
-      };
-
-      if (approvalIndex >= 0) {
-        const updatedApprovals = record.approvals.map((ap, i) =>
-          i === approvalIndex
-            ? { ...ap, decision, reviewedBy, reviewedAt: now }
-            : ap,
-        );
-        payload.approvals = updatedApprovals;
-
-        const anyRejected = updatedApprovals.some(
-          (ap) => ap.decision === "rejected",
-        );
-        const allApproved = updatedApprovals.every(
-          (ap) => ap.decision === "approved",
-        );
-        if (anyRejected) payload.status = "rejected";
-        else if (allApproved) payload.status = "approved";
-      } else {
-        payload.status = decision;
-      }
-
-      if (decision === "rejected" && rejectReason.trim()) {
-        payload.rejectReason = rejectReason.trim();
-      }
-
-      await updateDoc(
-        doc(db, "workOutside", record.id),
-        payload as DocumentData,
-      );
-      await logAudit({
-        action: decision === "approved" ? "offsite.request.approve" : "offsite.request.reject",
-        actorUid: user?.uid || user?.id || "",
-        actorName: reviewedBy,
-        actorRoleUuid: user?.rolesUid ?? "",
+      await updateOffsiteApproval({
+        requestId: record.id,
+        decision: action === "approve" ? "approved" : "rejected",
+        approver,
+        reviewedBy,
+        rejectReason:
+          action === "reject" ? rejectReason.trim() || undefined : undefined,
+        actorRoleUuid: user?.rolesUid,
         actorRoleName: user?.rolesName,
         workLocation: extractWorkLocationLog(user?.workLocation),
-        targetType: "workOutside",
-        targetId: record.id,
-        targetName: record.requester?.fullNameLo || record.requester?.fullNameEn,
-        before: { status: record.status, approvals: record.approvals },
-        after: payload,
-        reason: decision === "rejected" ? rejectReason.trim() || undefined : undefined,
-        status: "SUCCESS",
       });
-      await queryClient.invalidateQueries({ queryKey: ["workOutside", id] });
       toast.success(action === "approve" ? "ອະນຸມັດສຳເລັດ" : "ປະຕິເສດສຳເລັດ");
       setAction(null);
       setConfirmed(false);
       setRejectReason("");
     } catch (err) {
-      await logAudit({
-        action: decision === "approved" ? "offsite.request.approve" : "offsite.request.reject",
-        actorUid: user?.uid || user?.id || "",
-        actorName: reviewedBy,
-        actorRoleUuid: user?.rolesUid ?? "",
-        actorRoleName: user?.rolesName,
-        workLocation: extractWorkLocationLog(user?.workLocation),
-        targetType: "workOutside",
-        targetId: record.id,
-        status: "FAILED",
-        errorMessage: err instanceof Error ? err.message : String(err),
-      });
-      toast.error("ເກີດຂໍ້ຜິດພາດ ກະລຸນາລອງໃໝ່");
+      toast.error(offsiteApprovalErrorMessage(err));
+      // The live document refused (cancelled, decided by someone else, ...):
+      // close the dialog so the refetched state below is what the user sees.
+      if (err instanceof OffsiteApprovalError) {
+        setAction(null);
+        setConfirmed(false);
+      }
     } finally {
+      // Refetch either way — after a refusal this page's copy is known stale.
+      // The "workOutside" prefix also refreshes the approval list.
+      await queryClient.invalidateQueries({ queryKey: ["workOutside"] });
       setIsProcessing(false);
     }
   }
 
-  if (isLoading) return <PageSkeleton />;
+  if (id === null || isLoading) return <PageSkeleton />;
 
   if (error || !record) {
     return (
@@ -542,12 +544,12 @@ export default function OffsiteDetailClient() {
           </CardHeader>
           <Separator />
           <CardContent className="px-4 pt-4 pb-2">
-            {record.approvals.map((ap, i) => (
+            {approvals.map((ap, i) => (
               <ApprovalStep
                 key={ap.role}
                 approval={ap}
                 index={i}
-                total={record.approvals.length}
+                total={approvals.length}
               />
             ))}
           </CardContent>
@@ -557,6 +559,15 @@ export default function OffsiteDetailClient() {
             </div>
           )}
         </Card>
+
+        {/* Why the action bar is hidden even though the department-head slot is
+            still pending — without this the buttons just vanish. */}
+        {record.status === "pending" && !!pendingSlot && approvalBlock && (
+          <div className="text-muted-foreground bg-muted/40 flex items-start gap-2 rounded-lg border p-3 text-sm">
+            <ShieldUser className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{OFFSITE_APPROVAL_BLOCK_MESSAGE[approvalBlock]}</span>
+          </div>
+        )}
 
         {/* Meta */}
         <p className="text-muted-foreground/40 text-center text-xs">

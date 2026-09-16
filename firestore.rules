@@ -33,6 +33,16 @@ rules_version = '2';
 //   - employees create: if true — employee registration flow
 //   ⚠️  Consider moving these to a Cloud Function when registration flow allows it
 //
+// MERGED 2026-09-14 — portal + admin (HRM-System-SSMI) rules, which had drifted apart
+// while both repos deploy to the same project. This file is the union:
+//   - from admin: adminSettings/employeeSelfEdit writable by isIT || isLPB
+//   - NOT taken from admin: top-level `employees/{docId}/documents/{documentId}` with
+//     `allow read: if true` (employee document records readable without signing in).
+//     The nested documents rule under employees/{docId} below covers the same path
+//     for self / isAdmin / isEmployeeManager — every admin-app user passes isAdmin
+//     (admin login requires role.loginAdmin), so the admin pages keep working.
+// Keep BOTH repos' firestore.rules byte-identical: a deploy replaces the whole ruleset.
+//
 // NOTE (structure cleanup pass):
 //   - Catch-all deny (`match /{document=**}`) moved to the very end of the file.
 //     Firestore evaluates every matching `match` block independently and ORs the
@@ -80,6 +90,10 @@ service cloud.firestore {
           get(/databases/$(database)/documents/roles/$(rolesUid)).data.role.manageOffsite == true
           || get(/databases/$(database)/documents/roles/$(rolesUid)).data.role.highManageOffsite == true
           || get(/databases/$(database)/documents/roles/$(rolesUid)).data.role.approveDepartment == true
+          // approveBranch approves offsite for every department in its branch
+          // (CLAUDE.md). Without it a role holding only approveBranch saw the
+          // approve buttons in the portal but every write was permission-denied.
+          || get(/databases/$(database)/documents/roles/$(rolesUid)).data.role.approveBranch == true
         );
     }
 
@@ -111,6 +125,21 @@ service cloud.firestore {
 
     function isWorkOutsideParticipant() {
       return request.auth.uid in resource.data.participantIds;
+    }
+
+    // True while no approver has decided on this request. Null entries count as
+    // undecided — the admin app pads a 2-step `approvals` array to length 3 with
+    // null. Mirrors hasNoOffsiteDecisionYet in services/offsite-approval.ts.
+    function offsiteSlotUndecided(approvals, i) {
+      return approvals.size() <= i
+        || approvals[i] == null
+        || approvals[i].decision == 'pending';
+    }
+    function workOutsideNoDecisionYet() {
+      let approvals = resource.data.get('approvals', []);
+      return offsiteSlotUndecided(approvals, 0)
+        && offsiteSlotUndecided(approvals, 1)
+        && offsiteSlotUndecided(approvals, 2);
     }
 
     function isIT() {
@@ -377,7 +406,22 @@ service cloud.firestore {
 
       allow update: if isSignedIn()
         && (
-          (isWorkOutsideOwner() && resource.data.status == 'pending')
+          (isWorkOutsideOwner() && resource.data.status == 'pending' && (
+            // Edit — only before any approver has decided, and never the
+            // approval-controlled fields. The old rule (owner + pending, any
+            // field) let a requester write `approvals` / `status: 'approved'` on
+            // their own request, or change the trip after their department head
+            // had already approved it.
+            (workOutsideNoDecisionYet()
+              && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+                'approvals', 'status', 'requiredApprovers', 'rejectReason',
+                'requestNo', 'createdByUid', 'createdBy', 'createdAt'
+              ]))
+            // Cancel — allowed for the whole pending phase, and nothing else.
+            || (request.resource.data.status == 'cancelled'
+              && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['status', 'updatedAt', 'updatedBy']))
+          ))
           || isApprover()
           || isAdmin()
         );
@@ -455,10 +499,13 @@ service cloud.firestore {
       // registerAccess ຕ້ອງອ່ານໄດ້ແບບ public — /register ຖືກເປີດກ່ອນ sign in
       // (ໜ້າ gate ລະຫັດຜ່ານທີ່ໃຊ້ຄວບຄຸມການເຂົ້າຟອມລົງທະບຽນພະນັກງານໃໝ່)
       allow read: if docId == 'registerAccess' || isSignedIn();
-      // registerAccess: isIT ຫຼື isLPB ແກ້ໄດ້ (system-setting/index.tsx ສະແດງຟອມນີ້ໃຫ້ isLPB
-      // ນຳແລ້ວ) — doc ອື່ນໃນ collection ນີ້ (forceLogoutAdmin/forceLogoutPortal, ສະແດງໃຫ້ isIT
-      // ຢ່າງດຽວ) ຍັງຈຳກັດ isIT ຄືເກົ່າ, ບໍ່ຢາກໃຫ້ isLPB ໄດ້ສິດ force-logout ໄປນຳໂດຍບໍ່ຕັ້ງໃຈ.
-      allow write: if docId == 'registerAccess' ? (isIT() || isLPB()) : isIT();
+      // registerAccess ແລະ employeeSelfEdit: isIT ຫຼື isLPB ແກ້ໄດ້ (system-setting/index.tsx
+      // ສະແດງ 2 ອັນນີ້ໃຫ້ isLPB ນຳແລ້ວ) — doc ອື່ນໃນ collection ນີ້ (forceLogoutAdmin/
+      // forceLogoutPortal, ສະແດງໃຫ້ isIT ຢ່າງດຽວ) ຍັງຈຳກັດ isIT ຄືເກົ່າ, ບໍ່ຢາກໃຫ້ isLPB
+      // ໄດ້ສິດ force-logout ໄປນຳໂດຍບໍ່ຕັ້ງໃຈ.
+      allow write: if docId == 'registerAccess' || docId == 'employeeSelfEdit'
+        ? (isIT() || isLPB())
+        : isIT();
     }
 
     // ==========================================================

@@ -56,6 +56,7 @@ import {
 } from "@/components/ui/command";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
+import FileUpload from "@/components/fileUpload";
 
 // ** third party
 import { useQuery } from "@tanstack/react-query";
@@ -63,6 +64,7 @@ import { toast } from "sonner";
 import { format, parseISO } from "date-fns";
 import {
   collection,
+  getDoc,
   getDocs,
   addDoc,
   doc,
@@ -74,7 +76,6 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useAuth } from "@/lib/auth-context";
 import { db, storage } from "@/lib/firebase";
 import { cn } from "@/lib/utils";
-import { logAudit, extractWorkLocationLog } from "@/services/audit-log";
 import type {
   ActivityCode,
   TeammateEntry,
@@ -86,7 +87,8 @@ import type {
 } from "@/types/workOutside";
 
 // ** services
-import FileUpload from "@/components/fileUpload";
+import { hasNoOffsiteDecisionYet } from "@/services/offsite-approval";
+import { logAudit, extractWorkLocationLog } from "@/services/audit-log";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -629,6 +631,25 @@ export default function OffsiteRequestForm({
     if (!user) return;
     setIsSubmitting(true);
     try {
+      // Re-check the LIVE document, not the copy the list rendered: an approver
+      // may have decided since this form was opened, and editing is only
+      // allowed while nobody has (hasNoOffsiteDecisionYet). Runs before the
+      // file upload so a refused edit doesn't leave an orphaned attachment.
+      if (isEditMode && initialData) {
+        const fresh = await getDoc(doc(db, "workOutside", initialData.id));
+        const freshData = fresh.data() as
+          | { status?: string; approvals?: ({ decision?: string } | null)[] }
+          | undefined;
+        if (
+          !freshData ||
+          freshData.status !== "pending" ||
+          !hasNoOffsiteDecisionYet(freshData.approvals)
+        ) {
+          toast.error("ຄຳຂໍນີ້ຖືກດຳເນີນການອະນຸມັດແລ້ວ ບໍ່ສາມາດແກ້ໄຂໄດ້");
+          return;
+        }
+      }
+
       const activity = activityMeta!;
       const now = new Date().toISOString();
 
@@ -666,7 +687,10 @@ export default function OffsiteRequestForm({
         `${user.firstNameLo ?? ""} ${user.lastNameLo ?? ""}`.trim();
       const userImage = user.profileImage || user.photo3x4Url;
 
-      let docLink: string | null = null;
+      // Editing without choosing a new file must keep the current attachment.
+      // This used to start at null on every submit, so saving an edit wrote
+      // `docLink: null` over the existing link and silently deleted it.
+      let docLink: string | null = isEditMode ? (initialData?.docLink ?? null) : null;
       if (docFile) {
         const ext = docFile.name.split(".").pop() ?? "file";
         const storageRef = ref(
@@ -1114,6 +1138,16 @@ export default function OffsiteRequestForm({
             <Field>
               <FieldLabel>ເອກະສານອ້າງອີງ (ຖ້າມີ)</FieldLabel>
               <div className="space-y-2">
+                {isEditMode && initialData?.docLink && !docFile && (
+                  <a
+                    href={initialData.docLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary block text-xs hover:underline"
+                  >
+                    ມີເອກະສານແນບຢູ່ແລ້ວ — ເລືອກໄຟລ໌ໃໝ່ຖ້າຕ້ອງການແທນທີ່
+                  </a>
+                )}
                 <FileUpload file={docFile} onFileSelect={setDocFile} />
                 {docFile && (
                   <button

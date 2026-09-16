@@ -921,7 +921,7 @@ export const notifyNewOffsiteRequest = onDocumentCreated(
       body: `ພະນັກງານ: ${work.createdBy || "ບໍ່ມີຊື່"} — ${work.subject || "ບໍ່ລະບຸ"}`,
       icon: "/apple-icon.png",
       badge: "/SSMI.svg",
-      url: "/dashboard/approv",
+      url: "/dashboard/approv?tab=offsite",
     });
 
     const notified = await sendPushToEmployeeDocs(approverDocs, payload, "offsite-new");

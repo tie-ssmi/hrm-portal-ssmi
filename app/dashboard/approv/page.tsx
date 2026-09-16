@@ -20,6 +20,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
 import FormsSkeleton from "@/components/skeletons/formsSkeleton";
 import LeaveTable from "@/components/leaveTable";
 import OffsiteTable from "@/components/offSiteTable";
@@ -28,17 +29,15 @@ import OffsiteTable from "@/components/offSiteTable";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   collection,
-  doc,
   getDocs,
   query,
-  updateDoc,
   where,
-  type DocumentData,
 } from "firebase/firestore";
 import { toast } from "sonner";
 
 // ** config / utils / types / hooks
 import { useAuth } from "@/lib/auth-context";
+import { getVientianeIsoDate } from "@/lib/server-time";
 import { db } from "@/lib/firebase";
 import type { LeaveTableItem } from "@/components/leaveTable";
 import type { OffsiteTableItem } from "@/components/offSiteTable";
@@ -46,7 +45,13 @@ import type { OffsiteRequestDoc } from "@/types/workOutside";
 
 // ** services
 import { fetchLeavesForApproval, updateLeaveApproval } from "@/services/leaves";
-import { logAudit, extractWorkLocationLog } from "@/services/audit-log";
+import { extractWorkLocationLog } from "@/services/audit-log";
+import {
+  getOffsiteApprovalBlock,
+  offsiteApprovalErrorMessage,
+  type OffsiteApprover,
+} from "@/services/offsite-approval";
+import { updateOffsiteApproval } from "@/services/workOutside";
 
 export default function ApprovePage() {
   return <ApprovePageContent />;
@@ -72,6 +77,13 @@ function ApprovePageContent() {
   // FIX #1: canApproveAny ບໍ່ໄດ້ declare ໃນ version ເກົ່າ → queries ບໍ່ເຄີຍ run ເລີຍ
   const canApproveAny = canApproveDept || canApproveBranch;
   const isUnauthorized = !isLoading && !canApproveAny;
+  const offsiteApprover: OffsiteApprover = {
+    uid: loggedInUserUuid,
+    workLocationUuid: workLocationUuid,
+    departmentUuid: departmentUuid,
+    canApproveDepartment: canApproveDept,
+    canApproveBranch,
+  };
 
   // ເຖິງວ່າຈະ unauthorized ກໍ່ຕ້ອງ declare hooks ທັງໝົດກ່ອນ return
   // ຖ້າ return null ກ່ອນ hooks ຈະເກີດ "Rendered fewer hooks than expected"
@@ -156,7 +168,7 @@ function ApprovePageContent() {
             where("requester.workLocation.uuid", "==", workLocationUuid),
             where("requester.department.uuid", "==", departmentUuid),
           ];
-      const monthStart = new Date().toISOString().slice(0, 7) + "-01";
+      const monthStart = getVientianeIsoDate().slice(0, 7) + "-01";
 
       // ດຶງສະເພາະ pending ຫຼື ທີ່ endDate ຢູ່ໃນເດືອນປັດຈຸບັນ — scope ວັນທີ່ຢູ່ query
       // ໂດຍກົງ (ບໍ່ດຶງທັງໝົດມາ filter ພາຍຫຼັງ), ແຍກ 2 query ແລ້ວ merge ເພາະ Firestore
@@ -182,8 +194,11 @@ function ApprovePageContent() {
           .filter((d) => d.status === "pending" || d.endDate >= monthStart);
       }
 
+      // Same rule as the detail page and updateOffsiteApproval: not the
+      // requester, not anyone on the trip (the old filter only dropped the
+      // creator, so a teammate could approve a trip they were going on).
       return rows
-        .filter((d) => d.createdByUid !== loggedInUserUuid)
+        .filter((d) => !getOffsiteApprovalBlock(d, offsiteApprover))
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     },
     // FIX #1: ໃຊ້ canApproveAny ທີ່ declare ຢ່າງຖືກຕ້ອງແລ້ວ
@@ -206,7 +221,9 @@ function ApprovePageContent() {
           | "approved"
           | "rejected",
         // FIX #2: ລຶບ `as` cast ທີ່ຕັດ reviewedAt/reviewedBy ອອກ — type ກົງກັນຢູ່ແລ້ວ
-        approvals: r.approvals,
+        // Admin pads 2-step approvals to length 3 with null — drop those so the
+        // table never reads `.role` / `.decision` off a null entry.
+        approvals: (r.approvals ?? []).filter(Boolean),
         teammate: r.teammate,
         // FIX #1: Firestore ເກັບ participantIds ເປັນ (string | object)[]
         // string = uid ຮຸ່ນເກົ່າ, object = ParticipantEntry ຮຸ່ນໃໝ່
@@ -255,6 +272,7 @@ function ApprovePageContent() {
   const [pendingOffsiteItem, setPendingOffsiteItem] =
     useState<OffsiteTableItem | null>(null);
   const [confirmOffsite, setConfirmOffsite] = useState(false);
+  const [offsiteRejectReason, setOffsiteRejectReason] = useState("");
   const [isProcessingOffsite, setIsProcessingOffsite] = useState(false);
 
   // ── Leave dialog handlers ────────────────────────────────────────────────
@@ -294,6 +312,7 @@ function ApprovePageContent() {
       setPendingOffsiteItem(null);
       setOffsiteAction(null);
       setConfirmOffsite(false);
+      setOffsiteRejectReason("");
     }
   };
 
@@ -303,90 +322,39 @@ function ApprovePageContent() {
       [user?.firstNameLo || user?.firstName, user?.lastNameLo || user?.lastName]
         .filter(Boolean)
         .join(" ") || loggedInUserUuid;
-    const now = new Date().toISOString();
 
     setIsProcessingOffsite(true);
     try {
-      const decision = offsiteAction === "approve" ? "approved" : "rejected";
-      // ຊອກຫາ role ຂອງ approver ທີ່ login ຢູ່ຕໍ່ກັບ approvals array
-      const approvalRole = "departmentHead";
-      const fullRecord = offsiteRequests.find(
-        (r) => r.id === pendingOffsiteItem.id,
-      );
-      const approvalIndex =
-        fullRecord?.approvals.findIndex((ap) => ap.role === approvalRole) ?? -1;
-
-      const payload: Record<string, unknown> = {
-        updatedAt: now,
-        updatedBy: reviewedBy,
-      };
-
-      if (approvalIndex >= 0 && fullRecord) {
-        // ອັບເດດ approval slot ຂອງ user ປັດຈຸບັນ
-        const updatedApprovals = fullRecord.approvals.map((ap, i) =>
-          i === approvalIndex
-            ? { ...ap, decision, reviewedBy, reviewedAt: now }
-            : ap,
-        );
-        payload.approvals = updatedApprovals;
-
-        // FIX #2: ຄຳນວນ status ສຸດທ້າຍຫຼັງ update approvals
-        // ເກົ່າ: ສະເພາະ rejected ເທົ່ານັ້ນທີ່ set status — approved ຕິດຄ້າງເປັນ pending ຕລອດ
-        const anyRejected = updatedApprovals.some(
-          (ap) => ap.decision === "rejected",
-        );
-        const allApproved = updatedApprovals.every(
-          (ap) => ap.decision === "approved",
-        );
-        if (anyRejected) payload.status = "rejected";
-        else if (allApproved) payload.status = "approved";
-        // ຍັງ pending ຖ້າບາງ slot ຍັງບໍ່ທັນ review
-      } else {
-        // ບໍ່ພົບ slot ທີ່ກົງກັບ role → ຕັດສິນໂດຍກົງ
-        payload.status = decision;
-      }
-
-      await updateDoc(doc(db, "workOutside", pendingOffsiteItem.id), payload as DocumentData);
-
-      await logAudit({
-        action: decision === "approved" ? "offsite.request.approve" : "offsite.request.reject",
-        actorUid: loggedInUserUuid,
-        actorName: reviewedBy,
-        actorRoleUuid: user?.rolesUid ?? "",
+      await updateOffsiteApproval({
+        requestId: pendingOffsiteItem.id,
+        decision: offsiteAction === "approve" ? "approved" : "rejected",
+        approver: offsiteApprover,
+        reviewedBy,
+        // The requester's rejection email shows this; the list used to send none.
+        rejectReason:
+          offsiteAction === "reject"
+            ? offsiteRejectReason.trim() || undefined
+            : undefined,
+        actorRoleUuid: user?.rolesUid,
         actorRoleName: user?.rolesName,
         workLocation: extractWorkLocationLog(user?.workLocation),
-        targetType: "workOutside",
-        targetId: pendingOffsiteItem.id,
-        targetName: fullRecord?.requester.fullNameLo || fullRecord?.requester.fullNameEn,
-        before: { status: fullRecord?.status, approvals: fullRecord?.approvals },
-        after: payload,
-        status: "SUCCESS",
       });
-
-      await queryClient.invalidateQueries({ queryKey: offsiteQueryKey });
       toast.success(
         offsiteAction === "approve" ? "ອະນຸມັດສຳເລັດ" : "ປະຕິເສດສຳເລັດ",
       );
     } catch (error) {
-      await logAudit({
-        action: offsiteAction === "approve" ? "offsite.request.approve" : "offsite.request.reject",
-        actorUid: loggedInUserUuid,
-        actorName: reviewedBy,
-        actorRoleUuid: user?.rolesUid ?? "",
-        actorRoleName: user?.rolesName,
-        workLocation: extractWorkLocationLog(user?.workLocation),
-        targetType: "workOutside",
-        targetId: pendingOffsiteItem.id,
-        status: "FAILED",
-        errorMessage: error instanceof Error ? error.message : String(error),
-      });
-      toast.error("ເກີດຂໍ້ຜິດພາດ ກະລຸນາລອງໃໝ່");
+      toast.error(offsiteApprovalErrorMessage(error));
     } finally {
+      // Refetch either way — a refusal means this row was stale (cancelled, or
+      // already decided by another approver). The prefix also covers the
+      // detail page's cache.
+      await queryClient.invalidateQueries({ queryKey: ["workOutside"] });
       setIsProcessingOffsite(false);
       setOpenOffsiteDialog(false);
       setPendingOffsiteItem(null);
       setOffsiteAction(null);
       setConfirmOffsite(false);
+      setOffsiteRejectReason("");
     }
   };
 
@@ -552,6 +520,20 @@ function ApprovePageContent() {
               </strong>
             </DialogDescription>
           </DialogHeader>
+          {offsiteAction === "reject" && (
+            <div className="space-y-2">
+              <p className="text-muted-foreground text-sm">
+                ເຫດຜົນການປະຕິເສດ (ທາງເລືອກ)
+              </p>
+              <Textarea
+                placeholder="ລະບຸເຫດຜົນ..."
+                value={offsiteRejectReason}
+                onChange={(e) => setOffsiteRejectReason(e.target.value)}
+                rows={3}
+                disabled={isProcessingOffsite}
+              />
+            </div>
+          )}
           <label
             htmlFor="confirm-offsite"
             className="hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-lg border p-3 py-2 transition-colors select-none"
