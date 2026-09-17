@@ -43,7 +43,7 @@ import {
 } from "@/components/ui/popover";
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import ProfileSkeleton from "@/components/skeletons/profileSkeleton";
-import { uploadImageFile } from "@/components/cameraUpload";
+import { isFileIntegrityError, uploadImageFile } from "@/components/cameraUpload";
 import { PdfThumbnail } from "@/components/pdf-thumbnail";
 
 // ** third party
@@ -317,7 +317,7 @@ function DocUploadSlot({
       onUploaded(url);
       toast.success("ອັບໂຫຼດສໍາເລັດ");
     } catch (err) {
-      toast.error("ອັບໂຫຼດບໍ່ສໍາເລັດ");
+      toast.error(isFileIntegrityError(err) ? err.message : "ອັບໂຫຼດບໍ່ສໍາເລັດ");
       console.error(err);
     } finally {
       setUploading(false);

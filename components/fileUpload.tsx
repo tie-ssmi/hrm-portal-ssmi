@@ -1,8 +1,14 @@
 'use client'
 
+// ** assets / icons
 import { Upload } from 'lucide-react'
+
+// ** third party
 import { toast } from 'sonner'
+
+// ** config / utils / types / hooks
 import { cn } from '@/lib/utils'
+import { checkFileIntegrity, FILE_TRUNCATED_MESSAGE, type IntegrityResult } from '@/lib/file-integrity'
 
 interface FileUploadProps {
   file: File | null
@@ -21,7 +27,7 @@ export default function FileUpload({
   maxSizeMB = 10,
   className,
 }: FileUploadProps) {
-  const validate = (f: File): boolean => {
+  const validate = async (f: File): Promise<boolean> => {
     if (allowedMimes.length > 0 && !allowedMimes.includes(f.type)) {
       toast.error('ອະນຸຍາດສະເພາະ PDF, JPG, PNG ເທົ່ານັ້ນ')
       return false
@@ -30,14 +36,28 @@ export default function FileUpload({
       toast.error(`ໄຟລ໌ໃຫຍ່ເກີນ ${maxSizeMB}MB ກະລຸນາເລືອກໄຟລ໌ໃໝ່`)
       return false
     }
+    // Android WebView can hand back a file whose bytes stop early — see
+    // lib/file-integrity.ts. Rejecting here beats storing a file that no
+    // viewer can open once it reaches the approver.
+    let integrity: IntegrityResult
+    try {
+      integrity = await checkFileIntegrity(f)
+    } catch {
+      toast.error('ອ່ານໄຟລ໌ບໍ່ໄດ້ ກະລຸນາເລືອກໄຟລ໌ໃໝ່')
+      return false
+    }
+    if (integrity === 'truncated') {
+      toast.error(FILE_TRUNCATED_MESSAGE)
+      return false
+    }
     return true
   }
 
-  const handleWebChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleWebChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0] ?? null
     e.target.value = ''
     if (!selected) return
-    if (validate(selected)) onFileSelect(selected)
+    if (await validate(selected)) onFileSelect(selected)
   }
 
   const areaClass = cn(

@@ -1,14 +1,25 @@
 'use client'
 
+// ** core
 import { useRef, useState } from 'react'
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
-import { storage } from '@/lib/firebase'
-import { Button } from '@/components/ui/button'
-import { toast } from 'sonner'
+
+// ** assets / icons
 import { Camera } from 'lucide-react'
+
+// ** shared components
+import { Button } from '@/components/ui/button'
+
+// ** third party
+import { toast } from 'sonner'
+
+// ** config / utils / types / hooks
 import { cn } from '@/lib/utils'
 import { updateEmployeeProfileImage } from '@/lib/employees'
+import { checkFileIntegrity, FileTruncatedError } from '@/lib/file-integrity'
 import type { Employee } from '@/lib/types'
+
+// ** services
+import { uploadAttachment, UploadTruncatedError } from '@/services/attachment-upload'
 
 type CameraUploadActor = {
   name?: string
@@ -53,31 +64,33 @@ export async function uploadImageFile(params: {
   const { file, uid, folder = 'profile-images', onProgress } = params
   const ext = file.name.split('.').pop() || 'jpg'
   const fileName = `${uid}-${Date.now()}.${ext}`
-  const storageRef = ref(storage, `${folder}/${uid}/${fileName}`)
 
-  return new Promise((resolve, reject) => {
-    const task = uploadBytesResumable(storageRef, file, {
+  // Every profile document and photo goes through here, and it produced 89 of
+  // the 92 truncated objects in the bucket (see lib/file-integrity.ts), so both
+  // callers are guarded by checking once in this function.
+  if ((await checkFileIntegrity(file)) === 'truncated') {
+    throw new FileTruncatedError()
+  }
+
+  // Always pass a progress callback: it selects the resumable uploader this
+  // function has always used, and both callers show a percentage.
+  return uploadAttachment(
+    `${folder}/${uid}/${fileName}`,
+    file,
+    (percent) => onProgress?.(percent),
+    {
       contentType: resolveContentType(file, ext),
       cacheControl: 'public,max-age=3600',
-    })
+    },
+  )
+}
 
-    task.on(
-      'state_changed',
-      (snapshot) => {
-        const percent = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)
-        onProgress?.(percent)
-      },
-      (error) => reject(error),
-      async () => {
-        try {
-          const url = await getDownloadURL(task.snapshot.ref)
-          resolve(url)
-        } catch (err) {
-          reject(err)
-        }
-      }
-    )
-  })
+// A truncated file won't upload correctly on retry, so these errors surface
+// their own "pick the file again" message instead of the generic failure.
+export function isFileIntegrityError(
+  err: unknown,
+): err is FileTruncatedError | UploadTruncatedError {
+  return err instanceof FileTruncatedError || err instanceof UploadTruncatedError
 }
 
 export default function CameraUpload({ uid, folder, onUploaded, className, actor }: CameraUploadProps) {
@@ -107,7 +120,7 @@ export default function CameraUpload({ uid, folder, onUploaded, className, actor
       toast.success('Image uploaded successfully')
     } catch (error) {
       console.error(error)
-      toast.error('Upload failed')
+      toast.error(isFileIntegrityError(error) ? error.message : 'Upload failed')
     } finally {
       setUploading(false)
     }

@@ -70,11 +70,10 @@ import {
   doc,
   updateDoc,
 } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 // ** config / utils / types / hooks
 import { useAuth } from "@/lib/auth-context";
-import { db, storage } from "@/lib/firebase";
+import { db } from "@/lib/firebase";
 import { cn } from "@/lib/utils";
 import type {
   ActivityCode,
@@ -89,6 +88,11 @@ import type {
 // ** services
 import { hasNoOffsiteDecisionYet } from "@/services/offsite-approval";
 import { logAudit, extractWorkLocationLog } from "@/services/audit-log";
+import {
+  uploadAttachment,
+  UploadTruncatedError,
+  UPLOAD_TRUNCATED_MESSAGE,
+} from "@/services/attachment-upload";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -693,12 +697,10 @@ export default function OffsiteRequestForm({
       let docLink: string | null = isEditMode ? (initialData?.docLink ?? null) : null;
       if (docFile) {
         const ext = docFile.name.split(".").pop() ?? "file";
-        const storageRef = ref(
-          storage,
+        docLink = await uploadAttachment(
           `workOutside/${user.uid}/${Date.now()}.${ext}`,
+          docFile,
         );
-        const snapshot = await uploadBytes(storageRef, docFile);
-        docLink = await getDownloadURL(snapshot.ref);
       }
 
       const participantIds = [
@@ -821,7 +823,11 @@ export default function OffsiteRequestForm({
         status: "FAILED",
         errorMessage: err instanceof Error ? err.message : String(err),
       });
-      toast.error("ເກີດຂໍ້ຜິດພາດ ກະລຸນາລອງໃໝ່");
+      toast.error(
+        err instanceof UploadTruncatedError
+          ? UPLOAD_TRUNCATED_MESSAGE
+          : "ເກີດຂໍ້ຜິດພາດ ກະລຸນາລອງໃໝ່",
+      );
     } finally {
       setIsSubmitting(false);
     }

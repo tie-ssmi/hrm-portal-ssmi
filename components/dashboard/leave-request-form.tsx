@@ -59,14 +59,12 @@ import { Combobox } from "@/components/ui/combobox";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { format, isWeekend } from "date-fns";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { driver } from "driver.js";
 import "driver.js/dist/driver.css";
 
 // ** config / utils / types / hooks
 import { useAuth } from "@/lib/auth-context";
 import { useHRM } from "@/lib/hrm-context";
-import { storage } from "@/lib/firebase";
 import {
   usePendingDocLeaves,
   useUpcomingLeaves,
@@ -84,6 +82,11 @@ import { fetchPoliciesForGender, resolveEmployeePolicyLimit } from "@/services/p
 import { fetchCurrentLeaveBalancesV2 } from "@/services/leave-balances";
 import { resolveEmployeeEmploymentStatus } from "@/lib/employment-status";
 import { getEmployees } from "@/services/employees";
+import {
+  uploadAttachment,
+  UploadTruncatedError,
+  UPLOAD_TRUNCATED_MESSAGE,
+} from "@/services/attachment-upload";
 import FileUpload from "@/components/fileUpload";
 
 type Period = "morning" | "afternoon";
@@ -764,12 +767,10 @@ export default function LeaveRequestForm() {
       let docLink: string | undefined = undefined;
       if (docUploadChoice === "now" && docFile) {
         const ext = docFile.name.split(".").pop() ?? "file";
-        const storageRef = ref(
-          storage,
+        docLink = await uploadAttachment(
           `leaves/${loggedInUserUuid}/${Date.now()}.${ext}`,
+          docFile,
         );
-        const snapshot = await uploadBytes(storageRef, docFile);
-        docLink = await getDownloadURL(snapshot.ref);
       }
 
       await submitLeaveRequest(
@@ -860,7 +861,11 @@ export default function LeaveRequestForm() {
       setDocUploadChoice(null);
       setDocFile(null);
     } catch (err) {
-      toast.error("ບໍ່ສາມາດສົ່ງຄໍາຮ້ອງຂໍໄດ້");
+      toast.error(
+        err instanceof UploadTruncatedError
+          ? UPLOAD_TRUNCATED_MESSAGE
+          : "ບໍ່ສາມາດສົ່ງຄໍາຮ້ອງຂໍໄດ້",
+      );
       console.error(err);
     } finally {
       setIsSubmitting(false);

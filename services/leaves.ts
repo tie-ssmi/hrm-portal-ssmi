@@ -1,9 +1,9 @@
 import { addDoc, collection, doc, getDoc, getDocs, query, runTransaction, updateDoc, where, type QuerySnapshot, type DocumentData } from 'firebase/firestore'
-import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
-import { db, storage } from '@/lib/firebase'
+import { db } from '@/lib/firebase'
 import type { LeaveApprovalStep, LeaveRequest } from '@/lib/types'
 import { resolveLeaveRequestStatus } from '@/services/leave-approval'
 import { logAudit } from '@/services/audit-log'
+import { uploadAttachment } from '@/services/attachment-upload'
 
 function toLeaveRows(snapshot: QuerySnapshot<DocumentData>): LeaveRequest[] {
   return snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<LeaveRequest, 'id'>) }))
@@ -32,21 +32,8 @@ export async function uploadLeaveDocument(
 ): Promise<string> {
   const ext = file.name.split('.').pop() ?? 'file'
   const path = `leaves/${userUuid}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
-  const fileRef = storageRef(storage, path)
 
-  return new Promise((resolve, reject) => {
-    const task = uploadBytesResumable(fileRef, file)
-    task.on(
-      'state_changed',
-      (snap) => {
-        if (onProgress) {
-          onProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100))
-        }
-      },
-      reject,
-      () => getDownloadURL(task.snapshot.ref).then(resolve).catch(reject),
-    )
-  })
+  return uploadAttachment(path, file, onProgress)
 }
 
 export async function fetchLeaveById(leaveId: string): Promise<LeaveRequest | null> {
