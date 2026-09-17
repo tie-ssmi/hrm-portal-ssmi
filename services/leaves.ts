@@ -301,7 +301,7 @@ export async function fetchPendingDocLeavesByUserUuid(userUuid: string): Promise
 
   return snapshot.docs
     .map((d) => ({ id: d.id, ...(d.data() as Omit<LeaveRequest, 'id'>) }))
-    .filter((row) => row.status !== 'rejected' && row.docStatus === 'later')
+    .filter((row) => row.status !== 'rejected' && row.status !== 'cancelled' && row.docStatus === 'later')
     .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
 }
 

@@ -135,7 +135,9 @@ function ApprovePageContent() {
         duration: r.duration,
         note: undefined as string | undefined,
         type: r.policyName ? { name: r.policyName } : { name: r.type },
-        status: r.status,
+        // A withdrawn leave must not stay approvable in the pending tab; show it
+        // with the rejected ones, same as the offsite table below.
+        status: r.status === "cancelled" ? "rejected" : r.status,
         approvals: r.approvals,
       })),
     [leaveRequests],

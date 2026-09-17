@@ -69,6 +69,7 @@ import {
   usePendingDocLeaves,
   useUpcomingLeaves,
 } from "@/lib/use-leave-queries";
+import { formatPolicyLimit } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 // ** services
@@ -142,22 +143,6 @@ function playSuccessSound() {
   } catch {
     // AudioContext unavailable/blocked — silently skip, popup still shows
   }
-}
-
-function formatPolicyLimit(
-  limitDay?: number,
-  limitType?: string,
-): string | null {
-  if (limitDay === undefined) return null;
-  const typeMap: Record<string, string> = {
-    time: "ຄັ້ງ",
-    week: "ອາທິດ",
-    month: "ເດືອນ",
-    year: "ປີ",
-  };
-  if (!limitType) return `${limitDay} ວັນ`;
-  const translatedType = typeMap[limitType.trim().toLowerCase()] || limitType;
-  return `${limitDay} ວັນ / ${translatedType}`;
 }
 
 function getStatusIcon(status: string) {

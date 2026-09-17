@@ -75,36 +75,59 @@ function readUint32LE(bytes: Uint8Array, offset: number): number {
   )
 }
 
+export type IntegrityReport = {
+  result: IntegrityResult
+  format: 'pdf' | 'jpeg' | 'png' | 'webp' | 'unknown'
+  // Short technical note on why the verdict was reached — shown under the
+  // toast so a failure on a phone (no devtools) can still be diagnosed.
+  detail: string
+}
+
+const hex = (bytes: Uint8Array): string =>
+  Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join(' ')
+
 // The format is decided from the header bytes, never from the extension or
 // file.type: Android often reports an empty type, and names can lie about the
 // content. Rejects only files we can positively identify as cut short —
 // unknown formats (HEIC, GIF, …) pass as 'unsupported' so they aren't blocked.
-export async function checkFileIntegrity(file: File): Promise<IntegrityResult> {
+export async function inspectFileIntegrity(file: File): Promise<IntegrityReport> {
   // Every format we accept is far larger than its own signature, so a file
   // too short to hold one can only be a cut-off read.
-  if (file.size < HEAD_BYTES) return 'truncated'
+  if (file.size < HEAD_BYTES) {
+    return { result: 'truncated', format: 'unknown', detail: `size=${file.size}` }
+  }
 
   const [head, tail] = await Promise.all([
     readSliceBytes(file.slice(0, HEAD_BYTES)),
     readSliceBytes(file.slice(Math.max(0, file.size - TAIL_BYTES))),
   ])
+  const base = `size=${file.size} read=${head.length}+${tail.length} tail=…${hex(tail.subarray(-8))}`
 
   if (matchesAt(head, 0, PDF_HEADER)) {
-    return containsBytes(tail, PDF_EOF) ? 'ok' : 'truncated'
+    const ok = containsBytes(tail, PDF_EOF)
+    return { result: ok ? 'ok' : 'truncated', format: 'pdf', detail: `${base}${ok ? '' : ' no %%EOF'}` }
   }
 
   if (matchesAt(head, 0, JPEG_SOI)) {
-    return containsBytes(tail, JPEG_EOI) ? 'ok' : 'truncated'
+    const ok = containsBytes(tail, JPEG_EOI)
+    return { result: ok ? 'ok' : 'truncated', format: 'jpeg', detail: `${base}${ok ? '' : ' no FFD9'}` }
   }
 
   if (matchesAt(head, 0, PNG_SIGNATURE)) {
-    return containsBytes(tail, PNG_IEND) ? 'ok' : 'truncated'
+    const ok = containsBytes(tail, PNG_IEND)
+    return { result: ok ? 'ok' : 'truncated', format: 'png', detail: `${base}${ok ? '' : ' no IEND'}` }
   }
 
   if (matchesAt(head, 0, RIFF) && matchesAt(head, 8, WEBP)) {
     // RIFF stores (file size - 8) at offset 4, so a short read disagrees with it.
-    return readUint32LE(head, 4) + 8 === file.size ? 'ok' : 'truncated'
+    const declared = readUint32LE(head, 4) + 8
+    const ok = declared === file.size
+    return { result: ok ? 'ok' : 'truncated', format: 'webp', detail: `${base}${ok ? '' : ` riff=${declared}`}` }
   }
 
-  return 'unsupported'
+  return { result: 'unsupported', format: 'unknown', detail: `${base} head=${hex(head)}` }
+}
+
+export async function checkFileIntegrity(file: File): Promise<IntegrityResult> {
+  return (await inspectFileIntegrity(file)).result
 }

@@ -65,3 +65,14 @@ export function activityLabel(code: ActivityCode | string): string {
     default: return code
   }
 }
+
+// Label for a policy's day limit, e.g. "3 ວັນ / ເດືອນ". Lifetime limits never
+// refill, so a "per period" slash would read wrong — show them in parentheses.
+export function formatPolicyLimit(limitDay?: number, limitType?: string): string | null {
+  if (limitDay === undefined) return null
+  if (!limitType) return `${limitDay} ວັນ`
+  const key = limitType.trim().toLowerCase()
+  if (key === 'lifetime') return `${limitDay} ວັນ (ຕະຫຼອດອາຍຸງານ)`
+  const typeMap: Record<string, string> = { time: 'ຄັ້ງ', week: 'ອາທິດ', month: 'ເດືອນ', year: 'ປີ' }
+  return `${limitDay} ວັນ / ${typeMap[key] || limitType}`
+}

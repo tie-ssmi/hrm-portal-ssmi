@@ -8,7 +8,7 @@ import { toast } from 'sonner'
 
 // ** config / utils / types / hooks
 import { cn } from '@/lib/utils'
-import { checkFileIntegrity, FILE_TRUNCATED_MESSAGE, type IntegrityResult } from '@/lib/file-integrity'
+import { FILE_TRUNCATED_MESSAGE, inspectFileIntegrity, type IntegrityReport } from '@/lib/file-integrity'
 
 interface FileUploadProps {
   file: File | null
@@ -39,15 +39,20 @@ export default function FileUpload({
     // Android WebView can hand back a file whose bytes stop early — see
     // lib/file-integrity.ts. Rejecting here beats storing a file that no
     // viewer can open once it reaches the approver.
-    let integrity: IntegrityResult
+    let integrity: IntegrityReport
     try {
-      integrity = await checkFileIntegrity(f)
-    } catch {
-      toast.error('ອ່ານໄຟລ໌ບໍ່ໄດ້ ກະລຸນາເລືອກໄຟລ໌ໃໝ່')
+      integrity = await inspectFileIntegrity(f)
+    } catch (err) {
+      toast.error('ອ່ານໄຟລ໌ບໍ່ໄດ້ ກະລຸນາເລືອກໄຟລ໌ໃໝ່', {
+        description: `${f.name} · ${err instanceof Error ? err.message : String(err)}`,
+      })
       return false
     }
-    if (integrity === 'truncated') {
-      toast.error(FILE_TRUNCATED_MESSAGE)
+    if (integrity.result === 'truncated') {
+      toast.error(FILE_TRUNCATED_MESSAGE, {
+        description: `${f.name} · ${f.type || 'no type'} · ${integrity.format} · ${integrity.detail}`,
+        duration: 15000,
+      })
       return false
     }
     return true

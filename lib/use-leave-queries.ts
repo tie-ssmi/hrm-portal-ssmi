@@ -164,7 +164,7 @@ export function usePendingDocLeaves(userUuid: string | null | undefined) {
 
   const filtered = useMemo(() =>
     allLeaves
-      .filter((row) => row.status !== 'rejected' && row.docStatus === 'later')
+      .filter((row) => row.status !== 'rejected' && row.status !== 'cancelled' && row.docStatus === 'later')
       .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? '')),
   [allLeaves])
 

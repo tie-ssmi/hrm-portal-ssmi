@@ -33,6 +33,7 @@ import { format, isWeekend } from 'date-fns'
 // ** config / utils / types / hooks
 import { useAuth } from '@/lib/auth-context'
 import { useHRM } from '@/lib/hrm-context'
+import { formatPolicyLimit } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { fetchUserRoleId, fetchRoleByUid } from '@/lib/employees'
 
@@ -56,14 +57,6 @@ type LeaveTypeOption = {
 
 function formatDuration(d: number): string {
   return d === 0.5 ? '0.5 ວັນ' : d === 1 ? '1 ວັນ' : `${d} ວັນ`
-}
-
-function formatPolicyLimit(limitDay?: number, limitType?: string): string | null {
-  if (limitDay === undefined) return null
-  const typeMap: Record<string, string> = { time: 'ຄັ້ງ', week: 'ອາທິດ', month: 'ເດືອນ', year: 'ປີ' }
-  if (!limitType) return `${limitDay} ວັນ`
-  const translatedType = typeMap[limitType.trim().toLowerCase()] || limitType
-  return `${limitDay} ວັນ / ${translatedType}`
 }
 
 function getStatusIcon(status: string) {

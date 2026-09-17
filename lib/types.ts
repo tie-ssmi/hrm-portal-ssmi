@@ -262,7 +262,8 @@ export interface LeaveRequest {
   docStatus?: "now" | "later" | null;
   requiredApprovers?: LeaveApproverRole[];
   approvals?: LeaveApprovalStep[];
-  status: "pending" | "approved" | "rejected";
+  // "cancelled" is written by the admin app when a leave is withdrawn.
+  status: "pending" | "approved" | "rejected" | "cancelled";
   createdAt: string;
   reviewedBy?: string;
   reviewedAt?: string;
@@ -307,7 +308,9 @@ export interface LeavePolicy {
 }
 
 export type EmploymentStatus = "intern" | "probation95" | "permanent";
-export type PolicyRuleLimitType = "month" | "year" | "event" | "unlimited";
+// "lifetime" = granted once per employment; never refills (not monthly, yearly,
+// or on an employment-status change).
+export type PolicyRuleLimitType = "month" | "year" | "event" | "unlimited" | "lifetime";
 
 export interface PolicyRule {
   employmentStatus: EmploymentStatus;
@@ -337,16 +340,17 @@ export interface PolicyRecord {
 
 // Authoritative per-employee, per-policy, per-period balance — written by the
 // admin repo's runLeaveBalanceSummaryV2 (HRM-System-SSMI/functions/src/index.ts).
-// Doc id is "{period}_{uid}_{policyId}" where period is "YYYY" (year policies)
-// or "YYYY-MM" (month policies). Coexists in the same `leaveBalance` collection
-// as the older LeaveBalanceRecord docs above — distinguish via schemaVersion.
+// Doc id is "{period}_{uid}_{policyId}" where period is "YYYY" (year policies),
+// "YYYY-MM" (month policies) or "lifetime" (lifetime policies — periodStart
+// "2000-01-01" / periodEnd "2999-12-31", so the current-period filter always
+// keeps it). Coexists in the same `leaveBalance` collection as the older LeaveBalanceRecord docs above — distinguish via schemaVersion.
 export interface LeaveBalanceV2 {
   id: string;
   uid: string;
   policyId: string;
   policyUuid: string;
   policyName: string;
-  periodType: "month" | "year";
+  periodType: "month" | "year" | "lifetime";
   period: string;
   periodStart: string; // "YYYY-MM-DD"
   periodEnd: string; // "YYYY-MM-DD"
