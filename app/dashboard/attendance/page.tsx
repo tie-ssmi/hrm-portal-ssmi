@@ -37,6 +37,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { CameraCapture } from "@/components/camera-capture";
 import { formatDateLao, formatDayDateLao } from "@/components/laoDate";
 
@@ -397,33 +398,44 @@ const WeeklyHistoryCard = memo(function WeeklyHistoryCard({
                     {record.checkIn || "--:--"} - {record.checkOut || "--:--"}
                   </p>
                 </div>
-                <Badge
-                  variant={
-                    record.status === "present"
-                      ? "default"
-                      : record.status === "late"
-                        ? "secondary"
-                        : record.status === "leave"
-                          ? "outline"
-                          : record.status === "trip"
-                            ? "outline"
-                            : "destructive"
-                  }
-                >
-                  {record.isOffsite && record.status === "present"
-                    ? "ອອກວຽກນອກ"
-                    : record.isOffsite && record.status === "late"
-                      ? "ອອກວຽກນອກ (ຊ້າ)"
-                      : record.status === "present"
-                        ? "ມາວຽກ"
+                <div className="flex flex-wrap items-center justify-end gap-1">
+                  {record.earlyCheckOut ? (
+                    <Badge
+                      variant="outline"
+                      className="border-amber-500/40 text-amber-600 dark:text-amber-500"
+                      title={record.earlyCheckOutReason}
+                    >
+                      ອອກໄວ
+                    </Badge>
+                  ) : null}
+                  <Badge
+                    variant={
+                      record.status === "present"
+                        ? "default"
                         : record.status === "late"
-                          ? "ມາວຽກ (ຊ້າ)"
+                          ? "secondary"
                           : record.status === "leave"
-                            ? "ພັກ"
+                            ? "outline"
                             : record.status === "trip"
-                              ? "ທັດສະນະ"
-                              : "ບໍ່ມາວຽກ"}
-                </Badge>
+                              ? "outline"
+                              : "destructive"
+                    }
+                  >
+                    {record.isOffsite && record.status === "present"
+                      ? "ອອກວຽກນອກ"
+                      : record.isOffsite && record.status === "late"
+                        ? "ອອກວຽກນອກ (ຊ້າ)"
+                        : record.status === "present"
+                          ? "ມາວຽກ"
+                          : record.status === "late"
+                            ? "ມາວຽກ (ຊ້າ)"
+                            : record.status === "leave"
+                              ? "ພັກ"
+                              : record.status === "trip"
+                                ? "ທັດສະນະ"
+                                : "ບໍ່ມາວຽກ"}
+                  </Badge>
+                </div>
               </div>
             ))}
           </div>
@@ -501,6 +513,10 @@ const OffsiteDetailDialog = memo(function OffsiteDetailDialog({
   );
 });
 
+// ເຫດຜົນຂອງການອອກກ່ອນເວລາ ຖືກບັງຄັບຢູ່ server (recordCheckOut) ນຳ —
+// ຢູ່ນີ້ພຽງກັນບໍ່ໃຫ້ຜູ້ໃຊ້ສົ່ງໄປແລ້ວຖືກປະຕິເສດເສີຍໆ.
+const EARLY_CHECKOUT_REASON_MIN_CHARS = 30;
+
 const EarlyCheckOutDialog = memo(function EarlyCheckOutDialog({
   open,
   isSubmitting,
@@ -509,9 +525,18 @@ const EarlyCheckOutDialog = memo(function EarlyCheckOutDialog({
 }: {
   open: boolean;
   isSubmitting: boolean;
-  onConfirm: () => void;
+  onConfirm: (reason: string) => void;
   onCancel: () => void;
 }) {
+  const [reason, setReason] = useState("");
+  const trimmedLength = reason.trim().length;
+  const isValid = trimmedLength >= EARLY_CHECKOUT_REASON_MIN_CHARS;
+
+  // Clear on close so the next early check-out does not inherit a stale reason.
+  useEffect(() => {
+    if (!open) setReason("");
+  }, [open]);
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
       <DialogContent className="sm:max-w-sm">
@@ -522,8 +547,33 @@ const EarlyCheckOutDialog = memo(function EarlyCheckOutDialog({
           </DialogTitle>
         </DialogHeader>
         <p className="text-muted-foreground text-sm">
-          ຕອນນີ້ຍັງບໍ່ທັນຮອດ 17:00 ນ. ທ່ານແນ່ໃຈບໍ່ວ່າຕ້ອງການອອກວຽກ?
+          ຕອນນີ້ຍັງບໍ່ທັນຮອດ 17:00 ນ. ກະລຸນາປ້ອນເຫດຜົນທີ່ຕ້ອງອອກກ່ອນເວລາ.
         </p>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="early-checkout-reason">
+            ເຫດຜົນ <span className="text-destructive">*</span>
+          </Label>
+          <Textarea
+            id="early-checkout-reason"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            disabled={isSubmitting}
+            rows={3}
+            placeholder="ຕົວຢ່າງ: ມີນັດພົບແພດທີ່ໂຮງໝໍ ແລະ ໄດ້ແຈ້ງຫົວໜ້າພະແນກແລ້ວ"
+          />
+          <p
+            className={
+              isValid
+                ? "text-muted-foreground text-xs"
+                : "text-destructive text-xs"
+            }
+          >
+            {trimmedLength}/{EARLY_CHECKOUT_REASON_MIN_CHARS} ຕົວອັກສອນ
+            {isValid ? "" : " — ຍັງບໍ່ພຽງພໍ"}
+          </p>
+        </div>
+
         <div className="mt-2 flex gap-2">
           <Button
             variant="outline"
@@ -533,7 +583,11 @@ const EarlyCheckOutDialog = memo(function EarlyCheckOutDialog({
           >
             ຍົກເລີກ
           </Button>
-          <Button className="flex-1" onClick={onConfirm} disabled={isSubmitting}>
+          <Button
+            className="flex-1"
+            onClick={() => onConfirm(reason.trim())}
+            disabled={isSubmitting || !isValid}
+          >
             {isSubmitting ? <Spinner className="mr-2" /> : null}
             ຢືນຢັນອອກວຽກ
           </Button>
@@ -717,7 +771,7 @@ export default function AttendancePage() {
   }, [holidays, todayIso, todayLeaveStatus, todayTrip, workLocationUuid]);
 
   const handleAttendance = useCallback(
-    async (type: "checkIn" | "checkOut") => {
+    async (type: "checkIn" | "checkOut", earlyCheckOutReason?: string) => {
       if (submittingRef.current) return;
       if (!user) {
         toast.error("ບໍ່ເຫັນຂໍ້ມູນຜູ້ໃຊ້. ກະລຸນາເຂົ້າລະບົບອີກຄັ້ງ.");
@@ -762,6 +816,7 @@ export default function AttendancePage() {
             accuracy: loc?.accuracy,
             imageFile,
             isOffsite: true,
+            ...(type === "checkOut" ? { earlyCheckOutReason } : {}),
           });
         } else {
           const loc = await getValidatedLocation();
@@ -770,6 +825,7 @@ export default function AttendancePage() {
             user,
             location: { lat: loc.lat, lng: loc.lng },
             accuracy: loc.accuracy,
+            ...(type === "checkOut" ? { earlyCheckOutReason } : {}),
           });
         }
         toast.success(successMsg);
@@ -782,6 +838,19 @@ export default function AttendancePage() {
           msg = "ບໍ່ສາມາດເຊື່ອມຕໍ່ server. ກະລຸນາກວດ internet.";
         } else if (code === "functions/unauthenticated") {
           msg = "ກະລຸນາເຂົ້າລະບົບໃໝ່.";
+        } else if (
+          code === "functions/invalid-argument" &&
+          type === "checkOut" &&
+          !earlyCheckOutReason
+        ) {
+          // The dialog reads the device clock, the rule is enforced against the
+          // server clock — a device running fast skips the prompt and lands here.
+          // Reopen it so the person can actually give the reason.
+          msg =
+            error instanceof Error
+              ? error.message
+              : "ກະລຸນາປ້ອນເຫດຜົນການອອກກ່ອນເວລາ.";
+          setShowEarlyCheckOutConfirm(true);
         } else {
           msg =
             error instanceof Error
@@ -816,10 +885,13 @@ export default function AttendancePage() {
     handleAttendance("checkOut");
   }, [handleAttendance]);
 
-  const handleConfirmEarlyCheckOut = useCallback(() => {
-    setShowEarlyCheckOutConfirm(false);
-    handleAttendance("checkOut");
-  }, [handleAttendance]);
+  const handleConfirmEarlyCheckOut = useCallback(
+    (reason: string) => {
+      setShowEarlyCheckOutConfirm(false);
+      handleAttendance("checkOut", reason);
+    },
+    [handleAttendance],
+  );
 
   const officeDistance = useMemo(() => {
     if (!location || location.error) return null;

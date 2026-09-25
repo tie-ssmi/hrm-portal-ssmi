@@ -106,7 +106,7 @@ Data fetched for approvers is scoped by `workLocationUid` (always) + `department
 
 ### Session & Auth
 
-- **Auto-logout:** 2-day inactivity via `ssmi_last_active` key in `localStorage`. Checked on every `onAuthStateChanged` in `lib/auth-context.tsx`. Updated on every app open. Manual logout clears the key.
+- **Auto-logout:** 5-day inactivity via `ssmi_last_active` key in `localStorage`. Checked on every `onAuthStateChanged` in `lib/auth-context.tsx`. Updated on every app open. Manual logout clears the key.
 - Firebase Auth uses `browserLocalPersistence` by default (session survives page refresh indefinitely unless inactive for 2+ days).
 - **Google sign-in:** uses `signInWithPopup` everywhere except iOS standalone PWA (home-screen installed), which uses `signInWithRedirect` instead — `window.open()` popups don't reliably work in iOS's standalone WebKit mode. See `shouldUseGoogleRedirect` in `lib/auth-context.tsx`; the redirect outcome is picked up via `getRedirectResult()` on mount and surfaced through context as `googleRedirectOutcome` (consumed by `app/login-form.tsx`).
 - `device_id` (`lib/device.ts`, used for buddy-punch detection in `recordCheckIn`/`recordCheckOut`) must survive logout — `clearAllClientStorage` in `lib/auth-context.tsx` snapshots and restores it around `localStorage.clear()`.

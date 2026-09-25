@@ -793,16 +793,27 @@ export default function HistoryPage() {
                               </div>
                             </div>
                             {record ? (
-                              <Badge
-                                variant={getStatusVariant(record.status)}
-                                className="flex-shrink-0"
-                              >
-                                {getStatusLabel(
-                                  record.status,
-                                  record?.checkIn,
-                                  record?.checkOut,
-                                )}
-                              </Badge>
+                              <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-1">
+                                {record.earlyCheckOut ? (
+                                  <Badge
+                                    variant="outline"
+                                    className="border-amber-500/40 text-amber-600 dark:text-amber-500"
+                                    title={record.earlyCheckOutReason}
+                                  >
+                                    ອອກໄວ
+                                  </Badge>
+                                ) : null}
+                                <Badge
+                                  variant={getStatusVariant(record.status)}
+                                  className="flex-shrink-0"
+                                >
+                                  {getStatusLabel(
+                                    record.status,
+                                    record?.checkIn,
+                                    record?.checkOut,
+                                  )}
+                                </Badge>
+                              </div>
                             ) : (
                               <Badge
                                 variant="outline"

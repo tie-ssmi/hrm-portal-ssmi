@@ -350,6 +350,8 @@ export default function DashboardPage() {
           return sum + 1;
         if (r.status === "leave"||r.status === "trip")
           return sum;
+        // came late and forgot checkout → 1 pt
+        if (r.status === "late" && r.checkOutTime == null) return sum + 1;
         if (
           r.status === "present" &&
           

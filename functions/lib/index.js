@@ -917,18 +917,13 @@ async function logLocationFlagAudit(params) {
         console.warn("[locationFlags] failed to write auditLogs entry", err);
     }
 }
-// FingerprintJS (free tier) has very low entropy on iOS Safari — Apple
-// deliberately restricts canvas/WebGL/font-enumeration signals for privacy,
-// so different iPhones (same model + iOS version) frequently produce the
-// same visitorId. Trusting it there causes false "used by another account"
-// blocks between unrelated employees. localId (a random UUID persisted in
-// localStorage) doesn't have this collision problem, so on iOS we rely on
-// it alone rather than also cross-checking the fingerprint.
-function isIOSUserAgent(userAgent) {
-    if (!userAgent)
-        return false;
-    return /iPhone|iPad|iPod/i.test(userAgent);
-}
+// ອອກວຽກກ່ອນ 17:00 ຕ້ອງປ້ອນເຫດຜົນຢ່າງໜ້ອຍ 30 ຕົວອັກສອນ.
+//
+// Enforced here, not in the browser, for the same reason check-in status is
+// (CLAUDE.md): the client can be edited or its clock changed. The dialog in
+// app/dashboard/attendance/page.tsx is a convenience; this is the rule.
+const EARLY_CHECKOUT_BEFORE_HOUR = 17;
+const EARLY_CHECKOUT_REASON_MIN_CHARS = 30;
 // App Check shadow-mode logging — NOT enforced yet. Client scaffold: lib/firebase.ts.
 // Lets us measure real-world token coverage in Cloud Logging before flipping
 // `enforceAppCheck: true` on recordCheckIn/recordCheckOut, which would otherwise lock
@@ -938,32 +933,53 @@ function logAppCheckShadow(app, fnName) {
         console.warn(`[AppCheck shadow] ${fnName}: request missing a valid App Check token`);
     }
 }
-// ກັນ "ຢືມເຄື່ອງກັນ punch" — ອຸປະກອນດຽວກັນ (localId ຫຼື fingerprint) ຫ້າມໃຊ້
-// check-in/check-out ໃຫ້ຫຼາຍກວ່າໜຶ່ງບັນຊີ ໃນມື້ດຽວກັນ. ບໍ່ blockບັນຊີດຽວກັນ
-// ທີ່ໃຊ້ເຄື່ອງດຽວກັນຊ້ຳ (ນັ້ນຖືກ handle ຢູ່ແລ້ວທາງ client ດ້ວຍ merge write).
-async function assertDeviceNotUsedByOtherAccount(isoDate, userUuid, deviceLocalId, deviceFingerprint, field, errorMessage, useFingerprint) {
+// ກັນ "ຢືມເຄື່ອງກັນ punch" — ອຸປະກອນດຽວກັນຫ້າມໃຊ້ check-in/check-out ໃຫ້ຫຼາຍກວ່າ
+// ໜຶ່ງບັນຊີ ໃນມື້ດຽວກັນ. ບໍ່ block ບັນຊີດຽວກັນທີ່ໃຊ້ເຄື່ອງດຽວກັນຊ້ຳ (handle ຢູ່ແລ້ວ
+// ທາງ client ດ້ວຍ merge write).
+//
+// ONLY deviceLocalId blocks. It is a random UUID per browser profile
+// (lib/device.ts), so a match is a real match.
+//
+// deviceFingerprint is recorded and cross-checked but NEVER blocks. The
+// free-tier FingerprintJS visitorId is derived from model-level signals — GPU,
+// font set, screen metrics — so two different handsets of the same model and
+// browser routinely produce the same id. Chrome's User-Agent Reduction (every
+// Android reports model "K") and Safari's anti-fingerprinting defences both push
+// entropy down further. Blocking on it meant punishing whichever employee
+// happened to punch second, which is exactly what happened on 2026-09-23: two
+// unrelated employees on separate Android phones, different localIds and
+// different ISPs, sharing one visitorId.
+//
+// The trade-off is accepted deliberately: someone who clears site data gets a
+// fresh localId and is not caught. That was already true for every iOS user
+// before this change, since the fingerprint was skipped there anyway.
+async function assertDeviceNotUsedByOtherAccount(isoDate, userUuid, deviceLocalId, deviceFingerprint, field, errorMessage) {
     if (!deviceLocalId && !deviceFingerprint)
         return;
-    const queries = [];
-    if (deviceLocalId) {
-        queries.push(admin
-            .firestore()
-            .collection("attendance")
-            .where("dateKey", "==", isoDate)
-            .where("deviceLocalId", "==", deviceLocalId)
-            .get());
+    const attendance = admin.firestore().collection("attendance");
+    const sameDay = (signal, value) => attendance
+        .where("dateKey", "==", isoDate)
+        .where(signal, "==", value)
+        .get();
+    const [localIdSnap, fingerprintSnap] = await Promise.all([
+        deviceLocalId ? sameDay("deviceLocalId", deviceLocalId) : null,
+        deviceFingerprint ? sameDay("deviceFingerprint", deviceFingerprint) : null,
+    ]);
+    const otherAccounts = (snap) => {
+        var _a;
+        return ((_a = snap === null || snap === void 0 ? void 0 : snap.docs) !== null && _a !== void 0 ? _a : []).filter((doc) => doc.data().userUuid !== userUuid && doc.data()[field]);
+    };
+    // Log-only: surfaces suspected sharing in Cloud Logging without denying the
+    // punch. Deliberately logged even when it is almost certainly a collision —
+    // the models are printed so a human can judge.
+    for (const doc of otherAccounts(fingerprintSnap)) {
+        console.warn(`[device] fingerprint match (NOT blocking) on ${isoDate}: ` +
+            `${userUuid} vs ${doc.id} — ${field}`);
     }
-    if (deviceFingerprint && useFingerprint) {
-        queries.push(admin
-            .firestore()
-            .collection("attendance")
-            .where("dateKey", "==", isoDate)
-            .where("deviceFingerprint", "==", deviceFingerprint)
-            .get());
-    }
-    const snaps = await Promise.all(queries);
-    const usedByOtherAccount = snaps.some((snap) => snap.docs.some((doc) => doc.data().userUuid !== userUuid && doc.data()[field]));
-    if (usedByOtherAccount) {
+    const conflict = otherAccounts(localIdSnap)[0];
+    if (conflict) {
+        console.warn(`[device] blocking ${field} for ${userUuid} on ${isoDate}: ` +
+            `deviceLocalId matches ${conflict.id}`);
         throw new https_1.HttpsError("failed-precondition", errorMessage);
     }
 }
@@ -993,9 +1009,8 @@ exports.recordCheckIn = (0, https_1.onCall)(
         throw new https_1.HttpsError("failed-precondition", "ທ່ານມີວັນລາພັກທີ່ໄດ້ຮັບອະນຸມັດໃນວັນນີ້ ບໍ່ສາມາດ Check-In ໄດ້");
     }
     // ກັນອຸປະກອນດຽວກັນ check-in ແທນຫຼາຍບັນຊີ (ຢືມມືຖືກັນ punch)
-    // fingerprint ຖືກຂ້າມສະເພາະ iOS — ເບິ່ງ comment ຢູ່ isIOSUserAgent
     const checkInUserAgent = request.rawRequest.headers["user-agent"];
-    await assertDeviceNotUsedByOtherAccount(isoDate, data.userUuid, data.deviceLocalId, data.deviceFingerprint, "checkInTime", "ອຸປະກອນນີ້ຖືກໃຊ້ Check-In ມື້ນີ້ແລ້ວດ້ວຍບັນຊີອື່ນ ❌", !isIOSUserAgent(checkInUserAgent));
+    await assertDeviceNotUsedByOtherAccount(isoDate, data.userUuid, data.deviceLocalId, data.deviceFingerprint, "checkInTime", "ອຸປະກອນນີ້ຖືກໃຊ້ Check-In ມື້ນີ້ແລ້ວດ້ວຍບັນຊີອື່ນ ❌");
     const status = computeCheckInStatus(toMinuteOfDay(parseInt(hourStr, 10), parseInt(minuteStr, 10)), dayLeaveStatus === "morning_leave", data.isOffsite);
     // ກວດ Geofence — ດຶງ coordinates ຫ້ອງການຈາກ Firestore (client ປອມບໍ່ໄດ້)
     if (!data.isOffsite && data.location != null) {
@@ -1036,7 +1051,7 @@ exports.recordCheckIn = (0, https_1.onCall)(
         .firestore()
         .collection("attendance")
         .doc(attendanceId)
-        .set(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ _id: attendanceId, uid: (_f = data.uid) !== null && _f !== void 0 ? _f : data.userUuid, userUuid: data.userUuid, date, dateKey: isoDate, checkInTime: checkTime, status }, (dayLeaveStatus === "morning_leave"
+        .set(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ _id: attendanceId, uid: (_f = data.uid) !== null && _f !== void 0 ? _f : data.userUuid, userUuid: data.userUuid, date, dateKey: isoDate, checkInTime: checkTime, status }, (dayLeaveStatus === "morning_leave"
         ? { morningLeaveDay: true }
         : {})), (data.location
         ? {
@@ -1051,7 +1066,7 @@ exports.recordCheckIn = (0, https_1.onCall)(
         ? { checkInImageURL: data.checkInImageURL }
         : {})), (data.isOffsite ? { isOffsite: true } : {})), (data.deviceLocalId ? { deviceLocalId: data.deviceLocalId } : {})), (data.deviceFingerprint
         ? { deviceFingerprint: data.deviceFingerprint }
-        : {})), (data.accuracy != null ? { checkInAccuracy: data.accuracy } : {})), (checkInIp ? { checkInIp } : {})), (checkInUserAgent ? { checkInUserAgent } : {})), (locationFlags.length > 0
+        : {})), (data.deviceModel ? { deviceModel: data.deviceModel } : {})), (data.accuracy != null ? { checkInAccuracy: data.accuracy } : {})), (checkInIp ? { checkInIp } : {})), (checkInUserAgent ? { checkInUserAgent } : {})), (locationFlags.length > 0
         ? { checkInLocationFlags: locationFlags }
         : {})), { updatedAt: new Date().toISOString(), updatedBy: (_g = data.updatedBy) !== null && _g !== void 0 ? _g : data.userUuid }), { merge: true });
     if (locationFlags.length > 0) {
@@ -1079,7 +1094,7 @@ exports.recordCheckOut = (0, https_1.onCall)(
 // NOT enforced yet — see logAppCheckShadow. Flip to `enforceAppCheck: true` once
 // Cloud Logging shows consistent coverage (client scaffold: lib/firebase.ts).
 { region: "asia-southeast1", cors: callableCorsOrigins, invoker: "public" }, async (request) => {
-    var _a, _b, _c, _d, _e, _f;
+    var _a, _b, _c, _d, _e, _f, _g;
     if (!request.auth) {
         throw new https_1.HttpsError("unauthenticated", "Must be signed in");
     }
@@ -1094,10 +1109,22 @@ exports.recordCheckOut = (0, https_1.onCall)(
     }
     const { date, isoDate, checkTime } = getVientianeParts();
     const attendanceId = `${data.userUuid}_${date}`;
+    // ອອກກ່ອນ 17:00 ຕ້ອງມີເຫດຜົນ. ເວລາມາຈາກ server ບໍ່ແມ່ນໂມງໃນມືຖື.
+    const [checkOutHour, checkOutMinute] = checkTime.split(":").map(Number);
+    const isEarlyCheckOut = checkOutHour < EARLY_CHECKOUT_BEFORE_HOUR;
+    const earlyCheckOutReason = ((_a = data.earlyCheckOutReason) !== null && _a !== void 0 ? _a : "").trim();
+    if (isEarlyCheckOut &&
+        earlyCheckOutReason.length < EARLY_CHECKOUT_REASON_MIN_CHARS) {
+        throw new https_1.HttpsError("invalid-argument", `ອອກວຽກກ່ອນ ${EARLY_CHECKOUT_BEFORE_HOUR}:00 ຕ້ອງປ້ອນເຫດຜົນ ` +
+            `ຢ່າງໜ້ອຍ ${EARLY_CHECKOUT_REASON_MIN_CHARS} ຕົວອັກສອນ ❌`);
+    }
+    // ນາທີທີ່ອອກກ່ອນເວລາ — ໃຫ້ HR ຈັດລຳດັບໄດ້ໂດຍບໍ່ຕ້ອງຄຳນວນຄືນຈາກ checkOutTime
+    const earlyCheckOutMinutes = isEarlyCheckOut
+        ? EARLY_CHECKOUT_BEFORE_HOUR * 60 - (checkOutHour * 60 + checkOutMinute)
+        : 0;
     // ກັນອຸປະກອນດຽວກັນ check-out ແທນຫຼາຍບັນຊີ (ຢືມມືຖືກັນ punch)
-    // fingerprint ຖືກຂ້າມສະເພາະ iOS — ເບິ່ງ comment ຢູ່ isIOSUserAgent
     const checkOutUserAgent = request.rawRequest.headers["user-agent"];
-    await assertDeviceNotUsedByOtherAccount(isoDate, data.userUuid, data.deviceLocalId, data.deviceFingerprint, "checkOutTime", "ອຸປະກອນນີ້ຖືກໃຊ້ Check-Out ມື້ນີ້ແລ້ວດ້ວຍບັນຊີອື່ນ ❌", !isIOSUserAgent(checkOutUserAgent));
+    await assertDeviceNotUsedByOtherAccount(isoDate, data.userUuid, data.deviceLocalId, data.deviceFingerprint, "checkOutTime", "ອຸປະກອນນີ້ຖືກໃຊ້ Check-Out ມື້ນີ້ແລ້ວດ້ວຍບັນຊີອື່ນ ❌");
     // ອ່ານ checkInTime ທີ່ມີຢູ່ເພື່ອຄຳນວນ workHours
     const existing = await admin
         .firestore()
@@ -1115,9 +1142,9 @@ exports.recordCheckOut = (0, https_1.onCall)(
             diffMinutes > 0 ? Math.round((diffMinutes / 60) * 10) / 10 : 0;
     }
     const checkOutForwardedFor = request.rawRequest.headers["x-forwarded-for"];
-    const checkOutIp = (_c = (_b = (_a = (Array.isArray(checkOutForwardedFor)
+    const checkOutIp = (_d = (_c = (_b = (Array.isArray(checkOutForwardedFor)
         ? checkOutForwardedFor[0]
-        : checkOutForwardedFor)) === null || _a === void 0 ? void 0 : _a.split(",")[0]) === null || _b === void 0 ? void 0 : _b.trim()) !== null && _c !== void 0 ? _c : request.rawRequest.ip;
+        : checkOutForwardedFor)) === null || _b === void 0 ? void 0 : _b.split(",")[0]) === null || _c === void 0 ? void 0 : _c.trim()) !== null && _d !== void 0 ? _d : request.rawRequest.ip;
     // "prior point" ຂອງ checkout ຄື checkIn ຂອງມື້ດຽວກັນ (doc ດຽວກັນ, ບໍ່ຕ້ອງ query ເພີ່ມ)
     const checkInLoc = existingData === null || existingData === void 0 ? void 0 : existingData.checkInLocation;
     const priorLocationPoint = (checkInLoc === null || checkInLoc === void 0 ? void 0 : checkInLoc.lat) != null && (checkInLoc === null || checkInLoc === void 0 ? void 0 : checkInLoc.lng) != null && checkInTime
@@ -1132,7 +1159,7 @@ exports.recordCheckOut = (0, https_1.onCall)(
         .firestore()
         .collection("attendance")
         .doc(attendanceId)
-        .set(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ checkOutTime: checkTime, workHours }, (data.fullNameEn != null ? { fullNameEn: data.fullNameEn } : {})), (data.fullNameLo != null ? { fullNameLo: data.fullNameLo } : {})), (data.jobTitle != null ? { jobTitle: data.jobTitle } : {})), (data.employeeImage != null
+        .set(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ checkOutTime: checkTime, workHours }, (data.fullNameEn != null ? { fullNameEn: data.fullNameEn } : {})), (data.fullNameLo != null ? { fullNameLo: data.fullNameLo } : {})), (data.jobTitle != null ? { jobTitle: data.jobTitle } : {})), (data.employeeImage != null
         ? { employeeImage: data.employeeImage }
         : {})), (data.department ? { department: data.department } : {})), (data.workLocation ? { workLocation: data.workLocation } : {})), (data.checkOutImageURL
         ? { checkOutImageURL: data.checkOutImageURL }
@@ -1145,6 +1172,12 @@ exports.recordCheckOut = (0, https_1.onCall)(
         }
         : {})), (data.deviceLocalId ? { deviceLocalId: data.deviceLocalId } : {})), (data.deviceFingerprint
         ? { deviceFingerprint: data.deviceFingerprint }
+        : {})), (data.deviceModel ? { deviceModel: data.deviceModel } : {})), (isEarlyCheckOut
+        ? {
+            earlyCheckOut: true,
+            earlyCheckOutReason,
+            earlyCheckOutMinutes,
+        }
         : {})), (data.accuracy != null ? { checkOutAccuracy: data.accuracy } : {})), (checkOutIp ? { checkOutIp } : {})), (checkOutUserAgent ? { checkOutUserAgent } : {})), (locationFlags.length > 0
         ? { checkOutLocationFlags: locationFlags }
         : {})), { updatedAt: new Date().toISOString(), updatedBy: data.userUuid }), { merge: true });
@@ -1156,9 +1189,9 @@ exports.recordCheckOut = (0, https_1.onCall)(
             targetId: attendanceId,
             after: {
                 locationFlags,
-                location: (_d = data.location) !== null && _d !== void 0 ? _d : null,
-                accuracy: (_e = data.accuracy) !== null && _e !== void 0 ? _e : null,
-                isOffsite: (_f = existingData === null || existingData === void 0 ? void 0 : existingData.isOffsite) !== null && _f !== void 0 ? _f : false,
+                location: (_e = data.location) !== null && _e !== void 0 ? _e : null,
+                accuracy: (_f = data.accuracy) !== null && _f !== void 0 ? _f : null,
+                isOffsite: (_g = existingData === null || existingData === void 0 ? void 0 : existingData.isOffsite) !== null && _g !== void 0 ? _g : false,
             },
             ipAddress: checkOutIp,
             userAgent: checkOutUserAgent,

@@ -178,6 +178,11 @@ export interface AttendanceRecord {
   checkInImageURL?: string;
   checkOutImageURL?: string;
   workHours?: number;
+  // Set by recordCheckOut when the server clock says the punch was before 17:00.
+  // Orthogonal to `status` — an early leaver is still present/late for the day.
+  earlyCheckOut?: boolean;
+  earlyCheckOutReason?: string;
+  earlyCheckOutMinutes?: number;
   uid?: string;
   userUuid?: string;
   fullNameEn?: string;
@@ -215,6 +220,14 @@ export interface TaskDelegation {
   o9Approval: boolean;
   other: boolean;
   otherReason: string | null;
+}
+
+// One regulation clause copied off the `legalBasis` collection at
+// submission time. Snapshotted (not referenced by id) so a later edit to
+// the regulation never rewrites what an already-filed request cites.
+export interface LegalBasisEntry {
+  detail: string;
+  order: number;
 }
 
 export interface LeaveRequest {
@@ -262,6 +275,9 @@ export interface LeaveRequest {
   docStatus?: "now" | "later" | null;
   requiredApprovers?: LeaveApproverRole[];
   approvals?: LeaveApprovalStep[];
+  // Active `leave` clauses from the legalBasis collection, sorted by order.
+  // Hyphenated key on purpose — that is the field name on the Firestore doc.
+  "legal-basis"?: LegalBasisEntry[];
   // "cancelled" is written by the admin app when a leave is withdrawn.
   status: "pending" | "approved" | "rejected" | "cancelled";
   createdAt: string;

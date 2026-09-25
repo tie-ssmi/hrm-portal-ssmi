@@ -190,7 +190,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Listen for auth state changes
   useEffect(() => {
-    const INACTIVE_MAX_MS = 2 * 24 * 60 * 60 * 1000 // 2 days inactivity
+    const INACTIVE_MAX_MS = 5 * 24 * 60 * 60 * 1000 // 5 days inactivity
     const ACTIVE_KEY = 'ssmi_last_active'
 
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
@@ -206,7 +206,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (stored && Date.now() - new Date(stored).getTime() > INACTIVE_MAX_MS) {
             debugMark('inactive-timeout', { stored })
             // Worth the extra read here — this path fires rarely (once per
-            // 2-day-inactive session), unlike login/every-app-open.
+            // 5-day-inactive session), unlike login/every-app-open.
             const expiredEmployeeData = await resolveEmployeeForFirebaseUser(fbUser).catch(() => null)
             await logAudit({
               action: 'auth.session.expire',
@@ -217,7 +217,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               workLocation: extractWorkLocationLog(expiredEmployeeData?.workLocation),
               targetType: 'employees',
               targetId: fbUser.uid,
-              reason: '2-day inactivity timeout',
+              reason: '5-day inactivity timeout',
               status: 'SUCCESS',
             })
             await performFullSignOut()

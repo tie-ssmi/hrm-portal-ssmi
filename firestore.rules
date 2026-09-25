@@ -314,6 +314,17 @@ service cloud.firestore {
     }
 
     // ==========================================================
+    // legalBasis — "ອີງຕາມ" ຂອງແຕ່ລະປະເພດເອກະສານ (ເບິ່ງ services/legalBasis.ts)
+    // ບໍ່ອະນຸຍາດ delete ເລີຍ: ເອກະສານທີ່ອອກໄປແລ້ວອ້າງອີງລາຍການເຫຼົ່ານີ້ຢູ່ —
+    // ການເລີກໃຊ້ເຮັດຜ່ານການ update status ເປັນ "inactive" ເທົ່ານັ້ນ
+    // ==========================================================
+    match /legalBasis/{docId} {
+      allow read: if isSignedIn();
+      allow create, update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // ==========================================================
     // attendance
     // Tightened: read = own records OR admin/headOfDep (was: any signed-in user)
     // ==========================================================
@@ -383,6 +394,15 @@ service cloud.firestore {
 
       // 4. ສິດການລຶບ: ມີແຕ່ Admin ເທົ່ານັ້ນ
       allow delete: if isAdmin();
+    }
+
+    // ==========================================================
+    // leaveNumberCounters — counter ເລກທີລາພັກ ຕໍ່ ປີ+ສາຂາ (doc id: "{year}_{branchCode}")
+    // ຂຽນໄດ້ສະເພາະ Cloud Function (Admin SDK ຂ້າມ rules) — client ອ່ານໄດ້ຢ່າງດຽວ (ໜ້າລາຍງານ)
+    // ==========================================================
+    match /leaveNumberCounters/{docId} {
+      allow read: if isSignedIn();
+      allow write: if false;
     }
 
     // ==========================================================

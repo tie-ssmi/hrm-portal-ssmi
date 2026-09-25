@@ -80,6 +80,7 @@ import {
 } from "@/services/officialHolidays";
 import { calcLeaveDuration, getMaxLeaveEndDate } from "@/lib/leave-duration";
 import { fetchPoliciesForGender, resolveEmployeePolicyLimit } from "@/services/policies";
+import { fetchActiveLegalBasis } from "@/services/legalBasis";
 import { fetchCurrentLeaveBalancesV2 } from "@/services/leave-balances";
 import { resolveEmployeeEmploymentStatus } from "@/lib/employment-status";
 import { getEmployees } from "@/services/employees";
@@ -256,6 +257,14 @@ export default function LeaveRequestForm() {
   const { data: policyRecords = [] } = useQuery({
     queryKey: ["policies", "leave-types", user?.gender ?? null],
     queryFn: () => fetchPoliciesForGender(user?.gender),
+  });
+
+  // Regulation clauses printed on the leave doc. Snapshotted onto the request
+  // at submit time so a later edit in admin never rewrites a filed request.
+  const { data: legalBasis = [] } = useQuery({
+    queryKey: ["legalBasis", "leave"],
+    queryFn: () => fetchActiveLegalBasis("leave"),
+    staleTime: 24 * 60 * 60 * 1000,
   });
 
   const { data: leaveBalancesV2 = [] } = useQuery({
@@ -777,6 +786,7 @@ export default function LeaveRequestForm() {
           endPeriod,
           duration: duration ?? undefined,
           reason: leaveReason,
+          "legal-basis": legalBasis.length > 0 ? legalBasis : undefined,
           departmentUid: departmentUuid || dept?.uuid,
           departmentNameLo: dept?.department,
           departmentNameEn: dept?.title,

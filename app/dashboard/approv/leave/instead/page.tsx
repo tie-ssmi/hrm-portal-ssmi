@@ -7,7 +7,8 @@ import { useRouter } from 'next/navigation'
 // ** assets / icons
 import {
   Calendar as CalendarIcon, Send, Clock, CheckCircle, XCircle,
-  Sun, Sunset, User, Users, AlertTriangle, FileText, ArrowRight
+  Sun, Sunset, User, Users, AlertTriangle, FileText, ArrowRight,
+  Upload, Timer, X, ArrowLeft
 } from 'lucide-react'
 
 // ** shared components
@@ -22,6 +23,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Label } from '@/components/ui/label'
 import { Combobox } from '@/components/ui/combobox'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 
@@ -40,7 +42,12 @@ import { fetchUserRoleId, fetchRoleByUid } from '@/lib/employees'
 // ** services
 import { getLeaveApproverRuleText, getLeaveRecipientText } from '@/services/leave-approval'
 import { fetchLeavesByUserUuidFromToday } from '@/services/leaves'
-import { fetchPoliciesForGender } from '@/services/policies'
+import { fetchPoliciesForGender, resolveEmployeePolicyLimit } from '@/services/policies'
+import { fetchActiveLegalBasis } from '@/services/legalBasis'
+import { fetchCurrentLeaveBalancesV2 } from '@/services/leave-balances'
+import { resolveEmployeeEmploymentStatus } from '@/lib/employment-status'
+import { uploadAttachment, UploadTruncatedError, UPLOAD_TRUNCATED_MESSAGE } from '@/services/attachment-upload'
+import FileUpload from '@/components/fileUpload'
 import { getEmployees } from '@/services/employees'
 import { fetchOfficialHolidays, buildHolidayDateKeySet } from '@/services/officialHolidays'
 import { calcLeaveDuration } from '@/lib/leave-duration'
@@ -52,8 +59,15 @@ type LeaveTypeOption = {
   policyId: string
   policyName: string | undefined
   label: string
+  documentRequired?: 'yes' | 'option' | 'no'
   countMode?: 'workingDays' | 'calendarDays'
+  // Balance remaining for this policy at render time, before this request's
+  // own duration comes off it. Saved on the leave doc as both
+  // remainingDaysBeforeRequest and (minus the duration) remainingDaysAfterRequest.
+  remainingDays?: number
 }
+
+type DocUploadChoice = 'now' | 'later' | 'skip' | null
 
 function formatDuration(d: number): string {
   return d === 0.5 ? '0.5 ວັນ' : d === 1 ? '1 ວັນ' : `${d} ວັນ`
@@ -118,40 +132,18 @@ export default function InsteadLeaveRequestForm() {
   const [endPeriod, setEndPeriod] = useState<Period>('afternoon')
   const [leaveReason, setLeaveReason] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [selectedLeave, setSelectedLeave] = useState<typeof myCurrentLeaveRequests[number] | null>(null)
   const [openConfirmDialog, setOpenConfirmDialog] = useState(false)
   const [confirmLeave, setConfirmLeave] = useState(false)
 
-  const annualRemaining = leaveBalance.annual - leaveBalance.annualUsed
-  const sickRemaining = leaveBalance.sick - leaveBalance.sickUsed
-  const personalRemaining = leaveBalance.personal - leaveBalance.personalUsed
+  // ມອບໝາຍໜ້າທີ່ໃຫ້ຜູ້ຮັບວຽກຕໍ່ — ຄືກັນກັບຟອມລາພັກເອງ
+  const [delegateResponsibilities, setDelegateResponsibilities] = useState(false)
+  const [delegateDocumentSigning, setDelegateDocumentSigning] = useState(false)
+  const [delegateO9Approval, setDelegateO9Approval] = useState(false)
+  const [delegateOther, setDelegateOther] = useState(false)
+  const [delegateOtherReason, setDelegateOtherReason] = useState('')
 
-  const { data: officialHolidays = [] } = useQuery({
-    queryKey: ['officialHolidays'],
-    queryFn: fetchOfficialHolidays,
-    enabled: !!loggedInUserUuid,
-    staleTime: 24 * 60 * 60 * 1000,
-  })
-
-  const holidaySet = useMemo(
-    () => buildHolidayDateKeySet(officialHolidays, workLocationUuid),
-    [officialHolidays, workLocationUuid],
-  )
-
-  const { data: policyRecords = [] } = useQuery({
-    queryKey: ['policies', 'leave-types', user?.gender ?? null],
-    queryFn: () => fetchPoliciesForGender(user?.gender),
-  })
-
-  const {
-    data: myCurrentLeaveRequests = [],
-    refetch: refetchMyCurrentLeaves,
-    error: myCurrentLeavesError,
-  } = useQuery({
-    queryKey: ['leaves', 'my-current', selectedLeaveForUid],
-    queryFn: () => fetchLeavesByUserUuidFromToday(selectedLeaveForUid),
-    enabled: !!selectedLeaveForUid,
-  })
+  const [docUploadChoice, setDocUploadChoice] = useState<DocUploadChoice>(null)
+  const [docFile, setDocFile] = useState<File | null>(null)
 
   const isHousekeeper = user?.rolePermissions?.housekeeper === true
   const isSecretary = user?.rolePermissions?.secretaty === true
@@ -193,11 +185,107 @@ export default function InsteadLeaveRequestForm() {
     [employeesData, selectedLeaveForUid]
   )
 
+  const selectedLeaveFor = useMemo(
+    () => employeesData.find(emp => empKey(emp) === selectedLeaveForUid),
+    [employeesData, selectedLeaveForUid]
+  )
+
+  const selectedSuccessor = useMemo(
+    () => employeesData.find(emp => empKey(emp) === selectedSuccessorUid),
+    [employeesData, selectedSuccessorUid]
+  )
+
+  // getEmployees() doesn't join rolePermissions (only auth-context does that
+  // for the logged-in user) — fetch it separately for whoever is selected as
+  // the leave-taker, so the "to" salutation can reflect their own LPB scope
+  // rather than the filer's.
+  const { data: selectedLeaveForRole } = useQuery({
+    queryKey: ['employeeRole', selectedLeaveForUid],
+    queryFn: async () => {
+      const roleId = await fetchUserRoleId(selectedLeaveForUid)
+      return roleId ? fetchRoleByUid(roleId) : null
+    },
+    enabled: !!selectedLeaveForUid,
+  })
+
+  // ທຸກຢ່າງລຸ່ມນີ້ຕ້ອງອີງໃສ່ "ຜູ້ລາພັກ" ບໍ່ແມ່ນ "ຜູ້ຍື່ນແທນ" — ນະໂຍບາຍ, ຍອດວັນລາ,
+  // ວັນພັກລັດຖະການ ແລະ ສະຖານະພະນັກງານ ລ້ວນຕ່າງກັນລະຫວ່າງສອງຄົນ.
+  const leaveForWorkLocation =
+    typeof selectedLeaveFor?.workLocation === 'object' && selectedLeaveFor.workLocation !== null
+      ? (selectedLeaveFor.workLocation as { uuid?: string; nameLo?: string })
+      : undefined
+  const leaveForWorkLocationUuid =
+    typeof selectedLeaveFor?.workLocation === 'string'
+      ? selectedLeaveFor.workLocation
+      : leaveForWorkLocation?.uuid
+  const leaveForWorkLocationNameLo = leaveForWorkLocation?.nameLo
+
+  const { data: officialHolidays = [] } = useQuery({
+    queryKey: ['officialHolidays'],
+    queryFn: fetchOfficialHolidays,
+    enabled: !!loggedInUserUuid,
+    staleTime: 24 * 60 * 60 * 1000,
+  })
+
+  const holidaySet = useMemo(
+    () => buildHolidayDateKeySet(officialHolidays, leaveForWorkLocationUuid),
+    [officialHolidays, leaveForWorkLocationUuid],
+  )
+
+  const employmentStatus = useMemo(
+    () => (selectedLeaveFor ? resolveEmployeeEmploymentStatus(selectedLeaveFor) : 'permanent'),
+    [selectedLeaveFor],
+  )
+
+  const { data: policyRecords = [] } = useQuery({
+    queryKey: ['policies', 'leave-types', selectedLeaveFor?.gender ?? null],
+    queryFn: () => fetchPoliciesForGender(selectedLeaveFor?.gender),
+    enabled: !!selectedLeaveForUid,
+  })
+
+  const { data: leaveBalancesV2 = [] } = useQuery({
+    queryKey: ['leaveBalanceV2', selectedLeaveForUid],
+    queryFn: () => fetchCurrentLeaveBalancesV2(selectedLeaveForUid),
+    enabled: !!selectedLeaveForUid,
+  })
+
+  const leaveBalanceByPolicyUuid = useMemo(() => {
+    const map = new Map<string, (typeof leaveBalancesV2)[number]>()
+    for (const b of leaveBalancesV2) {
+      if (b.policyUuid) map.set(b.policyUuid, b)
+      if (b.policyId) map.set(b.policyId, b)
+    }
+    return map
+  }, [leaveBalancesV2])
+
+  // Regulation clauses printed on the leave doc. Snapshotted onto the request
+  // at submit time so a later edit in admin never rewrites a filed request.
+  const { data: legalBasis = [] } = useQuery({
+    queryKey: ['legalBasis', 'leave'],
+    queryFn: () => fetchActiveLegalBasis('leave'),
+    staleTime: 24 * 60 * 60 * 1000,
+  })
+
+  const {
+    data: myCurrentLeaveRequests = [],
+    refetch: refetchMyCurrentLeaves,
+    error: myCurrentLeavesError,
+  } = useQuery({
+    queryKey: ['leaves', 'my-current', selectedLeaveForUid],
+    queryFn: () => fetchLeavesByUserUuidFromToday(selectedLeaveForUid),
+    enabled: !!selectedLeaveForUid,
+  })
+
+  const [selectedLeave, setSelectedLeave] = useState<typeof myCurrentLeaveRequests[number] | null>(null)
+
   const leaveTypeOptions = useMemo(() => {
+    // No employee picked yet (or they have no policies): offer the generic
+    // types with no day counts. The filer's own balance must never appear
+    // here — it belongs to the wrong person.
     const fallback: LeaveTypeOption[] = [
-      { value: 'annual', requestType: 'annual', policyUuid: undefined, policyId: '', policyName: 'Annual Leave', label: `Annual Leave (ສູງສຸດ ${annualRemaining} ມື້)` },
-      { value: 'sick', requestType: 'sick', policyUuid: undefined, policyId: '', policyName: 'Sick Leave', label: `Sick Leave (ສູງສຸດ ${sickRemaining} ມື້)` },
-      { value: 'personal', requestType: 'personal', policyUuid: undefined, policyId: '', policyName: 'Personal Leave', label: `Personal Leave (ສູງສຸດ ${personalRemaining} ມື້)` },
+      { value: 'annual', requestType: 'annual', policyUuid: undefined, policyId: '', policyName: 'Annual Leave', label: 'Annual Leave' },
+      { value: 'sick', requestType: 'sick', policyUuid: undefined, policyId: '', policyName: 'Sick Leave', label: 'Sick Leave' },
+      { value: 'personal', requestType: 'personal', policyUuid: undefined, policyId: '', policyName: 'Personal Leave', label: 'Personal Leave' },
       { value: 'unpaid', requestType: 'unpaid', policyUuid: undefined, policyId: '', policyName: 'Unpaid Leave', label: 'Unpaid Leave' },
     ]
     const seen = new Set<string>()
@@ -207,17 +295,58 @@ export default function InsteadLeaveRequestForm() {
         const value = p.uuid || p.id
         if (seen.has(value)) return null
         seen.add(value)
+
+        // Employment-status-specific rule gates eligibility, same as the
+        // own-leave form — a probationary employee must not be offered a
+        // policy they cannot take.
+        const limit = resolveEmployeePolicyLimit(p, employmentStatus)
+        if (!limit.eligible) return null
+
+        const balance =
+          (p.uuid && leaveBalanceByPolicyUuid.get(p.uuid)) ||
+          leaveBalanceByPolicyUuid.get(p.id) ||
+          undefined
+        if (balance) {
+          if (balance.remaining <= 0) return null
+          return {
+            value,
+            requestType: p.requestType,
+            policyUuid: p.uuid,
+            policyId: p.id,
+            policyName: p.name,
+            label: `${balance.policyName}(${balance.remaining} ວັນ)`,
+            documentRequired: p.documentRequired,
+            countMode: p.countMode,
+            remainingDays: balance.remaining,
+          }
+        }
+
         const baseLabel = p.name?.trim() || p.requestType
-        const limitLabel = formatPolicyLimit(p.limitDay, p.limitType)
-        return { value, requestType: p.requestType, policyUuid: p.uuid, policyId: p.id, policyName: p.name, label: limitLabel ? `${baseLabel} (${limitLabel})` : baseLabel, countMode: p.countMode }
+        const limitLabel = formatPolicyLimit(limit.limitDay, limit.limitType)
+        return {
+          value,
+          requestType: p.requestType,
+          policyUuid: p.uuid,
+          policyId: p.id,
+          policyName: p.name,
+          label: limitLabel ? `${baseLabel} (${limitLabel})` : baseLabel,
+          documentRequired: p.documentRequired,
+          countMode: p.countMode,
+          remainingDays: limit.limitDay,
+        }
       })
       .filter((o) => o !== null) as LeaveTypeOption[]
     return filtered.length > 0 ? filtered : fallback
-  }, [annualRemaining, leaveBalance.annualUsed, leaveBalance.personalUsed, leaveBalance.sickUsed, personalRemaining, policyRecords, sickRemaining])
+  }, [employmentStatus, leaveBalanceByPolicyUuid, policyRecords])
 
   const selectedPolicy = useMemo(
     () => leaveTypeOptions.find((o) => o.value === selectedPolicyValue) ?? leaveTypeOptions[0],
     [leaveTypeOptions, selectedPolicyValue]
+  )
+
+  const documentRequired = useMemo(
+    () => selectedPolicy?.documentRequired ?? 'no',
+    [selectedPolicy?.documentRequired],
   )
 
   const duration = useMemo(
@@ -234,29 +363,6 @@ export default function InsteadLeaveRequestForm() {
   )
 
   const approverRuleText = useMemo(() => getLeaveApproverRuleText(duration), [duration])
-
-  const selectedLeaveFor = useMemo(
-    () => employeesData.find(emp => empKey(emp) === selectedLeaveForUid),
-    [employeesData, selectedLeaveForUid]
-  )
-
-  // getEmployees() doesn't join rolePermissions (only auth-context does that
-  // for the logged-in user) — fetch it separately for whoever is selected as
-  // the leave-taker, so the "to" salutation can reflect their own LPB scope
-  // rather than the filer's.
-  const { data: selectedLeaveForRole } = useQuery({
-    queryKey: ['employeeRole', selectedLeaveForUid],
-    queryFn: async () => {
-      const roleId = await fetchUserRoleId(selectedLeaveForUid)
-      return roleId ? fetchRoleByUid(roleId) : null
-    },
-    enabled: !!selectedLeaveForUid,
-  })
-
-  const selectedSuccessor = useMemo(
-    () => employeesData.find(emp => empKey(emp) === selectedSuccessorUid),
-    [employeesData, selectedSuccessorUid]
-  )
 
   useEffect(() => {
     if (!selectedPolicy || selectedPolicy.value === selectedPolicyValue) return
@@ -292,6 +398,19 @@ export default function InsteadLeaveRequestForm() {
     if (isWeekend(leaveStartDate) || isWeekend(leaveEndDate)) { toast.error('ບໍ່ສາມາດລາໃນວັນເສົາ-ອາທິດ'); return }
     if (!duration || duration <= 0) { toast.error('ວັນສິ້ນສຸດຕ້ອງຫຼັງວັນເລີ່ມ'); return }
     if (!leaveReason.trim()) { toast.error('ກະລຸນາໃສ່ເຫດຜົນ'); return }
+    if ((documentRequired === 'yes' || documentRequired === 'option') && docUploadChoice === null) {
+      toast.error('ກະລຸນາເລືອກວິທີອັບໂຫຼດເອກະສານ'); return
+    }
+    if (docUploadChoice === 'now' && !docFile) {
+      toast.error('ກະລຸນາເລືອກໄຟລ໌ເອກະສານ'); return
+    }
+    if (selectedSuccessor && !delegateResponsibilities && !delegateDocumentSigning
+        && !delegateO9Approval && !delegateOther) {
+      toast.error('ກະລຸນາເລືອກໜ້າທີ່ທີ່ຈະມອບໝາຍໃຫ້ຜູ້ຮັບວຽກຕໍ່ຢ່າງໜ້ອຍໜຶ່ງຢ່າງ'); return
+    }
+    if (selectedSuccessor && delegateOther && !delegateOtherReason.trim()) {
+      toast.error('ກະລຸນາລະບຸລາຍລະອຽດໜ້າທີ່ອື່ນໆ'); return
+    }
     setOpenConfirmDialog(true)
   }
 
@@ -314,6 +433,15 @@ export default function InsteadLeaveRequestForm() {
     try {
       const createdBy = [user?.firstNameLo || user?.firstName, user?.lastNameLo || user?.lastName].filter(Boolean).join(' ') || undefined
       const leaveUserName = employeeName(selectedLeaveFor) || undefined
+
+      // Stored under the leave-taker's uuid, not the filer's, so the document
+      // lives with the request it belongs to.
+      const leaveUserUuid = selectedLeaveFor.uuid || selectedLeaveFor.uid || selectedLeaveFor.id || ''
+      let docLink: string | undefined = undefined
+      if (docUploadChoice === 'now' && docFile) {
+        const ext = docFile.name.split('.').pop() ?? 'file'
+        docLink = await uploadAttachment(`leaves/${leaveUserUuid}/${Date.now()}.${ext}`, docFile)
+      }
       await submitLeaveRequest({
         leaveUserUuid: selectedLeaveFor.uuid || selectedLeaveFor.uid || selectedLeaveFor.id || undefined,
         leaveUserName,
@@ -333,6 +461,7 @@ export default function InsteadLeaveRequestForm() {
         endPeriod,
         duration,
         reason: leaveReason,
+        'legal-basis': legalBasis.length > 0 ? legalBasis : undefined,
         departmentUid: employeeDept?.uuid,
         departmentNameLo: employeeDept?.nameLo || employeeDept?.title || employeeDept?.department,
         departmentNameEn: employeeDept?.nameEn || employeeDept?.title || employeeDept?.department,
@@ -340,17 +469,33 @@ export default function InsteadLeaveRequestForm() {
         successorNameLo: selectedSuccessor ? [selectedSuccessor.firstNameLo, selectedSuccessor.lastNameLo].filter(Boolean).join(' ') : undefined,
         successorNameEn: selectedSuccessor ? [selectedSuccessor.firstNameEn, selectedSuccessor.lastNameEn].filter(Boolean).join(' ') : undefined,
         successorGender: selectedSuccessor?.gender,
+        taskDelegation: selectedSuccessor
+          ? {
+              responsibilities: delegateResponsibilities,
+              documentSigning: delegateDocumentSigning,
+              o9Approval: delegateO9Approval,
+              other: delegateOther,
+              otherReason: delegateOther ? delegateOtherReason.trim() || null : null,
+            }
+          : undefined,
         jobTitle: selectedLeaveFor.jobTitle,
         jobTitleLo: selectedLeaveFor.jobTitleLo || undefined,
-        workLocationUid: typeof selectedLeaveFor.workLocation === 'string'
-          ? selectedLeaveFor.workLocation
-          : selectedLeaveFor.workLocation?.uuid,
+        workLocationUid: leaveForWorkLocationUuid,
+        workLocationNameLo: leaveForWorkLocationNameLo,
+        // Both sides of the deduction: what was left going in, and what is
+        // left after this request.
+        remainingDaysBeforeRequest: selectedPolicy?.remainingDays,
+        remainingDaysAfterRequest:
+          selectedPolicy?.remainingDays != null && duration != null
+            ? selectedPolicy.remainingDays - duration
+            : selectedPolicy?.remainingDays,
+        docStatus:
+          docUploadChoice === 'now' ? 'now' : docUploadChoice === 'later' ? 'later' : null,
+        docLink,
         to: getLeaveRecipientText(
           duration,
           selectedLeaveForRole?.LPB === true,
-          typeof selectedLeaveFor.workLocation === 'string'
-            ? undefined
-            : selectedLeaveFor.workLocation?.nameLo,
+          leaveForWorkLocationNameLo,
         ),
       }, { autoApproveDeptHead: true, reviewedBy: createdBy })
       await refetchMyCurrentLeaves()
@@ -360,7 +505,13 @@ export default function InsteadLeaveRequestForm() {
       
       router.push('/dashboard/approv')
     } catch (err) {
-      toast.error('ບໍ່ສາມາດສົ່ງຄໍາຮ້ອງຂໍໄດ້')
+      // A truncated upload needs its own message — the generic one sends people
+      // back to re-file a request whose only problem was the attachment.
+      toast.error(
+        err instanceof UploadTruncatedError
+          ? UPLOAD_TRUNCATED_MESSAGE
+          : 'ບໍ່ສາມາດສົ່ງຄໍາຮ້ອງຂໍໄດ້',
+      )
       console.error(err)
     } finally {
       setIsSubmitting(false)
@@ -369,8 +520,20 @@ export default function InsteadLeaveRequestForm() {
 
   return (
     <>
+    
       <Card>
         <CardHeader className="pb-3">
+               <button
+            type="button"
+            onClick={() =>
+              router.push('/dashboard/approv')
+            }
+            className="flex gap-1 items-center mb-4"
+            aria-label="Go back to employee management"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            ກັບຄືນ
+          </button>
           <CardTitle className="text-lg">ແບບຟອມຂໍພັກແທນ</CardTitle>
           <CardDescription>ຍື່ນລາພັກໃຫ້ພະນັກງານທີ່ບໍ່ສາມາດດໍາເນີນການດ້ວຍຕົນເອງໄດ້</CardDescription>
         </CardHeader>
@@ -538,7 +701,168 @@ export default function InsteadLeaveRequestForm() {
                   </div>
                 </div>
               )}
+
+              {selectedSuccessor && (
+                <div className="space-y-2.5 pt-1">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    ມອບໝາຍໜ້າທີ່ໃຫ້ຜູ້ຮັບວຽກຕໍ່
+                  </p>
+
+                  <div className="flex items-center gap-2.5">
+                    <Checkbox
+                      id="delegate-responsibilities"
+                      checked={delegateResponsibilities}
+                      onCheckedChange={(c) => setDelegateResponsibilities(c === true)}
+                    />
+                    <Label htmlFor="delegate-responsibilities" className="text-sm font-normal cursor-pointer">
+                      ໜ້າທີ່ຮັບຜິດຊອບ
+                    </Label>
+                  </div>
+
+                  <div className="flex items-center gap-2.5">
+                    <Checkbox
+                      id="delegate-document-signing"
+                      checked={delegateDocumentSigning}
+                      onCheckedChange={(c) => setDelegateDocumentSigning(c === true)}
+                    />
+                    <Label htmlFor="delegate-document-signing" className="text-sm font-normal cursor-pointer">
+                      ສິດໃນການເຊັນເອກະສານຕ່າງໆ
+                    </Label>
+                  </div>
+
+                  <div className="flex items-center gap-2.5">
+                    <Checkbox
+                      id="delegate-o9-approval"
+                      checked={delegateO9Approval}
+                      onCheckedChange={(c) => setDelegateO9Approval(c === true)}
+                    />
+                    <Label htmlFor="delegate-o9-approval" className="text-sm font-normal cursor-pointer">
+                      ສິດອະນຸມັດລະບົບ O9
+                    </Label>
+                  </div>
+
+                  <div className="flex items-center gap-2.5">
+                    <Checkbox
+                      id="delegate-other"
+                      checked={delegateOther}
+                      onCheckedChange={(c) => {
+                        const checked = c === true
+                        setDelegateOther(checked)
+                        if (!checked) setDelegateOtherReason('')
+                      }}
+                    />
+                    <Label htmlFor="delegate-other" className="text-sm font-normal cursor-pointer">
+                      ອື່ນໆ
+                    </Label>
+                  </div>
+
+                  {delegateOther && (
+                    <Textarea
+                      placeholder="ລະບຸລາຍລະອຽດໜ້າທີ່ອື່ນໆ ຢູ່ບ່ອນນີ້..."
+                      value={delegateOtherReason}
+                      onChange={(e) => setDelegateOtherReason(e.target.value)}
+                      rows={2}
+                    />
+                  )}
+                </div>
+              )}
             </div>
+
+            {/* Section 4: Document Upload */}
+            {documentRequired !== 'no' && (
+              <div className="rounded-lg border bg-card p-4 space-y-3">
+                <SectionHeader
+                  number={4}
+                  icon={Upload}
+                  title={documentRequired === 'yes' ? 'ເອກະສານປະກອບ (ຕ້ອງການ)' : 'ເອກະສານປະກອບ (ທາງເລືອກ)'}
+                />
+
+                {documentRequired === 'yes' && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded px-3 py-2">
+                    ປະເພດການລານີ້ຕ້ອງການເອກະສານ — ກະລຸນາເລືອກ
+                  </p>
+                )}
+
+                <div className="grid grid-cols-1 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDocUploadChoice('now')}
+                    className={cn(
+                      'flex items-center gap-3 rounded-lg border px-4 py-3 text-sm text-left transition-colors',
+                      docUploadChoice === 'now'
+                        ? 'border-primary bg-primary/5 text-primary'
+                        : 'border-input hover:bg-muted',
+                    )}
+                  >
+                    <Upload className="w-4 h-4 shrink-0" />
+                    <div>
+                      <p className="font-medium">ອັບໂຫຼດຕອນນີ້</p>
+                      <p className="text-xs text-muted-foreground">ເລືອກໄຟລ໌ແນບທັນທີ</p>
+                    </div>
+                    {docUploadChoice === 'now' && <CheckCircle className="w-4 h-4 ml-auto shrink-0" />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDocUploadChoice('later')
+                      setDocFile(null)
+                    }}
+                    className={cn(
+                      'flex items-center gap-3 rounded-lg border px-4 py-3 text-sm text-left transition-colors',
+                      docUploadChoice === 'later'
+                        ? 'border-primary bg-primary/5 text-primary'
+                        : 'border-input hover:bg-muted',
+                    )}
+                  >
+                    <Timer className="w-4 h-4 shrink-0" />
+                    <div>
+                      <p className="font-medium">ອັບໂຫຼດພາຍຫຼັງ</p>
+                      <p className="text-xs text-muted-foreground">ສົ່ງຄໍາຮ້ອງກ່ອນ ແລ້ວຄ່ອຍແນບໃຫ້ທີ່ຫຼັງ</p>
+                    </div>
+                    {docUploadChoice === 'later' && <CheckCircle className="w-4 h-4 ml-auto shrink-0" />}
+                  </button>
+
+                  {documentRequired === 'option' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDocUploadChoice('skip')
+                        setDocFile(null)
+                      }}
+                      className={cn(
+                        'flex items-center gap-3 rounded-lg border px-4 py-3 text-sm text-left transition-colors',
+                        docUploadChoice === 'skip'
+                          ? 'border-primary bg-primary/5 text-primary'
+                          : 'border-input hover:bg-muted',
+                      )}
+                    >
+                      <X className="w-4 h-4 shrink-0" />
+                      <div>
+                        <p className="font-medium">ບໍ່ຕ້ອງການເອກະສານ</p>
+                        <p className="text-xs text-muted-foreground">ດໍາເນີນການໂດຍບໍ່ຕ້ອງແນບໄຟລ໌</p>
+                      </div>
+                      {docUploadChoice === 'skip' && <CheckCircle className="w-4 h-4 ml-auto shrink-0" />}
+                    </button>
+                  )}
+                </div>
+
+                {docUploadChoice === 'now' && (
+                  <div className="space-y-2">
+                    <FileUpload file={docFile} onFileSelect={setDocFile} />
+                    {docFile && (
+                      <button
+                        type="button"
+                        onClick={() => setDocFile(null)}
+                        className="flex items-center gap-1 text-xs text-destructive hover:underline"
+                      >
+                        <X className="w-3 h-3" /> ລຶບໄຟລ໌
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             <Button type="submit" className="w-full h-11" size="lg">
               <Send className="w-4 h-4 mr-2" />
@@ -638,7 +962,7 @@ export default function InsteadLeaveRequestForm() {
                   key={request.id}
                   type="button"
                   onClick={() => setSelectedLeave(request)}
-                  className={`w-full flex items-center gap-3 p-3 rounded-lg border-l-4 bg-white shadow-sm text-left hover:shadow-md transition-all ${
+                  className={`w-full flex items-center gap-3 p-3 rounded-lg border border-l-4 bg-card text-card-foreground text-left hover:bg-muted/50 transition-colors ${
                     request.status === 'approved' ? 'border-l-emerald-400' : request.status === 'rejected' ? 'border-l-red-400' : 'border-l-amber-400'
                   }`}
                 >

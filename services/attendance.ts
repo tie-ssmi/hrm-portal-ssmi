@@ -49,6 +49,7 @@ type UpdateCheckInTimeParams = {
   isOffsite?: boolean
   deviceLocalId?: string
   deviceFingerprint?: string
+  deviceModel?: string
   department?: {
     name: string
     uid: string
@@ -75,6 +76,8 @@ type UpdateCheckOutTimeParams = {
   checkOutImageURL?: string
   deviceLocalId?: string
   deviceFingerprint?: string
+  deviceModel?: string
+  earlyCheckOutReason?: string
   department?: {
     name: string
     uid: string
@@ -99,6 +102,9 @@ type AttendanceDoc = {
   checkOutLocation?: AttendanceRecord['checkOutLocation']
   workHours?: number
   isOffsite?: boolean
+  earlyCheckOut?: boolean
+  earlyCheckOutReason?: string
+  earlyCheckOutMinutes?: number
   morningLeaveDay?: boolean
   checkInImageURL?: string
   checkOutImageURL?: string
@@ -278,6 +284,13 @@ export async function fetchAttendanceByUserThisMonth(userUuid: string): Promise<
       checkOutLocation: data.checkOutLocation,
       workHours: data.workHours,
       ...(data.isOffsite ? { isOffsite: true } : {}),
+      ...(data.earlyCheckOut
+        ? {
+            earlyCheckOut: true,
+            earlyCheckOutReason: data.earlyCheckOutReason,
+            earlyCheckOutMinutes: data.earlyCheckOutMinutes,
+          }
+        : {}),
       ...(data.checkInImageURL ? { checkInImageURL: data.checkInImageURL } : {}),
       ...(data.checkOutImageURL ? { checkOutImageURL: data.checkOutImageURL } : {}),
     })
@@ -308,11 +321,13 @@ export async function updateAttendanceCheckOutTime({
   checkOutImageURL,
   deviceLocalId,
   deviceFingerprint,
+  deviceModel,
+  earlyCheckOutReason,
 }: UpdateCheckOutTimeParams): Promise<string> {
   const fn = httpsCallable<Omit<UpdateCheckOutTimeParams, 'date' | 'checkOutTime' | 'workHours'>, { attendanceId: string }>(
     fns(), 'recordCheckOut'
   )
-  const result = await fn({ userUuid, uid, location, accuracy, fullNameEn, fullNameLo, jobTitle, employeeImage, department, workLocation, checkOutImageURL, deviceLocalId, deviceFingerprint })
+  const result = await fn({ userUuid, uid, location, accuracy, fullNameEn, fullNameLo, jobTitle, employeeImage, department, workLocation, checkOutImageURL, deviceLocalId, deviceFingerprint, deviceModel, earlyCheckOutReason })
   return result.data.attendanceId
 }
 
@@ -342,6 +357,13 @@ export async function fetchAttendanceByUser(userUuid: string): Promise<Attendanc
       checkOutLocation: data.checkOutLocation,
       workHours: data.workHours,
       ...(data.isOffsite ? { isOffsite: true } : {}),
+      ...(data.earlyCheckOut
+        ? {
+            earlyCheckOut: true,
+            earlyCheckOutReason: data.earlyCheckOutReason,
+            earlyCheckOutMinutes: data.earlyCheckOutMinutes,
+          }
+        : {}),
       ...(data.checkInImageURL ? { checkInImageURL: data.checkInImageURL } : {}),
       ...(data.checkOutImageURL ? { checkOutImageURL: data.checkOutImageURL } : {}),
     })
@@ -420,6 +442,13 @@ export async function fetchTodayCheckInAttendance(isoDate?: string): Promise<Att
       department: data.department,
       workLocation: data.workLocation,
       ...(data.isOffsite ? { isOffsite: true } : {}),
+      ...(data.earlyCheckOut
+        ? {
+            earlyCheckOut: true,
+            earlyCheckOutReason: data.earlyCheckOutReason,
+            earlyCheckOutMinutes: data.earlyCheckOutMinutes,
+          }
+        : {}),
       ...(data.checkInImageURL ? { checkInImageURL: data.checkInImageURL } : {}),
       ...(data.checkOutImageURL ? { checkOutImageURL: data.checkOutImageURL } : {}),
     })

@@ -177,6 +177,7 @@ export function useCheckIn() {
         accuracy,
         deviceLocalId: device.localId,
         deviceFingerprint: device.fingerprint,
+        deviceModel: device.model,
       })
 
       return {
@@ -211,13 +212,17 @@ type CheckOutParams = {
   location?: AttendanceLocation
   accuracy?: number
   imageFile?: File
+  // Required by recordCheckIn's sibling when the server clock says it is before
+  // 17:00; the server rejects a short or missing one, so it is not optional in
+  // practice for an early punch.
+  earlyCheckOutReason?: string
 }
 
 export function useCheckOut() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async ({ user, location, accuracy, imageFile }: CheckOutParams) => {
+    mutationFn: async ({ user, location, accuracy, imageFile, earlyCheckOutReason }: CheckOutParams) => {
       if (!user.uuid) throw new Error('User uuid is missing. Unable to update attendance.')
 
       const serverTime = await fetchServerTime(user.uuid)
@@ -244,6 +249,8 @@ export function useCheckOut() {
         accuracy,
         deviceLocalId: device.localId,
         deviceFingerprint: device.fingerprint,
+        deviceModel: device.model,
+        earlyCheckOutReason,
       })
 
       return {
