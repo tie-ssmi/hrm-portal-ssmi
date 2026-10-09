@@ -12,7 +12,7 @@ import {
 } from 'firebase/auth'
 import { auth } from './firebase-auth'
 import { db } from './firebase'
-import { doc, getDoc } from 'firebase/firestore'
+import { doc, getDoc, onSnapshot } from 'firebase/firestore'
 import type { AuthCredential, UserCredential } from 'firebase/auth'
 import type { AuthContextType, Employee, GoogleLoginOutcome } from './types'
 import { queryClient } from './query-client'
@@ -20,6 +20,24 @@ import { logAudit, extractWorkLocationLog } from '@/services/audit-log'
 import { snapshotDeviceId, restoreDeviceId } from './device'
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
+
+// ເວລາບັງຄັບອອກລ່າສຸດທີ່ກ່ຽວກັບ uid ນີ້ — ທຸກຄົນ (adminSettings/forceLogoutPortal, ແລະ
+// adminSettings/forceLogout ຊື່ເກົ່າ) ຫຼື ສະເພາະຄົນ (forceLogoutUsers/{uid}.portalAt, ຂຽນໂດຍ
+// Cloud Function forceLogoutUser ໃນ HRM-System-SSMI). ອ່ານບໍ່ໄດ້ອັນໃດ ຖືວ່າບໍ່ມີ
+async function latestForceLogoutAt(uid: string): Promise<string | undefined> {
+  const read = (path: [string, string], field: string) =>
+    getDoc(doc(db, ...path))
+      .then((snap) => snap.data()?.[field] as string | undefined)
+      .catch(() => undefined)
+  const times = await Promise.all([
+    read(['adminSettings', 'forceLogoutPortal'], 'triggeredAt'),
+    read(['adminSettings', 'forceLogout'], 'triggeredAt'),
+    read(['forceLogoutUsers', uid], 'portalAt'),
+  ])
+  return times
+    .filter((t): t is string => typeof t === 'string' && !Number.isNaN(new Date(t).getTime()))
+    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0]
+}
 
 function isIOSDevice(): boolean {
   if (typeof navigator === 'undefined') return false
@@ -70,27 +88,18 @@ async function getEmployeesModule() {
   return employeesModule
 }
 
+export const ACCOUNT_MISMATCH_MESSAGE = 'ບັນຊີບໍ່ກົງກັບຂໍ້ມູນພະນັກງານ ກະລຸນາຕິດຕໍ່ HR'
+
+// ຊອກພະນັກງານດ້ວຍ employees/{auth uid} ຢ່າງດຽວ — ບໍ່ fallback ໄປ email ອີກ. ກ່ອນໜ້ານີ້ບັນຊີ Auth
+// ທີ່ uid ຜິດ (email ດຽວກັນ) ຖືກ map ເຂົ້າ doc ພະນັກງານຜ່ານ email ແລ້ວ user ໄດ້ uid = auth uid ແຕ່
+// uuid = doc id ປົນກັນ → attendance.uid ຜິດ → ລາຍງານເດືອນຂອງ HRM ຂ້າມ attendance ທັງໝົດ.
+// ບັນຊີແບບນັ້ນຕ້ອງໃຫ້ HR relink (HRM-System-SSMI/functions/scripts/relink-auth-uid.js).
+//
+// null = ບໍ່ພົບ employees/{auth uid} (ຕ້ອງ signOut). throw = ອ່ານ Firestore ບໍ່ໄດ້ (ບໍ່ແມ່ນບັນຊີຜິດ)
 async function resolveEmployeeForFirebaseUser(firebaseUser: FirebaseUser): Promise<Partial<Employee> | null> {
-  const { fetchEmployeeByEmail, fetchEmployeeByUid, fetchRoleByUid, fetchUserRoleId, updateEmployeeUidByEmail } = await getEmployeesModule()
+  const { fetchEmployeeByUid, fetchRoleByUid, fetchUserRoleId } = await getEmployeesModule()
   let employeeData = await fetchEmployeeByUid(firebaseUser.uid)
-
-  if (!employeeData && firebaseUser.email) {
-    employeeData = await fetchEmployeeByEmail(firebaseUser.email)
-
-    if (employeeData) {
-      if (employeeData.uid !== firebaseUser.uid) {
-        updateEmployeeUidByEmail(firebaseUser.email, firebaseUser.uid).catch(
-          (error) => console.error('Error syncing employee uid:', error)
-        )
-      }
-
-      employeeData = {
-        ...employeeData,
-        uid: firebaseUser.uid,
-        email: employeeData.email || firebaseUser.email,
-      }
-    }
-  }
+  if (!employeeData) return null
 
   // Prefer the userRoles mirror (written by the syncEmployeeMirrors Cloud
   // Function), but fall back to employees.rolesUid when it is missing.
@@ -107,11 +116,10 @@ async function resolveEmployeeForFirebaseUser(firebaseUser: FirebaseUser): Promi
   // cannot point this at a role they were not granted. Client-side
   // rolePermissions only decides which UI is rendered — the rules remain the
   // enforcement boundary either way.
-  const resolvedUid = employeeData?.uid || firebaseUser.uid
-  const roleId = (await fetchUserRoleId(resolvedUid)) || employeeData?.rolesUid || null
+  const roleId = (await fetchUserRoleId(firebaseUser.uid)) || employeeData.rolesUid || null
   if (roleId) {
     const rolePermissions = await fetchRoleByUid(roleId)
-    if (rolePermissions && employeeData) {
+    if (rolePermissions) {
       employeeData = { ...employeeData, rolePermissions }
     }
   }
@@ -119,14 +127,21 @@ async function resolveEmployeeForFirebaseUser(firebaseUser: FirebaseUser): Promi
   return employeeData
 }
 
-// Convert Firebase user to Employee format
-async function firebaseUserToEmployee(firebaseUser: FirebaseUser): Promise<Employee> {
+// Convert Firebase user to Employee format — null = ບໍ່ພົບ employees/{auth uid} (ຜູ້ເອີ້ນຕ້ອງ signOut)
+async function firebaseUserToEmployee(firebaseUser: FirebaseUser): Promise<Employee | null> {
   const displayName = firebaseUser.displayName || ''
   const nameParts = displayName.split(' ')
-  
-  // Fetch extended employee data from Firestore
-  const employeeData = await resolveEmployeeForFirebaseUser(firebaseUser)
-  
+
+  // Fetch extended employee data from Firestore. ອ່ານບໍ່ໄດ້ (offline ແລະ ບໍ່ມີ cache) → ໃຊ້ຂໍ້ມູນ
+  // ພື້ນຖານຈາກ Auth ຄືເກົ່າ ບໍ່ signOut; uid = uuid = auth uid ຢູ່ແລ້ວ ຈຶ່ງບໍ່ປົນກັນ
+  let employeeData: Partial<Employee> | null | undefined
+  try {
+    employeeData = await resolveEmployeeForFirebaseUser(firebaseUser)
+  } catch (error) {
+    console.error('Error fetching employee data:', error)
+  }
+  if (employeeData === null) return null
+
   const baseEmployee: Employee = {
     id: firebaseUser.uid,
     uid: firebaseUser.uid,
@@ -146,8 +161,9 @@ async function firebaseUserToEmployee(firebaseUser: FirebaseUser): Promise<Emplo
     return {
       ...baseEmployee,
       ...employeeData,
-      uid: employeeData.uid || firebaseUser.uid,
-      uuid: employeeData.uuid || employeeData.uid || firebaseUser.uid,
+      // doc id === auth uid (fetchEmployeeByUid) — uid ແລະ uuid ຕ້ອງເທົ່າກັນສະເໝີ
+      uid: firebaseUser.uid,
+      uuid: firebaseUser.uid,
       // Override with Firestore data where available
       firstName: employeeData.firstNameEn || baseEmployee.firstName,
       lastName: employeeData.lastNameEn || baseEmployee.lastName,
@@ -188,6 +204,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearAllClientStorage()
   }, [clearPendingGoogleLink])
 
+  const [accountMismatchError, setAccountMismatchError] = useState<string | null>(null)
+  const clearAccountMismatchError = useCallback(() => setAccountMismatchError(null), [])
+  const rejectingAccountRef = useRef<{ uid: string; promise: Promise<void> } | null>(null)
+
+  // ບັນຊີ Auth ທີ່ບໍ່ມີ employees/{auth uid}: ບັນທຶກ audit (ຕ້ອງຂຽນກ່ອນ signOut — logAuditEvent
+  // ຕ້ອງການ auth) ແລ້ວ signOut ແລະ ສະແດງຂໍ້ຄວາມ. login() ແລະ onAuthStateChanged ເອີ້ນພ້ອມກັນໄດ້
+  // ໃນ login ດຽວ — ໃຊ້ promise ດຽວກັນ ແລະ ຂ້າມຖ້າ session ນັ້ນຖືກ signOut ແລ້ວ ເພື່ອບໍ່ໃຫ້ audit ຊ້ຳ
+  const rejectUnmatchedAccount = useCallback((fbUser: FirebaseUser): Promise<void> => {
+    const pending = rejectingAccountRef.current
+    if (pending?.uid === fbUser.uid) return pending.promise
+
+    const promise = (async () => {
+      if (auth.currentUser?.uid === fbUser.uid) {
+        await logAudit({
+          action: 'auth.uid.mismatch',
+          actorUid: fbUser.uid,
+          actorName: fbUser.displayName || fbUser.email || fbUser.uid,
+          actorRoleUuid: '',
+          targetType: 'employees',
+          targetId: fbUser.uid,
+          before: { authUid: fbUser.uid, email: fbUser.email ?? null },
+          reason: 'employees/{auth uid} not found — relink with HRM-System-SSMI/functions/scripts/relink-auth-uid.js',
+          status: 'FAILED',
+          errorMessage: ACCOUNT_MISMATCH_MESSAGE,
+        })
+        await performFullSignOut()
+      }
+      setAccountMismatchError(ACCOUNT_MISMATCH_MESSAGE)
+    })().finally(() => {
+      if (rejectingAccountRef.current?.promise === promise) rejectingAccountRef.current = null
+    })
+    rejectingAccountRef.current = { uid: fbUser.uid, promise }
+    return promise
+  }, [performFullSignOut])
+
   // Listen for auth state changes
   useEffect(() => {
     const INACTIVE_MAX_MS = 5 * 24 * 60 * 60 * 1000 // 5 days inactivity
@@ -227,11 +278,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             return
           }
 
-          // Force logout all — admin can set adminSettings/forceLogout.triggeredAt
+          // Force logout — HRM system-setting ຂຽນ adminSettings/forceLogoutPortal (ທຸກຄົນ) ຫຼື
+          // forceLogoutUsers/{uid}.portalAt (ສະເພາະຄົນ). ກວດຕອນເປີດ app ສຳລັບ trigger ທີ່ເກີດຕອນປິດ app;
+          // ຕອນ app ເປີດຢູ່ ຟັງແບບ real-time ຢູ່ useEffect ລຸ່ມ
           if (stored) {
             try {
-              const forceSnap = await getDoc(doc(db, 'adminSettings', 'forceLogout'))
-              const triggeredAt = forceSnap.data()?.triggeredAt as string | undefined
+              const triggeredAt = await latestForceLogoutAt(fbUser.uid)
               if (triggeredAt && new Date(stored).getTime() < new Date(triggeredAt).getTime()) {
                 debugMark('force-logout', { stored, triggeredAt })
                 // The admin who triggered this writes adminSettings/forceLogout from
@@ -249,7 +301,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   workLocation: extractWorkLocationLog(forcedEmployeeData?.workLocation),
                   targetType: 'employees',
                   targetId: fbUser.uid,
-                  reason: 'adminSettings/forceLogout.triggeredAt newer than last active session',
+                  reason: 'forceLogoutPortal / forceLogoutUsers.portalAt newer than last active session',
                   status: 'SUCCESS',
                 })
                 await performFullSignOut()
@@ -268,6 +320,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           localStorage.setItem(ACTIVE_KEY, new Date().toISOString())
           setFirebaseUser(fbUser)
           const employeeData = await firebaseUserToEmployee(fbUser)
+          if (!employeeData) {
+            debugMark('account-mismatch', { uid: fbUser.uid })
+            await rejectUnmatchedAccount(fbUser)
+            setFirebaseUser(null)
+            setUser(null)
+            return
+          }
           debugMark('signed-in', { uid: fbUser.uid, hasEmployeeData: !!employeeData })
           setUser(employeeData)
         } else {
@@ -286,7 +345,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
 
     return () => unsubscribe()
-  }, [performFullSignOut])
+  }, [performFullSignOut, rejectUnmatchedAccount])
+
+  // Force logout ແບບ real-time ຕອນ app ເປີດຢູ່ — trigger ທີ່ເກີດກ່ອນ listener ເລີ່ມ ຖືກກວດແລ້ວໃນ
+  // onAuthStateChanged ຂ້າງເທິງ, ສະນັ້ນທີ່ນີ້ສົນໃຈສະເພາະເວລາທີ່ໃໝ່ກວ່າຕອນເລີ່ມຟັງ
+  const forcedSignOutRef = useRef(false)
+  useEffect(() => {
+    const uid = firebaseUser?.uid
+    if (!uid) return
+    const listenStart = Date.now()
+    forcedSignOutRef.current = false
+
+    const handle = (triggeredAt: unknown, source: string) => {
+      if (typeof triggeredAt !== 'string' || forcedSignOutRef.current) return
+      if (new Date(triggeredAt).getTime() <= listenStart) return
+      forcedSignOutRef.current = true
+      ;(async () => {
+        await logAudit({
+          action: 'auth.forceLogout.trigger',
+          actorUid: uid,
+          actorName: firebaseUser?.displayName || firebaseUser?.email || uid,
+          actorRoleUuid: user?.rolesUid ?? '',
+          actorRoleName: user?.rolesName,
+          workLocation: extractWorkLocationLog(user?.workLocation),
+          targetType: 'employees',
+          targetId: uid,
+          reason: `${source} triggered while app open`,
+          status: 'SUCCESS',
+        }).catch(() => undefined)
+        await performFullSignOut()
+        setFirebaseUser(null)
+        setUser(null)
+      })()
+    }
+
+    const unsubAll = onSnapshot(
+      doc(db, 'adminSettings', 'forceLogoutPortal'),
+      (snap) => handle(snap.data()?.triggeredAt, 'adminSettings/forceLogoutPortal'),
+      (err) => console.error('forceLogoutPortal listener error:', err),
+    )
+    const unsubUser = onSnapshot(
+      doc(db, 'forceLogoutUsers', uid),
+      (snap) => handle(snap.data()?.portalAt, 'forceLogoutUsers.portalAt'),
+      (err) => console.error('forceLogoutUsers listener error:', err),
+    )
+    return () => {
+      unsubAll()
+      unsubUser()
+    }
+    // user ໃຊ້ແຕ່ໃສ່ audit — ບໍ່ຕ້ອງ subscribe ໃໝ່ທຸກຄັ້ງທີ່ profile ປ່ຽນ
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firebaseUser?.uid, performFullSignOut])
 
   const completeGoogleLink = useCallback(async (email: string, password: string, credential: AuthCredential) => {
     await signInWithEmailAndPassword(auth, email, password)
@@ -308,11 +417,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const employeeData = await resolveEmployeeForFirebaseUser(auth.currentUser)
     if (!employeeData) {
-      await signOut(auth)
-      return {
-        success: false,
-        error: 'This Google account is not allowed. Please contact HR.',
-      }
+      await rejectUnmatchedAccount(auth.currentUser)
+      return { success: false, error: ACCOUNT_MISMATCH_MESSAGE }
     }
 
     await logAudit({
@@ -329,30 +435,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
 
     return { success: true }
-  }, [])
+  }, [rejectUnmatchedAccount])
 
-  const login = useCallback(async (email: string, password: string): Promise<boolean> => {
+  // ກັນ login ຊ້ອນກັນ (ກົດ Enter/ປຸ່ມຊ້ຳກ່ອນ re-render ປິດປຸ່ມ) — ທຸກ request ທີ່ fail ນັບເຂົ້າ
+  // rate limit ຂອງ Firebase (auth/too-many-requests). ບໍ່ມີ retry ອັດຕະໂນມັດ.
+  const loginInFlightRef = useRef(false)
+
+  const login = useCallback(async (email: string, password: string): Promise<{ success: boolean; errorCode?: string }> => {
+    if (loginInFlightRef.current) return { success: false, errorCode: 'in-flight' }
+    loginInFlightRef.current = true
     setIsLoading(true)
+    email = email.trim()
     try {
       const result = await signInWithEmailAndPassword(auth, email, password)
-      // Role isn't resolved yet at this point (that happens in the onAuthStateChanged
-      // listener) — logged with an empty actorRoleUuid rather than duplicating that fetch.
+      // ກວດ employees/{auth uid} ກ່ອນ return true — ບໍ່ດັ່ງນັ້ນ LoginForm ຈະ push /dashboard ແລ້ວ
+      // ຖືກເຕະອອກທີຫຼັງ. ອ່ານບໍ່ໄດ້ (undefined) ປ່ອຍໃຫ້ onAuthStateChanged ຕັດສິນ ຄືເກົ່າ
+      const employeeData = await resolveEmployeeForFirebaseUser(result.user).catch(() => undefined)
+      if (employeeData === null) {
+        await rejectUnmatchedAccount(result.user)
+        setIsLoading(false)
+        return { success: false, errorCode: 'account-mismatch' }
+      }
       await logAudit({
         action: 'auth.login',
         actorUid: result.user.uid,
         actorName: result.user.displayName || result.user.email || email,
-        actorRoleUuid: '',
+        actorRoleUuid: employeeData?.rolesUid ?? '',
+        actorRoleName: employeeData?.rolesName,
+        workLocation: extractWorkLocationLog(employeeData?.workLocation),
         targetType: 'employees',
         targetId: result.user.uid,
         status: 'SUCCESS',
       })
-      return true
-    } catch (error) {
+      return { success: true }
+    } catch (error: any) {
       console.error('Login error:', error)
       setIsLoading(false)
-      return false
+      return { success: false, errorCode: error?.code }
+    } finally {
+      loginInFlightRef.current = false
     }
-  }, [])
+  }, [rejectUnmatchedAccount])
 
   // Shared by the popup path (loginWithGoogle) and the redirect path (mount
   // effect below) — both end up with a UserCredential that needs the same
@@ -364,25 +487,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (!employeeData) {
       // Still authenticated at this point (Firebase created the session before
-      // we discovered they're not a registered employee) — log while we still can.
-      await logAudit({
-        action: 'auth.login',
-        actorUid: result.user.uid,
-        actorName: result.user.displayName || result.user.email || '',
-        actorRoleUuid: '',
-        targetType: 'employees',
-        targetId: result.user.uid,
-        reason: 'Google account not registered as an employee',
-        status: 'FAILED',
-        errorMessage: 'This Google account is not allowed',
-      })
+      // we discovered there is no employees/{auth uid}) — rejectUnmatchedAccount
+      // logs while we still can, then signs out.
       clearPendingGoogleLink()
-      await signOut(auth)
+      await rejectUnmatchedAccount(result.user)
       setIsLoading(false)
-      return {
-        success: false,
-        error: 'This Google account is not allowed. Please contact HR.',
-      }
+      return { success: false, error: ACCOUNT_MISMATCH_MESSAGE }
     }
 
     const hasPasswordProvider = result.user.providerData.some(
@@ -413,7 +523,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
     clearPendingGoogleLink()
     return { success: true }
-  }, [clearPendingGoogleLink])
+  }, [clearPendingGoogleLink, rejectUnmatchedAccount])
 
   // Shared error handling for both the popup path and the redirect path —
   // getRedirectResult() throws the same error shapes signInWithPopup does.
@@ -585,11 +695,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const resetPassword = useCallback(async (email: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      await sendPasswordResetEmail(auth, email)
+      await sendPasswordResetEmail(auth, email.trim())
       return { success: true }
     } catch (error: any) {
       if (error?.code === 'auth/user-not-found' || error?.code === 'auth/invalid-email') {
         return { success: false, error: 'ບໍ່ພົບອີເມວນີ້ໃນລະບົບ' }
+      }
+      if (error?.code === 'auth/too-many-requests') {
+        return { success: false, error: 'ພະຍາຍາມຫຼາຍເກີນໄປ. ກະລຸນາລໍຖ້າບໍ່ເທົ່າໃດນາທີ.' }
       }
       return { success: false, error: 'ບໍ່ສາມາດສົ່ງອີເມວໄດ້ ກະລຸນາລອງໃໝ່' }
     }
@@ -633,6 +746,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loginWithGoogle,
       googleRedirectOutcome,
       clearGoogleRedirectOutcome,
+      accountMismatchError,
+      clearAccountMismatchError,
       setupPasswordForCurrentUser,
       resetPassword,
       logout,

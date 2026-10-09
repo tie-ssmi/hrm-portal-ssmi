@@ -529,6 +529,15 @@ service cloud.firestore {
     }
 
     // ==========================================================
+    // forceLogoutUsers/{uid} — ບັງຄັບອອກຈາກລະບົບສະເພາະຄົນ (adminAt/portalAt)
+    // ຂຽນໂດຍ Cloud Function forceLogoutUser (Admin SDK) ເທົ່ານັ້ນ; ເຈົ້າຂອງອ່ານ doc ຕົນເອງເພື່ອ signOut
+    // ==========================================================
+    match /forceLogoutUsers/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isIT());
+      allow write: if false;
+    }
+
+    // ==========================================================
     // trip
     // ==========================================================
     match /trip/{docId} {

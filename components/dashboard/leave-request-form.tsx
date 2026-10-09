@@ -22,6 +22,7 @@ import {
   X,
   HelpCircle,
   Paperclip,
+  Pencil,
 } from "lucide-react";
 
 // ** shared components
@@ -56,7 +57,7 @@ import {
 import { Combobox } from "@/components/ui/combobox";
 
 // ** third party
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { format, isWeekend } from "date-fns";
 import { driver } from "driver.js";
@@ -66,6 +67,7 @@ import "driver.js/dist/driver.css";
 import { useAuth } from "@/lib/auth-context";
 import { useHRM } from "@/lib/hrm-context";
 import {
+  leaveKeys,
   usePendingDocLeaves,
   useUpcomingLeaves,
 } from "@/lib/use-leave-queries";
@@ -73,7 +75,18 @@ import { formatPolicyLimit } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 // ** services
-import { getLeaveApproverRuleText, getLeaveRecipientText } from "@/services/leave-approval";
+import {
+  buildInitialLeaveApprovals,
+  getLeaveApproverRuleText,
+  getLeaveRecipientText,
+  getRequiredLeaveApprovers,
+} from "@/services/leave-approval";
+import {
+  isLeaveEditable,
+  LeaveAlreadyReviewedError,
+  updateLeaveRequest,
+} from "@/services/leaves";
+import { fetchWorkLocationType } from "@/services/workLocations";
 import {
   fetchOfficialHolidays,
   buildHolidayDateKeySet,
@@ -201,6 +214,7 @@ function SectionHeader({
 
 export default function LeaveRequestForm() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { user } = useAuth();
   const { submitLeaveRequest, leaveBalance } = useHRM();
   const loggedInUserUuid = user?.uid || user?.id || "";
@@ -296,6 +310,11 @@ export default function LeaveRequestForm() {
 
   // Declared after myCurrentLeaveRequests so typeof resolves correctly
   const [selectedLeave, setSelectedLeave] = useState<
+    (typeof myCurrentLeaveRequests)[number] | null
+  >(null);
+  // Request being edited in the form above. Only set while every approval
+  // slot is still pending — see isLeaveEditable.
+  const [editingLeave, setEditingLeave] = useState<
     (typeof myCurrentLeaveRequests)[number] | null
   >(null);
 
@@ -506,6 +525,11 @@ export default function LeaveRequestForm() {
   // left alone.
   const remainingDays = selectedPolicy?.remainingDays;
   const countMode = selectedPolicy?.countMode;
+  // calendarDays policies count every day, so weekends and official holidays
+  // are pickable; workingDays policies grey them out.
+  const isNonWorkingDay = (d: Date) =>
+    countMode !== "calendarDays" &&
+    (isWeekend(d) || holidaySet.has(format(d, "yyyy-MM-dd")));
   useEffect(() => {
     if (!leaveStartDate || !leaveEndDate || remainingDays == null) return;
     const args = {
@@ -540,7 +564,13 @@ export default function LeaveRequestForm() {
     [selectedPolicy],
   );
 
+  // Loading a request into the form sets its policy and doc choice together;
+  // skip the reset for that one policy change so the doc choice survives.
+  const keepDocChoiceForPolicyRef = useRef<string | null>(null);
   useEffect(() => {
+    const keep = keepDocChoiceForPolicyRef.current === selectedPolicyValue;
+    keepDocChoiceForPolicyRef.current = null;
+    if (keep) return;
     setDocUploadChoice(null);
     setDocFile(null);
   }, [selectedPolicyValue]);
@@ -659,6 +689,61 @@ export default function LeaveRequestForm() {
     }
   }
 
+  function resetForm() {
+    setEditingLeave(null);
+    setSelectedPolicyValue(leaveTypeOptions[0]?.value || "annual");
+    setSelectedSuccessorUid("");
+    setDelegateResponsibilities(false);
+    setDelegateDocumentSigning(false);
+    setDelegateO9Approval(false);
+    setDelegateOther(false);
+    setDelegateOtherReason("");
+    setLeaveStartDate(undefined);
+    setStartPeriod("morning");
+    setLeaveEndDate(undefined);
+    setEndPeriod("afternoon");
+    setLeaveReason("");
+    setDocUploadChoice(null);
+    setDocFile(null);
+  }
+
+  function startEditLeave(leave: (typeof myCurrentLeaveRequests)[number]) {
+    const option =
+      leaveTypeOptions.find(
+        (o) =>
+          (leave.policyUuid && o.policyUuid === leave.policyUuid) ||
+          (leave.policyId && o.policyId === leave.policyId),
+      ) ?? leaveTypeOptions.find((o) => o.value === leave.type);
+    if (option) {
+      keepDocChoiceForPolicyRef.current = option.value;
+      setSelectedPolicyValue(option.value);
+    }
+    setLeaveStartDate(new Date(`${leave.startDate}T00:00:00`));
+    setStartPeriod(leave.startPeriod ?? "morning");
+    setLeaveEndDate(new Date(`${leave.endDate}T00:00:00`));
+    setEndPeriod(leave.endPeriod ?? "afternoon");
+    setLeaveReason(leave.reason ?? "");
+    setSelectedSuccessorUid(leave.successorUid ?? "");
+    setDelegateResponsibilities(!!leave.taskDelegation?.responsibilities);
+    setDelegateDocumentSigning(!!leave.taskDelegation?.documentSigning);
+    setDelegateO9Approval(!!leave.taskDelegation?.o9Approval);
+    setDelegateOther(!!leave.taskDelegation?.other);
+    setDelegateOtherReason(leave.taskDelegation?.otherReason ?? "");
+    setDocUploadChoice(
+      leave.docStatus === "now"
+        ? "now"
+        : leave.docStatus === "later"
+          ? "later"
+          : null,
+    );
+    setDocFile(null);
+    setEditingLeave(leave);
+    setSelectedLeave(null);
+    document
+      .getElementById("leave-section-type")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   const handleCopyAutoSend = async () => {
     if (!selectedLeave) return;
     setIsCopySending(true);
@@ -705,7 +790,10 @@ export default function LeaveRequestForm() {
       toast.error("ກະລຸນາເລືອກວັນທີ");
       return;
     }
-    if (isWeekend(leaveStartDate) || isWeekend(leaveEndDate)) {
+    if (
+      countMode !== "calendarDays" &&
+      (isWeekend(leaveStartDate) || isWeekend(leaveEndDate))
+    ) {
       toast.error("ບໍ່ສາມາດລາໃນວັນເສົາ-ອາທິດ");
       return;
     }
@@ -724,7 +812,7 @@ export default function LeaveRequestForm() {
       toast.error("ກະລຸນາເລືອກວິທີອັບໂຫຼດເອກະສານ");
       return;
     }
-    if (docUploadChoice === "now" && !docFile) {
+    if (docUploadChoice === "now" && !docFile && !editingLeave?.docLink) {
       toast.error("ກະລຸນາເລືອກໄຟລ໌ເອກະສານ");
       return;
     }
@@ -765,6 +853,83 @@ export default function LeaveRequestForm() {
           `leaves/${loggedInUserUuid}/${Date.now()}.${ext}`,
           docFile,
         );
+      }
+
+      const workLocationType = await fetchWorkLocationType(workLocationUuid);
+
+      if (editingLeave) {
+        // Approvals are rebuilt from the new duration — a 2-day request
+        // stretched to 3 days now also needs the manager slot.
+        await updateLeaveRequest({
+          leaveId: editingLeave.id,
+          approvals: buildInitialLeaveApprovals(duration ?? undefined),
+          requiredApprovers: getRequiredLeaveApprovers(duration ?? undefined),
+          actorUid: loggedInUserUuid,
+          actorName: createdBy,
+          updates: {
+            type: selectedPolicy?.requestType || "annual",
+            policyUuid: selectedPolicy?.policyUuid,
+            policyId: selectedPolicy?.policyId || undefined,
+            policyName: selectedPolicy?.policyName || selectedPolicy?.label,
+            startDate: format(leaveStartDate, "yyyy-MM-dd"),
+            startPeriod,
+            endDate: format(leaveEndDate, "yyyy-MM-dd"),
+            endPeriod,
+            duration: duration ?? undefined,
+            reason: leaveReason,
+            successorUid: selectedSuccessor?.uid,
+            successorNameLo: selectedSuccessor
+              ? [selectedSuccessor.firstNameLo, selectedSuccessor.lastNameLo]
+                  .filter(Boolean)
+                  .join(" ")
+              : undefined,
+            successorNameEn: selectedSuccessor
+              ? [selectedSuccessor.firstNameEn, selectedSuccessor.lastNameEn]
+                  .filter(Boolean)
+                  .join(" ")
+              : undefined,
+            successorGender: selectedSuccessor?.gender,
+            taskDelegation: selectedSuccessor
+              ? {
+                  responsibilities: delegateResponsibilities,
+                  documentSigning: delegateDocumentSigning,
+                  o9Approval: delegateO9Approval,
+                  other: delegateOther,
+                  otherReason: delegateOther
+                    ? delegateOtherReason.trim() || null
+                    : null,
+                }
+              : undefined,
+            to: getLeaveRecipientText(
+              duration,
+              isLPB,
+              workLocationNameLo,
+              workLocationType,
+            ),
+            remainingDaysBeforeRequest: selectedPolicy?.remainingDays,
+            remainingDaysAfterRequest:
+              selectedPolicy?.remainingDays != null && duration != null
+                ? selectedPolicy.remainingDays - duration
+                : selectedPolicy?.remainingDays,
+            docStatus:
+              docUploadChoice === "now"
+                ? "now"
+                : docUploadChoice === "later"
+                  ? "later"
+                  : null,
+            // A new file replaces the old one; "now" with no new file keeps
+            // the existing attachment; any other choice drops it.
+            docLink:
+              docUploadChoice === "now"
+                ? (docLink ?? editingLeave.docLink)
+                : undefined,
+          },
+        });
+        queryClient.invalidateQueries({ queryKey: leaveKeys.all });
+        await refetchMyCurrentLeaves();
+        toast.success("ແກ້ໄຂຄໍາຮ້ອງຂໍສໍາເລັດ");
+        resetForm();
+        return;
       }
 
       await submitLeaveRequest(
@@ -815,7 +980,7 @@ export default function LeaveRequestForm() {
           jobTitleLo: user?.jobTitleLo || undefined,
           workLocationUid: workLocationUuid,
           workLocationNameLo: workLocationNameLo,
-          to: getLeaveRecipientText(duration, isLPB, workLocationNameLo),
+          to: getLeaveRecipientText(duration, isLPB, workLocationNameLo, workLocationType),
           // Both sides of the deduction: what was left going in, and what is
           // left after this request. 5 available minus a 4-day request saves
           // before 5, after 1. The "after" figure falls back to the raw
@@ -841,26 +1006,19 @@ export default function LeaveRequestForm() {
       await refetchMyCurrentLeaves();
       playSuccessSound();
       setShowSuccessDialog(true);
-      setSelectedPolicyValue(leaveTypeOptions[0]?.value || "annual");
-      setSelectedSuccessorUid("");
-      setDelegateResponsibilities(false);
-      setDelegateDocumentSigning(false);
-      setDelegateO9Approval(false);
-      setDelegateOther(false);
-      setDelegateOtherReason("");
-      setLeaveStartDate(undefined);
-      setStartPeriod("morning");
-      setLeaveEndDate(undefined);
-      setEndPeriod("afternoon");
-      setLeaveReason("");
-      setDocUploadChoice(null);
-      setDocFile(null);
+      resetForm();
     } catch (err) {
-      toast.error(
-        err instanceof UploadTruncatedError
-          ? UPLOAD_TRUNCATED_MESSAGE
-          : "ບໍ່ສາມາດສົ່ງຄໍາຮ້ອງຂໍໄດ້",
-      );
+      if (err instanceof LeaveAlreadyReviewedError) {
+        toast.error("ຄໍາຮ້ອງຂໍນີ້ຖືກພິຈາລະນາແລ້ວ ບໍ່ສາມາດແກ້ໄຂໄດ້");
+        await refetchMyCurrentLeaves();
+        resetForm();
+      } else {
+        toast.error(
+          err instanceof UploadTruncatedError
+            ? UPLOAD_TRUNCATED_MESSAGE
+            : "ບໍ່ສາມາດສົ່ງຄໍາຮ້ອງຂໍໄດ້",
+        );
+      }
       console.error(err);
     } finally {
       setIsSubmitting(false);
@@ -887,6 +1045,24 @@ export default function LeaveRequestForm() {
 
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-5">
+            {editingLeave && (
+              <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+                <Pencil className="w-4 h-4 shrink-0" />
+                <span className="flex-1">
+                  ກຳລັງແກ້ໄຂຄໍາຮ້ອງຂໍ{" "}
+                  {format(new Date(editingLeave.startDate), "dd/MM/yyyy")}
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7"
+                  onClick={resetForm}
+                >
+                  ຍົກເລີກ
+                </Button>
+              </div>
+            )}
             {/* Section 1: Leave type */}
             <div
               id="leave-section-type"
@@ -939,10 +1115,7 @@ export default function LeaveRequestForm() {
                         mode="single"
                         selected={leaveStartDate}
                         onSelect={handleStartDateSelect}
-                        disabled={(d) =>
-                          isWeekend(d) ||
-                          holidaySet.has(format(d, "yyyy-MM-dd"))
-                        }
+                        disabled={isNonWorkingDay}
                       />
                     </PopoverContent>
                   </Popover>
@@ -996,8 +1169,7 @@ export default function LeaveRequestForm() {
                         selected={leaveEndDate}
                         onSelect={setLeaveEndDate}
                         disabled={(d) =>
-                          isWeekend(d) ||
-                          holidaySet.has(format(d, "yyyy-MM-dd")) ||
+                          isNonWorkingDay(d) ||
                           (!!leaveStartDate && d < leaveStartDate) ||
                           // Past the policy balance — greyed out rather than
                           // rejected after the fact on submit.
@@ -1313,6 +1485,17 @@ export default function LeaveRequestForm() {
                 {/* File input — shown when 'now' selected */}
                 {docUploadChoice === "now" && (
                   <div className="space-y-2">
+                    {editingLeave?.docLink && !docFile && (
+                      <a
+                        href={editingLeave.docLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 text-xs text-primary hover:underline"
+                      >
+                        <Paperclip className="w-3 h-3 shrink-0" />
+                        ເອກະສານແນບປັດຈຸບັນ (ເລືອກໄຟລ໌ໃໝ່ເພື່ອປ່ຽນ)
+                      </a>
+                    )}
                     <FileUpload file={docFile} onFileSelect={setDocFile} />
                     {docFile && (
                       <button
@@ -1340,7 +1523,7 @@ export default function LeaveRequestForm() {
               ) : (
                 <Send className="w-4 h-4 mr-2" />
               )}
-              ສົ່ງຄໍາຮ້ອງຂໍ
+              {editingLeave ? "ບັນທຶກການແກ້ໄຂ" : "ສົ່ງຄໍາຮ້ອງຂໍ"}
             </Button>
           </form>
         </CardContent>
@@ -1604,6 +1787,19 @@ export default function LeaveRequestForm() {
                           </div>
                         </div>
                       </>
+                    )}
+
+                  {selectedLeave.leaveUserUuid === loggedInUserUuid &&
+                    isLeaveEditable(selectedLeave) && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => startEditLeave(selectedLeave)}
+                      >
+                        <Pencil className="w-4 h-4 mr-2" />
+                        ແກ້ໄຂຄໍາຮ້ອງຂໍ
+                      </Button>
                     )}
 
                   {selectedLeave.status === "approved" &&

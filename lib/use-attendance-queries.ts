@@ -159,8 +159,9 @@ export function useCheckIn() {
         : undefined
 
       await updateAttendanceCheckInTime({
+        // uid = userUuid = doc id ພະນັກງານ (auth-context ບັງຄັບ) — server ກວດກັບ auth uid ແລະ ບໍ່ໃຊ້ uid ນີ້
         userUuid: user.uuid,
-        uid: user.uid || user.uuid,
+        uid: user.uuid,
         date: serverTime.date,
         checkInTime: serverTime.checkTime,
         status,
@@ -234,7 +235,7 @@ export function useCheckOut() {
 
       await updateAttendanceCheckOutTime({
         userUuid: user.uuid,
-        uid: user.uid || user.uuid,
+        uid: user.uuid,
         date: serverTime.date,
         checkOutTime: serverTime.checkTime,
         workHours: 8,

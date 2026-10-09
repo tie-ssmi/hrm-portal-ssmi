@@ -1,4 +1,4 @@
-import { addDoc, collection, doc, getDoc, getDocs, query, runTransaction, updateDoc, where, type QuerySnapshot, type DocumentData } from 'firebase/firestore'
+import { addDoc, collection, deleteField, doc, getDoc, getDocs, query, runTransaction, updateDoc, where, type QuerySnapshot, type DocumentData } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import type { LeaveApprovalStep, LeaveRequest } from '@/lib/types'
 import { resolveLeaveRequestStatus } from '@/services/leave-approval'
@@ -128,6 +128,93 @@ export async function updateLeaveApproval(params: {
       actorRoleUuid: actorRoleUuid ?? '',
       actorRoleName,
       workLocation,
+      targetType: 'leaves',
+      targetId: leaveId,
+      status: 'FAILED',
+      errorMessage: error instanceof Error ? error.message : String(error),
+    })
+    throw error
+  }
+}
+
+// Thrown when the requester tries to edit a leave that an approver has already
+// acted on — once any slot is decided, the request is locked.
+export class LeaveAlreadyReviewedError extends Error {
+  constructor() {
+    super('Leave request has already been reviewed')
+    this.name = 'LeaveAlreadyReviewedError'
+  }
+}
+
+export function isLeaveEditable(leave: Pick<LeaveRequest, 'approvals' | 'status'>): boolean {
+  const approvals = leave.approvals ?? []
+  return leave.status === 'pending' && approvals.every((a) => !a || a.decision === 'pending')
+}
+
+export async function updateLeaveRequest(params: {
+  leaveId: string
+  updates: Partial<Omit<LeaveRequest, 'id' | 'status' | 'approvals' | 'requiredApprovers' | 'createdAt'>>
+  approvals: LeaveApprovalStep[]
+  requiredApprovers: LeaveRequest['requiredApprovers']
+  actorUid: string
+  actorName?: string
+}): Promise<void> {
+  const { leaveId, updates, approvals, requiredApprovers, actorUid, actorName } = params
+  const leaveRef = doc(db, 'leaves', leaveId)
+
+  // undefined means "field cleared" (e.g. successor removed) — delete it on
+  // the doc rather than leave the old value behind.
+  const payload: Record<string, unknown> = Object.fromEntries(
+    Object.entries(updates).map(([key, value]) => [key, value === undefined ? deleteField() : value])
+  )
+
+  try {
+    // Same race as updateLeaveApproval: an approver may decide between the
+    // dialog opening and this write. Re-check inside the transaction so an
+    // edit can never land on a request that is no longer all-pending.
+    const before = await runTransaction(db, async (tx) => {
+      const snapshot = await tx.get(leaveRef)
+      if (!snapshot.exists()) throw new Error('Leave request not found')
+      const data = snapshot.data() as Omit<LeaveRequest, 'id'>
+      if (!isLeaveEditable(data)) throw new LeaveAlreadyReviewedError()
+
+      tx.update(leaveRef, {
+        ...payload,
+        approvals,
+        requiredApprovers,
+        status: resolveLeaveRequestStatus(approvals),
+        updatedAt: new Date().toISOString(),
+      })
+      return data
+    })
+
+    await logAudit({
+      action: 'leave.request.update',
+      actorUid,
+      actorName: actorName ?? '',
+      actorRoleUuid: '',
+      workLocation: before.workLocationUid ? { uuid: before.workLocationUid } : undefined,
+      targetType: 'leaves',
+      targetId: leaveId,
+      targetName: before.leaveUserName,
+      before: {
+        startDate: before.startDate,
+        startPeriod: before.startPeriod,
+        endDate: before.endDate,
+        endPeriod: before.endPeriod,
+        duration: before.duration,
+        type: before.type,
+        reason: before.reason,
+      },
+      after: Object.fromEntries(Object.entries(updates).filter(([, v]) => v !== undefined)),
+      status: 'SUCCESS',
+    })
+  } catch (error) {
+    await logAudit({
+      action: 'leave.request.update',
+      actorUid,
+      actorName: actorName ?? '',
+      actorRoleUuid: '',
       targetType: 'leaves',
       targetId: leaveId,
       status: 'FAILED',

@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { useAuth } from '@/lib/auth-context'
+import { useAuth, ACCOUNT_MISMATCH_MESSAGE } from '@/lib/auth-context'
 import type { GoogleLoginOutcome } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,6 +13,22 @@ import { Eye, EyeOff } from 'lucide-react'
 
 type AuthStep = 'idle' | 'setup-password' | 'link-google' | 'forgot-password'
 
+function loginErrorMessage(code?: string): string {
+  switch (code) {
+    case 'auth/too-many-requests':
+      return 'ພະຍາຍາມຫຼາຍເກີນໄປ. ກະລຸນາລໍຖ້າ 15 -30 ນາທີ ຫຼື ຣີເຊັດລະຫັດຜ່ານ.'
+    case 'auth/invalid-credential':
+    case 'auth/wrong-password':
+      return 'ອີເມວ ຫຼື ລະຫັດຜ່ານບໍ່ຖືກຕ້ອງ.'
+    case 'auth/user-not-found':
+      return 'ບໍ່ພົບບັນຊີນີ້.'
+    case 'auth/network-request-failed':
+      return 'ບໍ່ມີການເຊື່ອມຕໍ່ອິນເຕີເນັດ.'
+    default:
+      return 'ເຂົ້າສູ່ລະບົບບໍ່ສຳເລັດ. ກະລຸນາລອງໃໝ່.'
+  }
+}
+
 export default function LoginForm() {
   const router = useRouter()
   const {
@@ -20,6 +36,8 @@ export default function LoginForm() {
     loginWithGoogle,
     googleRedirectOutcome,
     clearGoogleRedirectOutcome,
+    accountMismatchError,
+    clearAccountMismatchError,
     setupPasswordForCurrentUser,
     resetPassword,
     isLoading,
@@ -31,6 +49,9 @@ export default function LoginForm() {
   const [error, setError] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
   const [authStep, setAuthStep] = useState<AuthStep>('idle')
+  const [submitting, setSubmitting] = useState(false)
+  const submittingRef = useRef(false)
+  const isBusy = isLoading || submitting
 
   const applyGoogleResult = (result: GoogleLoginOutcome) => {
     if (result.success) {
@@ -84,25 +105,45 @@ export default function LoginForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [googleRedirectOutcome])
 
+  // ບັນຊີຖືກ signOut ເພາະ auth uid ບໍ່ກົງກັບ doc ພະນັກງານ (lib/auth-context.tsx) — effect ນີ້ run
+  // ຫຼັງ handleEmailLogin ຕັ້ງ 'Invalid email or password' ຈຶ່ງຂຽນທັບເປັນຂໍ້ຄວາມທີ່ຖືກ
+  useEffect(() => {
+    if (!accountMismatchError) return
+    setAuthStep('idle')
+    setError(accountMismatchError)
+    clearAccountMismatchError()
+  }, [accountMismatchError, clearAccountMismatchError])
+
   if (shouldRedirectToDashboard) {
     return null
   }
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault()
+    // ref ກັນ submit ຊ້ຳກ່ອນ state `submitting` ທັນ re-render ປິດປຸ່ມ
+    if (submittingRef.current) return
     setError('')
     setAuthStep('idle')
 
-    if (!email || !password) {
+    const trimmedEmail = email.trim()
+    if (!trimmedEmail || !password) {
       setError('Please fill in all fields')
       return
     }
 
-    const success = await login(email, password)
-    if (success) {
-      router.push('/dashboard')
-    } else {
-      setError('Invalid email or password')
+    submittingRef.current = true
+    setSubmitting(true)
+    try {
+      const result = await login(trimmedEmail, password)
+      if (result.success) {
+        router.push('/dashboard')
+      } else if (result.errorCode !== 'in-flight') {
+        // effect ຂອງ accountMismatchError ອາດ run ກ່ອນບັນທັດນີ້ — ຢ່າຂຽນທັບ
+        setError((prev) => (prev === ACCOUNT_MISMATCH_MESSAGE ? prev : loginErrorMessage(result.errorCode)))
+      }
+    } finally {
+      submittingRef.current = false
+      setSubmitting(false)
     }
   }
 
@@ -140,19 +181,28 @@ export default function LoginForm() {
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (submittingRef.current) return
     setError('')
     setSuccessMsg('')
 
-    if (!email) {
+    const trimmedEmail = email.trim()
+    if (!trimmedEmail) {
       setError('ກະລຸນາປ້ອນອີເມວຂອງທ່ານ')
       return
     }
 
-    const result = await resetPassword(email)
-    if (result.success) {
-      setSuccessMsg('ສົ່ງລິ້ງຕັ້ງລະຫັດຜ່ານໃໝ່ໄປຫາ ' + email + ' ແລ້ວ. ກະລຸນາກວດກ່ອງຈົດໝາຍ.')
-    } else {
-      setError(result.error ?? 'ບໍ່ສາມາດສົ່ງອີເມວໄດ້')
+    submittingRef.current = true
+    setSubmitting(true)
+    try {
+      const result = await resetPassword(trimmedEmail)
+      if (result.success) {
+        setSuccessMsg('ສົ່ງລິ້ງຕັ້ງລະຫັດຜ່ານໃໝ່ໄປຫາ ' + trimmedEmail + ' ແລ້ວ. ກະລຸນາກວດກ່ອງຈົດໝາຍ.')
+      } else {
+        setError(result.error ?? 'ບໍ່ສາມາດສົ່ງອີເມວໄດ້')
+      }
+    } finally {
+      submittingRef.current = false
+      setSubmitting(false)
     }
   }
 
@@ -210,8 +260,8 @@ export default function LoginForm() {
                 {successMsg && <p className="text-sm text-green-600 text-center">{successMsg}</p>}
 
                 {!successMsg && (
-                  <Button type="submit" className="w-full" disabled={isLoading}>
-                    {isLoading ? <Spinner className="mr-2" /> : null}
+                  <Button type="submit" className="w-full" disabled={isBusy}>
+                    {isBusy ? <Spinner className="mr-2" /> : null}
                     ສົ່ງລິ້ງຕັ້ງລະຫັດຜ່ານໃໝ່
                   </Button>
                 )}
@@ -276,8 +326,8 @@ export default function LoginForm() {
                   <p className="text-sm text-destructive text-center">{error}</p>
                 )}
 
-                <Button type="submit" className="w-full" disabled={isLoading}>
-                  {isLoading ? <Spinner className="mr-2" /> : null}
+                <Button type="submit" className="w-full" disabled={isBusy}>
+                  {isBusy ? <Spinner className="mr-2" /> : null}
                   {isSetupPasswordStep ? 'ປ່ຽນລະຫັດຜ່ານ' : isLinkGoogleStep ? 'Link Google Account' : 'Sign In'}
                 </Button>
 
@@ -308,9 +358,9 @@ export default function LoginForm() {
                   variant="outline"
                   className="w-full gap-2"
                   onClick={() => handleGoogleLogin()}
-                  disabled={isLoading}
+                  disabled={isBusy}
                 >
-                  {isLoading ? (
+                  {isBusy ? (
                     <Spinner className="mr-2" />
                   ) : (
                     <svg className="w-4 h-4" viewBox="0 0 24 24">

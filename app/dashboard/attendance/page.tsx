@@ -517,14 +517,24 @@ const OffsiteDetailDialog = memo(function OffsiteDetailDialog({
 // ຢູ່ນີ້ພຽງກັນບໍ່ໃຫ້ຜູ້ໃຊ້ສົ່ງໄປແລ້ວຖືກປະຕິເສດເສີຍໆ.
 const EARLY_CHECKOUT_REASON_MIN_CHARS = 30;
 
+// ເວລາເລີກວຽກ (ນາທີຂອງມື້) — ຕ້ອງກົງກັບ earlyCheckOutCutoffMinutes ໃນ functions/src/index.ts.
+// ແມ່ບ້ານ (rolePermissions.housekeeper) ເລີກ 16:30, ຄົນອື່ນ 17:00
+const CHECKOUT_CUTOFF_MINUTES = 17 * 60;
+const HOUSEKEEPER_CHECKOUT_CUTOFF_MINUTES = 16 * 60 + 30;
+
+const formatCutoff = (minutes: number) =>
+  `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}`;
+
 const EarlyCheckOutDialog = memo(function EarlyCheckOutDialog({
   open,
   isSubmitting,
+  cutoffLabel,
   onConfirm,
   onCancel,
 }: {
   open: boolean;
   isSubmitting: boolean;
+  cutoffLabel: string;
   onConfirm: (reason: string) => void;
   onCancel: () => void;
 }) {
@@ -547,7 +557,7 @@ const EarlyCheckOutDialog = memo(function EarlyCheckOutDialog({
           </DialogTitle>
         </DialogHeader>
         <p className="text-muted-foreground text-sm">
-          ຕອນນີ້ຍັງບໍ່ທັນຮອດ 17:00 ນ. ກະລຸນາປ້ອນເຫດຜົນທີ່ຕ້ອງອອກກ່ອນເວລາ.
+          ຕອນນີ້ຍັງບໍ່ທັນຮອດ {cutoffLabel} ນ. ກະລຸນາປ້ອນເຫດຜົນທີ່ຕ້ອງອອກກ່ອນເວລາ.
         </p>
 
         <div className="space-y-1.5">
@@ -876,14 +886,20 @@ export default function AttendancePage() {
     ],
   );
 
+  // ແມ່ບ້ານເລີກ 16:30 — ອອກກ່ອນນັ້ນຕ້ອງປ້ອນເຫດຜົນ; server ກວດຄືກັນ (recordCheckOut)
+  const checkOutCutoffMinutes =
+    user?.rolePermissions?.housekeeper === true
+      ? HOUSEKEEPER_CHECKOUT_CUTOFF_MINUTES
+      : CHECKOUT_CUTOFF_MINUTES;
+
   const handleCheckOutClick = useCallback(() => {
-    const { hour } = getVientianeHourMinute();
-    if (hour < 17) {
+    const { hour, minute } = getVientianeHourMinute();
+    if (hour * 60 + minute < checkOutCutoffMinutes) {
       setShowEarlyCheckOutConfirm(true);
       return;
     }
     handleAttendance("checkOut");
-  }, [handleAttendance]);
+  }, [handleAttendance, checkOutCutoffMinutes]);
 
   const handleConfirmEarlyCheckOut = useCallback(
     (reason: string) => {
@@ -1077,6 +1093,7 @@ export default function AttendancePage() {
         isSubmitting={
           submittingType === "checkOut" || checkOutMutation.isPending
         }
+        cutoffLabel={formatCutoff(checkOutCutoffMinutes)}
         onConfirm={handleConfirmEarlyCheckOut}
         onCancel={() => setShowEarlyCheckOutConfirm(false)}
       />

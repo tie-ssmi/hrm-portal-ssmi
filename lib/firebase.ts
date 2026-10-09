@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app'
 import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check'
-import { getAuth } from 'firebase/auth'
+import { getAuth, connectAuthEmulator } from 'firebase/auth'
 import {
   getFirestore,
   initializeFirestore,
@@ -54,6 +54,19 @@ function createFirestore(firebaseApp: FirebaseApp) {
 
 // Firebase services
 export const auth = getAuth(app)
+
+// Opt-in: NEXT_PUBLIC_USE_AUTH_EMULATOR=true in .env.local (dev only) routes Auth to the local
+// emulator (`firebase emulators:start --only auth`) so login testing never hits production's
+// auth/too-many-requests rate limit. Firestore still points at production, so emulator users
+// have no employees/{uid} doc and will be rejected by the employee gate unless you seed one.
+if (
+  typeof window !== 'undefined' &&
+  process.env.NODE_ENV === 'development' &&
+  process.env.NEXT_PUBLIC_USE_AUTH_EMULATOR === 'true'
+) {
+  connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true })
+}
+
 export const db = createFirestore(app)
 export const storage = getStorage(app)
 

@@ -608,8 +608,33 @@ export default function ProfilePage() {
                 {toStr(profileUser.workLocation || profileUser.department)}
               </p>
               <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
-                <Badge variant="secondary">
-                  {toStr(profileUser.employeeId)}
+                <Badge
+                  asChild
+                  variant="secondary"
+                  className="cursor-pointer select-none active:scale-95 transition-transform"
+                >
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const id = toStr(profileUser.employeeId);
+                      if (!id) return;
+                      try {
+                        await navigator.clipboard.writeText(id);
+                        toast.success("Copied", {
+                          position: "top-center",
+                          style: {
+                            background: "#16a34a",
+                            color: "#fff",
+                            borderColor: "#16a34a",
+                          },
+                        });
+                      } catch {
+                        toast.error("Copy failed", { position: "top-center" });
+                      }
+                    }}
+                  >
+                    {toStr(profileUser.employeeId)}
+                  </button>
                 </Badge>
                 {profileUser.employeeType && (
                   <Badge variant="outline">

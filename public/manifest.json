@@ -1,6 +1,6 @@
 {
   "name": "SSMI HRM Portal",
-  "short_name": "SSMI HRM",
+  "short_name": "HRM Staff",
   "description": "ລະບົບ HRM ຂອງ SSMI Laos",
   "start_url": "/",
   "display": "standalone",

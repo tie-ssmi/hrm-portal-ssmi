@@ -41,6 +41,7 @@ import { fetchUserRoleId, fetchRoleByUid } from '@/lib/employees'
 
 // ** services
 import { getLeaveApproverRuleText, getLeaveRecipientText } from '@/services/leave-approval'
+import { fetchWorkLocationType } from '@/services/workLocations'
 import { fetchLeavesByUserUuidFromToday } from '@/services/leaves'
 import { fetchPoliciesForGender, resolveEmployeePolicyLimit } from '@/services/policies'
 import { fetchActiveLegalBasis } from '@/services/legalBasis'
@@ -362,6 +363,12 @@ export default function InsteadLeaveRequestForm() {
     [leaveStartDate, startPeriod, leaveEndDate, endPeriod, holidaySet, selectedPolicy?.countMode]
   )
 
+  // calendarDays policies count every day, so weekends and official holidays
+  // are pickable; workingDays policies grey them out.
+  const isCalendarDays = selectedPolicy?.countMode === 'calendarDays'
+  const isNonWorkingDay = (d: Date) =>
+    !isCalendarDays && (isWeekend(d) || holidaySet.has(format(d, 'yyyy-MM-dd')))
+
   const approverRuleText = useMemo(() => getLeaveApproverRuleText(duration), [duration])
 
   useEffect(() => {
@@ -395,7 +402,7 @@ export default function InsteadLeaveRequestForm() {
     e.preventDefault()
     if (!selectedLeaveForUid) { toast.error('ກະລຸນາເລືອກຜູ້ລາພັກ'); return }
     if (!leaveStartDate || !leaveEndDate) { toast.error('ກະລຸນາເລືອກວັນທີ'); return }
-    if (isWeekend(leaveStartDate) || isWeekend(leaveEndDate)) { toast.error('ບໍ່ສາມາດລາໃນວັນເສົາ-ອາທິດ'); return }
+    if (!isCalendarDays && (isWeekend(leaveStartDate) || isWeekend(leaveEndDate))) { toast.error('ບໍ່ສາມາດລາໃນວັນເສົາ-ອາທິດ'); return }
     if (!duration || duration <= 0) { toast.error('ວັນສິ້ນສຸດຕ້ອງຫຼັງວັນເລີ່ມ'); return }
     if (!leaveReason.trim()) { toast.error('ກະລຸນາໃສ່ເຫດຜົນ'); return }
     if ((documentRequired === 'yes' || documentRequired === 'option') && docUploadChoice === null) {
@@ -442,6 +449,7 @@ export default function InsteadLeaveRequestForm() {
         const ext = docFile.name.split('.').pop() ?? 'file'
         docLink = await uploadAttachment(`leaves/${leaveUserUuid}/${Date.now()}.${ext}`, docFile)
       }
+      const leaveForWorkLocationType = await fetchWorkLocationType(leaveForWorkLocationUuid)
       await submitLeaveRequest({
         leaveUserUuid: selectedLeaveFor.uuid || selectedLeaveFor.uid || selectedLeaveFor.id || undefined,
         leaveUserName,
@@ -496,6 +504,7 @@ export default function InsteadLeaveRequestForm() {
           duration,
           selectedLeaveForRole?.LPB === true,
           leaveForWorkLocationNameLo,
+          leaveForWorkLocationType,
         ),
       }, { autoApproveDeptHead: true, reviewedBy: createdBy })
       await refetchMyCurrentLeaves()
@@ -613,7 +622,7 @@ export default function InsteadLeaveRequestForm() {
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0">
                       <Calendar mode="single" selected={leaveStartDate} onSelect={handleStartDateSelect}
-                        disabled={(d) => isWeekend(d) || holidaySet.has(format(d, 'yyyy-MM-dd'))} />
+                        disabled={isNonWorkingDay} />
                     </PopoverContent>
                   </Popover>
                   <div className="flex gap-1 mt-1.5">
@@ -638,7 +647,7 @@ export default function InsteadLeaveRequestForm() {
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0">
                       <Calendar mode="single" selected={leaveEndDate} onSelect={setLeaveEndDate}
-                        disabled={(d) => isWeekend(d) || holidaySet.has(format(d, 'yyyy-MM-dd')) || (!!leaveStartDate && d < leaveStartDate)} />
+                        disabled={(d) => isNonWorkingDay(d) || (!!leaveStartDate && d < leaveStartDate)} />
                     </PopoverContent>
                   </Popover>
                   <div className="flex gap-1 mt-1.5">

@@ -408,7 +408,8 @@ export interface AuthContextType {
   firebaseUser: FirebaseUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<boolean>;
+  // errorCode ແມ່ນ FirebaseError.code (ເຊັ່ນ 'auth/too-many-requests') ຫຼື 'account-mismatch' / 'in-flight'
+  login: (email: string, password: string) => Promise<{ success: boolean; errorCode?: string }>;
   loginWithGoogle: (linkPassword?: string) => Promise<GoogleLoginOutcome>;
   // Populated when Google sign-in completes via a full-page redirect (iOS
   // standalone PWA — see shouldUseGoogleRedirect in auth-context.tsx) instead
@@ -417,6 +418,10 @@ export interface AuthContextType {
   // it applies loginWithGoogle's return value, then clears it.
   googleRedirectOutcome: GoogleLoginOutcome | null;
   clearGoogleRedirectOutcome: () => void;
+  // ຕັ້ງເມື່ອບັນຊີ Auth ຖືກ signOut ເພາະບໍ່ມີ employees/{auth uid} (auth uid ≠ doc id ພະນັກງານ) —
+  // ເກີດໄດ້ທັງຕອນ login ແລະ ຕອນເປີດ app ທີ່ session ຄ້າງຢູ່, LoginForm ສະແດງແລ້ວ clear
+  accountMismatchError: string | null;
+  clearAccountMismatchError: () => void;
   setupPasswordForCurrentUser: (
     password: string,
   ) => Promise<{ success: boolean; error?: string }>;

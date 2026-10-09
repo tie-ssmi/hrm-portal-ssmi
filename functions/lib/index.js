@@ -43,6 +43,7 @@ const scheduler_1 = require("firebase-functions/v2/scheduler");
 const firestore_1 = require("firebase-functions/v2/firestore");
 const web_push_1 = __importDefault(require("web-push"));
 const resend_1 = require("./email/resend");
+const attendance_auth_1 = require("./attendance-auth");
 const portal_leave_email_1 = require("./email/portal-leave-email");
 const leave_recipient_resolver_1 = require("./email/leave-recipient-resolver");
 const portal_offsite_email_1 = require("./email/portal-offsite-email");
@@ -220,7 +221,9 @@ exports.syncEmployeeMirrors = (0, firestore_1.onDocumentWritten)({ document: "em
     const writes = [];
     // The `uid` field gets repointed at a different Firebase Auth user
     // whenever an account is re-linked — lib/employees.ts
-    // updateEmployeeUidByEmail does exactly that after an email change, when
+    // updateEmployeeUidByEmail used to do exactly that after an email change
+    // (removed: the portal now requires auth uid === employees doc id and HR
+    // relinks with HRM-System-SSMI/functions/scripts/relink-auth-uid.js), when
     // the person signs in with a Google account the old uid never belonged
     // to. Both mirrors are keyed by uid, so that rename used to orphan
     // userRoles/{oldUid} and — since rolesUid/salary themselves did not
@@ -922,8 +925,30 @@ async function logLocationFlagAudit(params) {
 // Enforced here, not in the browser, for the same reason check-in status is
 // (CLAUDE.md): the client can be edited or its clock changed. The dialog in
 // app/dashboard/attendance/page.tsx is a convenience; this is the rule.
-const EARLY_CHECKOUT_BEFORE_HOUR = 17;
+const EARLY_CHECKOUT_BEFORE_MINUTES = 17 * 60;
 const EARLY_CHECKOUT_REASON_MIN_CHARS = 30;
+// ແມ່ບ້ານ (roles/{rolesUid}.role.housekeeper) ເລີກວຽກ 16:30 ແທນ 17:00: ອອກ >= 16:30 ຄືອອກຕາມເວລາ,
+// < 16:30 ຕ້ອງມີເຫດຜົນ ແລະ ຖືກ mark earlyCheckOut (ນາທີນັບຈາກ 16:30).
+// ຕ້ອງກົງກັບ HOUSEKEEPER_CHECKOUT_CUTOFF_MINUTES ໃນ app/dashboard/attendance/page.tsx
+const HOUSEKEEPER_EARLY_CHECKOUT_BEFORE_MINUTES = 16 * 60 + 30;
+// ອ່ານ rolesUid ຈາກ employees/{uid} — firestore.rules ຫ້າມ self-update rolesUid ຈຶ່ງປອມບໍ່ໄດ້
+// (ຄືກັບການກວດ loginAdmin). ອ່ານບໍ່ໄດ້ → ຖືວ່າບໍ່ແມ່ນແມ່ບ້ານ (ເວລາເລີກ 17:00 ຄືຄົນທົ່ວໄປ)
+async function isHousekeeperEmployee(uid) {
+    var _a, _b, _c;
+    try {
+        const db = admin.firestore();
+        const empDoc = await db.collection("employees").doc(uid).get();
+        const rolesUid = (_a = empDoc.data()) === null || _a === void 0 ? void 0 : _a.rolesUid;
+        if (!rolesUid)
+            return false;
+        const roleDoc = await db.collection("roles").doc(rolesUid).get();
+        return ((_c = (_b = roleDoc.data()) === null || _b === void 0 ? void 0 : _b.role) === null || _c === void 0 ? void 0 : _c.housekeeper) === true;
+    }
+    catch (err) {
+        console.warn(`[checkOut] failed to resolve housekeeper role for ${uid}`, err);
+        return false;
+    }
+}
 // App Check shadow-mode logging — NOT enforced yet. Client scaffold: lib/firebase.ts.
 // Lets us measure real-world token coverage in Cloud Logging before flipping
 // `enforceAppCheck: true` on recordCheckIn/recordCheckOut, which would otherwise lock
@@ -987,19 +1012,15 @@ exports.recordCheckIn = (0, https_1.onCall)(
 // NOT enforced yet — see logAppCheckShadow. Flip to `enforceAppCheck: true` once
 // Cloud Logging shows consistent coverage (client scaffold: lib/firebase.ts).
 { region: "asia-southeast1", cors: callableCorsOrigins, invoker: "public" }, async (request) => {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j;
     if (!request.auth) {
         throw new https_1.HttpsError("unauthenticated", "Must be signed in");
     }
     logAppCheckShadow(request.app, "recordCheckIn");
     const data = request.data;
-    if (!data.userUuid) {
-        throw new https_1.HttpsError("invalid-argument", "userUuid is required");
-    }
-    // ກັນ user ໜຶ່ງ check-in ແທນ user ອື່ນ
-    if (data.uid && data.uid !== request.auth.uid) {
-        throw new https_1.HttpsError("permission-denied", "Cannot check in as another user");
-    }
+    // ກັນ user ໜຶ່ງ check-in ແທນ user ອື່ນ ແລະ ບັນຊີ Auth ທີ່ uid ≠ doc id ພະນັກງານ —
+    // userUuid ຕ້ອງ === auth uid (data.uid ບໍ່ໃຊ້ອີກ)
+    (0, attendance_auth_1.assertCallerOwnsAttendance)(request.auth.uid, data.userUuid, "check in");
     // ເວລາຈາກ server — client ບໍ່ສາມາດປ່ຽນເວລາ check-in ຫຼື status ໄດ້
     const { date, isoDate, checkTime } = getVientianeParts();
     const [hourStr, minuteStr] = checkTime.split(":");
@@ -1051,7 +1072,7 @@ exports.recordCheckIn = (0, https_1.onCall)(
         .firestore()
         .collection("attendance")
         .doc(attendanceId)
-        .set(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ _id: attendanceId, uid: (_f = data.uid) !== null && _f !== void 0 ? _f : data.userUuid, userUuid: data.userUuid, date, dateKey: isoDate, checkInTime: checkTime, status }, (dayLeaveStatus === "morning_leave"
+        .set(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ _id: attendanceId, uid: data.userUuid, userUuid: data.userUuid, date, dateKey: isoDate, checkInTime: checkTime, status }, (dayLeaveStatus === "morning_leave"
         ? { morningLeaveDay: true }
         : {})), (data.location
         ? {
@@ -1068,7 +1089,7 @@ exports.recordCheckIn = (0, https_1.onCall)(
         ? { deviceFingerprint: data.deviceFingerprint }
         : {})), (data.deviceModel ? { deviceModel: data.deviceModel } : {})), (data.accuracy != null ? { checkInAccuracy: data.accuracy } : {})), (checkInIp ? { checkInIp } : {})), (checkInUserAgent ? { checkInUserAgent } : {})), (locationFlags.length > 0
         ? { checkInLocationFlags: locationFlags }
-        : {})), { updatedAt: new Date().toISOString(), updatedBy: (_g = data.updatedBy) !== null && _g !== void 0 ? _g : data.userUuid }), { merge: true });
+        : {})), { updatedAt: new Date().toISOString(), updatedBy: (_f = data.updatedBy) !== null && _f !== void 0 ? _f : data.userUuid }), { merge: true });
     if (locationFlags.length > 0) {
         await logLocationFlagAudit({
             action: "attendance.checkIn.locationFlag",
@@ -1077,9 +1098,9 @@ exports.recordCheckIn = (0, https_1.onCall)(
             targetId: attendanceId,
             after: {
                 locationFlags,
-                location: (_h = data.location) !== null && _h !== void 0 ? _h : null,
-                accuracy: (_j = data.accuracy) !== null && _j !== void 0 ? _j : null,
-                isOffsite: (_k = data.isOffsite) !== null && _k !== void 0 ? _k : false,
+                location: (_g = data.location) !== null && _g !== void 0 ? _g : null,
+                accuracy: (_h = data.accuracy) !== null && _h !== void 0 ? _h : null,
+                isOffsite: (_j = data.isOffsite) !== null && _j !== void 0 ? _j : false,
             },
             ipAddress: checkInIp,
             userAgent: checkInUserAgent,
@@ -1100,27 +1121,29 @@ exports.recordCheckOut = (0, https_1.onCall)(
     }
     logAppCheckShadow(request.app, "recordCheckOut");
     const data = request.data;
-    if (!data.userUuid) {
-        throw new https_1.HttpsError("invalid-argument", "userUuid is required");
-    }
-    // ກັນ user ໜຶ່ງ check-out ແທນ user ອື່ນ
-    if (data.uid && data.uid !== request.auth.uid) {
-        throw new https_1.HttpsError("permission-denied", "Cannot check out as another user");
-    }
+    // ກັນ user ໜຶ່ງ check-out ແທນ user ອື່ນ ແລະ ບັນຊີ Auth ທີ່ uid ≠ doc id ພະນັກງານ
+    (0, attendance_auth_1.assertCallerOwnsAttendance)(request.auth.uid, data.userUuid, "check out");
     const { date, isoDate, checkTime } = getVientianeParts();
     const attendanceId = `${data.userUuid}_${date}`;
     // ອອກກ່ອນ 17:00 ຕ້ອງມີເຫດຜົນ. ເວລາມາຈາກ server ບໍ່ແມ່ນໂມງໃນມືຖື.
     const [checkOutHour, checkOutMinute] = checkTime.split(":").map(Number);
-    const isEarlyCheckOut = checkOutHour < EARLY_CHECKOUT_BEFORE_HOUR;
+    // ອ່ານ role ສະເພາະເມື່ອກ່ອນ 17:00 — ຫຼັງນັ້ນທຸກຄົນອອກຕາມເວລາ ບໍ່ຕ້ອງເສຍ read
+    const checkOutMinuteOfDay = checkOutHour * 60 + checkOutMinute;
+    const cutoffMinutes = checkOutMinuteOfDay < EARLY_CHECKOUT_BEFORE_MINUTES &&
+        (await isHousekeeperEmployee(data.userUuid))
+        ? HOUSEKEEPER_EARLY_CHECKOUT_BEFORE_MINUTES
+        : EARLY_CHECKOUT_BEFORE_MINUTES;
+    const isEarlyCheckOut = checkOutMinuteOfDay < cutoffMinutes;
     const earlyCheckOutReason = ((_a = data.earlyCheckOutReason) !== null && _a !== void 0 ? _a : "").trim();
     if (isEarlyCheckOut &&
         earlyCheckOutReason.length < EARLY_CHECKOUT_REASON_MIN_CHARS) {
-        throw new https_1.HttpsError("invalid-argument", `ອອກວຽກກ່ອນ ${EARLY_CHECKOUT_BEFORE_HOUR}:00 ຕ້ອງປ້ອນເຫດຜົນ ` +
+        const cutoffLabel = `${Math.floor(cutoffMinutes / 60)}:${String(cutoffMinutes % 60).padStart(2, "0")}`;
+        throw new https_1.HttpsError("invalid-argument", `ອອກວຽກກ່ອນ ${cutoffLabel} ຕ້ອງປ້ອນເຫດຜົນ ` +
             `ຢ່າງໜ້ອຍ ${EARLY_CHECKOUT_REASON_MIN_CHARS} ຕົວອັກສອນ ❌`);
     }
-    // ນາທີທີ່ອອກກ່ອນເວລາ — ໃຫ້ HR ຈັດລຳດັບໄດ້ໂດຍບໍ່ຕ້ອງຄຳນວນຄືນຈາກ checkOutTime
+    // ນາທີທີ່ອອກກ່ອນເວລາ (ນັບຈາກເວລາເລີກຂອງຄົນນັ້ນ) — ໃຫ້ HR ຈັດລຳດັບໄດ້ໂດຍບໍ່ຕ້ອງຄຳນວນຄືນ
     const earlyCheckOutMinutes = isEarlyCheckOut
-        ? EARLY_CHECKOUT_BEFORE_HOUR * 60 - (checkOutHour * 60 + checkOutMinute)
+        ? cutoffMinutes - checkOutMinuteOfDay
         : 0;
     // ກັນອຸປະກອນດຽວກັນ check-out ແທນຫຼາຍບັນຊີ (ຢືມມືຖືກັນ punch)
     const checkOutUserAgent = request.rawRequest.headers["user-agent"];

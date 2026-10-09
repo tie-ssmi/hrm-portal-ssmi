@@ -39,3 +39,17 @@ if (directSnap.exists()) {
 
   return { status: 'not_found' }
 }
+
+// `type` (e.g. "serviceUnit") lives only on the workLocation doc, not on the
+// snapshot embedded in employees.workLocation. Undefined on miss/error so
+// callers can fall back.
+export async function fetchWorkLocationType(uuid?: string): Promise<string | undefined> {
+  if (!uuid) return undefined
+  try {
+    const snap = await getDoc(doc(db, 'workLocation', uuid))
+    const type = snap.exists() ? snap.data().type : undefined
+    return typeof type === 'string' && type ? type : undefined
+  } catch {
+    return undefined
+  }
+}
