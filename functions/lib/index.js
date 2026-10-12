@@ -931,21 +931,62 @@ const EARLY_CHECKOUT_REASON_MIN_CHARS = 30;
 // < 16:30 ຕ້ອງມີເຫດຜົນ ແລະ ຖືກ mark earlyCheckOut (ນາທີນັບຈາກ 16:30).
 // ຕ້ອງກົງກັບ HOUSEKEEPER_CHECKOUT_CUTOFF_MINUTES ໃນ app/dashboard/attendance/page.tsx
 const HOUSEKEEPER_EARLY_CHECKOUT_BEFORE_MINUTES = 16 * 60 + 30;
+// ລາພັກຕອນບ່າຍ (ມື້ນັ້ນເຮັດວຽກແຕ່ເຊົ້າ) ເລີກວຽກ 12:30: ອອກ >= 12:30 ຄືອອກຕາມເວລາ.
+// ຕ້ອງກົງກັບ AFTERNOON_LEAVE_CHECKOUT_CUTOFF_MINUTES ໃນ app/dashboard/attendance/page.tsx
+const AFTERNOON_LEAVE_EARLY_CHECKOUT_BEFORE_MINUTES = 12 * 60 + 30;
 // ອ່ານ rolesUid ຈາກ employees/{uid} — firestore.rules ຫ້າມ self-update rolesUid ຈຶ່ງປອມບໍ່ໄດ້
-// (ຄືກັບການກວດ loginAdmin). ອ່ານບໍ່ໄດ້ → ຖືວ່າບໍ່ແມ່ນແມ່ບ້ານ (ເວລາເລີກ 17:00 ຄືຄົນທົ່ວໄປ)
-async function isHousekeeperEmployee(uid) {
-    var _a, _b, _c;
+// (ຄືກັບການກວດ loginAdmin). ອ່ານບໍ່ໄດ້ → ຖືວ່າບໍ່ມີ flag ໃດ (ເວລາເລີກ 17:00 ຄືຄົນທົ່ວໄປ)
+//   housekeeper — ເລີກ 16:30
+//   CLive       — ບໍ່ມີເວລາເລີກ: ອອກຕອນໃດກໍໄດ້ ບໍ່ຕ້ອງປ້ອນເຫດຜົນ
+async function getCheckOutRoleFlags(uid) {
+    var _a, _b;
     try {
         const db = admin.firestore();
         const empDoc = await db.collection("employees").doc(uid).get();
         const rolesUid = (_a = empDoc.data()) === null || _a === void 0 ? void 0 : _a.rolesUid;
         if (!rolesUid)
-            return false;
+            return { housekeeper: false, cLive: false };
         const roleDoc = await db.collection("roles").doc(rolesUid).get();
-        return ((_c = (_b = roleDoc.data()) === null || _b === void 0 ? void 0 : _b.role) === null || _c === void 0 ? void 0 : _c.housekeeper) === true;
+        const role = (_b = roleDoc.data()) === null || _b === void 0 ? void 0 : _b.role;
+        return {
+            housekeeper: (role === null || role === void 0 ? void 0 : role.housekeeper) === true,
+            cLive: (role === null || role === void 0 ? void 0 : role.CLive) === true,
+        };
     }
     catch (err) {
-        console.warn(`[checkOut] failed to resolve housekeeper role for ${uid}`, err);
+        console.warn(`[checkOut] failed to resolve role flags for ${uid}`, err);
+        return { housekeeper: false, cLive: false };
+    }
+}
+// ລາພັກທີ່ອະນຸມັດແລ້ວ ຄຸ້ມຕອນບ່າຍຂອງ isoDate ບໍ່. ຄິດແບບດຽວກັບ computeDayCoverage
+// ໃນ services/leaves.ts (ຝັ່ງ client). ອ່ານບໍ່ໄດ້ → false (ເລີກຕາມເວລາປົກກະຕິ).
+async function hasAfternoonLeaveOn(userUuid, isoDate) {
+    try {
+        const snapshot = await admin
+            .firestore()
+            .collection("leaves")
+            .where("leaveUserUuid", "==", userUuid)
+            .where("status", "==", "approved")
+            .get();
+        return snapshot.docs.some((d) => {
+            var _a, _b, _c;
+            const leave = d.data();
+            const startDate = (_a = leave.startDate) !== null && _a !== void 0 ? _a : "";
+            const endDate = (_b = leave.endDate) !== null && _b !== void 0 ? _b : "";
+            // ຮັກສາ 'monning' ໄວ້ເພື່ອ compatibility ກັບຂໍ້ມູນເກົ່າ
+            const rawEnd = ((_c = leave.endPeriod) !== null && _c !== void 0 ? _c : "afternoon").toLowerCase();
+            const endPeriod = rawEnd === "monning" ? "morning" : rawEnd;
+            if (!startDate || !endDate || isoDate < startDate || isoDate > endDate)
+                return false;
+            // ວັນທຳອິດ ຫຼື ວັນກາງ ຂອງການລາຫຼາຍມື້ — ບ່າຍຄຸ້ມສະເໝີ
+            if (isoDate < endDate)
+                return true;
+            // ວັນສຸດທ້າຍ (ຫຼື ລາມື້ດຽວ) — ບ່າຍຂຶ້ນກັບ endPeriod
+            return endPeriod === "afternoon";
+        });
+    }
+    catch (err) {
+        console.warn(`[checkOut] failed to resolve afternoon leave for ${userUuid}`, err);
         return false;
     }
 }
@@ -1127,13 +1168,24 @@ exports.recordCheckOut = (0, https_1.onCall)(
     const attendanceId = `${data.userUuid}_${date}`;
     // ອອກກ່ອນ 17:00 ຕ້ອງມີເຫດຜົນ. ເວລາມາຈາກ server ບໍ່ແມ່ນໂມງໃນມືຖື.
     const [checkOutHour, checkOutMinute] = checkTime.split(":").map(Number);
-    // ອ່ານ role ສະເພາະເມື່ອກ່ອນ 17:00 — ຫຼັງນັ້ນທຸກຄົນອອກຕາມເວລາ ບໍ່ຕ້ອງເສຍ read
+    // ອ່ານ role / ລາພັກ ສະເພາະເມື່ອກ່ອນ 17:00 — ຫຼັງນັ້ນທຸກຄົນອອກຕາມເວລາ ບໍ່ຕ້ອງເສຍ read
     const checkOutMinuteOfDay = checkOutHour * 60 + checkOutMinute;
-    const cutoffMinutes = checkOutMinuteOfDay < EARLY_CHECKOUT_BEFORE_MINUTES &&
-        (await isHousekeeperEmployee(data.userUuid))
-        ? HOUSEKEEPER_EARLY_CHECKOUT_BEFORE_MINUTES
-        : EARLY_CHECKOUT_BEFORE_MINUTES;
-    const isEarlyCheckOut = checkOutMinuteOfDay < cutoffMinutes;
+    let cutoffMinutes = EARLY_CHECKOUT_BEFORE_MINUTES;
+    let isEarlyCheckOut = false;
+    if (checkOutMinuteOfDay < EARLY_CHECKOUT_BEFORE_MINUTES) {
+        const [roleFlags, afternoonLeave] = await Promise.all([
+            getCheckOutRoleFlags(data.userUuid),
+            hasAfternoonLeaveOn(data.userUuid, isoDate),
+        ]);
+        if (afternoonLeave) {
+            cutoffMinutes = AFTERNOON_LEAVE_EARLY_CHECKOUT_BEFORE_MINUTES;
+        }
+        else if (roleFlags.housekeeper) {
+            cutoffMinutes = HOUSEKEEPER_EARLY_CHECKOUT_BEFORE_MINUTES;
+        }
+        // CLive ອອກຕອນໃດກໍໄດ້ — ບໍ່ເຄີຍຖືວ່າອອກກ່ອນເວລາ
+        isEarlyCheckOut = !roleFlags.cLive && checkOutMinuteOfDay < cutoffMinutes;
+    }
     const earlyCheckOutReason = ((_a = data.earlyCheckOutReason) !== null && _a !== void 0 ? _a : "").trim();
     if (isEarlyCheckOut &&
         earlyCheckOutReason.length < EARLY_CHECKOUT_REASON_MIN_CHARS) {

@@ -59,7 +59,7 @@ export const OFFSITE_APPROVAL_BLOCK_MESSAGE: Record<OffsiteApprovalBlock, string
   participant: 'ທ່ານເປັນສະມາຊິກທີມໃນຄຳຂໍນີ້ ຈຶ່ງບໍ່ສາມາດອະນຸມັດໄດ້',
   out_of_scope: 'ຄຳຂໍນີ້ຢູ່ນອກຂອບເຂດການອະນຸມັດຂອງທ່ານ',
 }
-
+const ALLOW_PARTICIPANT_APPROVAL = true
 function isParticipant(record: OffsiteScopeSource, uid: string): boolean {
   if (record.participantUids?.includes(uid)) return true
   // participantIds holds bare uids on older docs and objects on newer ones.
@@ -90,8 +90,8 @@ export function getOffsiteApprovalBlock(
 
   // A teammate is going on the trip being approved — a conflict of interest the
   // old creator-only check missed.
-  if (isParticipant(record, uid)) return 'participant'
-
+  // if (isParticipant(record, uid)) return 'participant'
+  if (!ALLOW_PARTICIPANT_APPROVAL && isParticipant(record, uid)) return 'participant'
   const requestLocation = record.requester?.workLocation?.uuid
   const requestDepartment = record.requester?.department?.uuid
   const inLocation = !!approver.workLocationUuid && requestLocation === approver.workLocationUuid

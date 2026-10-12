@@ -486,7 +486,8 @@ export async function fetchLeavesByUserUuidFromToday(userUuid: string): Promise<
 // Leave status for a specific date — ໃຊ້ໃນໜ້າ attendance ເພື່ອ block/adjust check-in
 // =====================================================================
 
-export type DayLeaveStatus = 'blocked' | 'morning_leave' | 'none'
+// 'afternoon_leave' — ເຮັດວຽກແຕ່ເຊົ້າ, ເລີກວຽກ 12:30 (ໃຊ້ຕອນ check-out)
+export type DayLeaveStatus = 'blocked' | 'morning_leave' | 'afternoon_leave' | 'none'
 
 // Which half(s) of isoDate this single leave doc covers. A day is only fully
 // blocked once morning AND afternoon are covered — possibly by two separate
@@ -558,5 +559,6 @@ export async function fetchTodayLeaveStatus(
     if (morningCovered && afternoonCovered) return 'blocked'
   }
 
-  return morningCovered ? 'morning_leave' : 'none'
+  if (morningCovered) return 'morning_leave'
+  return afternoonCovered ? 'afternoon_leave' : 'none'
 }

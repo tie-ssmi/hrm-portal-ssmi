@@ -521,6 +521,8 @@ const EARLY_CHECKOUT_REASON_MIN_CHARS = 30;
 // ແມ່ບ້ານ (rolePermissions.housekeeper) ເລີກ 16:30, ຄົນອື່ນ 17:00
 const CHECKOUT_CUTOFF_MINUTES = 17 * 60;
 const HOUSEKEEPER_CHECKOUT_CUTOFF_MINUTES = 16 * 60 + 30;
+// ລາພັກຕອນບ່າຍ ເລີກ 12:30 — ຕ້ອງກົງກັບ AFTERNOON_LEAVE_EARLY_CHECKOUT_BEFORE_MINUTES
+const AFTERNOON_LEAVE_CHECKOUT_CUTOFF_MINUTES = 12 * 60 + 30;
 
 const formatCutoff = (minutes: number) =>
   `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}`;
@@ -886,20 +888,24 @@ export default function AttendancePage() {
     ],
   );
 
-  // ແມ່ບ້ານເລີກ 16:30 — ອອກກ່ອນນັ້ນຕ້ອງປ້ອນເຫດຜົນ; server ກວດຄືກັນ (recordCheckOut)
+  // ອອກກ່ອນເວລາເລີກຕ້ອງປ້ອນເຫດຜົນ; server ກວດຄືກັນ (recordCheckOut):
+  //   ລາພັກຕອນບ່າຍ 12:30 · ແມ່ບ້ານ 16:30 · ຄົນອື່ນ 17:00 · CLive ອອກຕອນໃດກໍໄດ້
+  const noCheckOutCutoff = user?.rolePermissions?.CLive === true;
   const checkOutCutoffMinutes =
-    user?.rolePermissions?.housekeeper === true
-      ? HOUSEKEEPER_CHECKOUT_CUTOFF_MINUTES
-      : CHECKOUT_CUTOFF_MINUTES;
+    todayLeaveStatus === "afternoon_leave"
+      ? AFTERNOON_LEAVE_CHECKOUT_CUTOFF_MINUTES
+      : user?.rolePermissions?.housekeeper === true
+        ? HOUSEKEEPER_CHECKOUT_CUTOFF_MINUTES
+        : CHECKOUT_CUTOFF_MINUTES;
 
   const handleCheckOutClick = useCallback(() => {
     const { hour, minute } = getVientianeHourMinute();
-    if (hour * 60 + minute < checkOutCutoffMinutes) {
+    if (!noCheckOutCutoff && hour * 60 + minute < checkOutCutoffMinutes) {
       setShowEarlyCheckOutConfirm(true);
       return;
     }
     handleAttendance("checkOut");
-  }, [handleAttendance, checkOutCutoffMinutes]);
+  }, [handleAttendance, checkOutCutoffMinutes, noCheckOutCutoff]);
 
   const handleConfirmEarlyCheckOut = useCallback(
     (reason: string) => {
