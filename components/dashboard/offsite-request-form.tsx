@@ -11,11 +11,11 @@ import React, {
 
 // ** assets / icons
 import {
-  Handshake,
-  Users,
-  Store,
-  Megaphone,
-  BookOpen,
+  Briefcase,
+  Clock,
+  GraduationCap,
+  ClipboardCheck,
+  History,
   CalendarIcon,
   ChevronLeft,
   ChevronRight,
@@ -67,16 +67,33 @@ import {
   getDoc,
   getDocs,
   addDoc,
+  deleteField,
   doc,
   updateDoc,
+  type FieldValue,
 } from "firebase/firestore";
 
 // ** config / utils / types / hooks
 import { useAuth } from "@/lib/auth-context";
 import { db } from "@/lib/firebase";
 import { cn } from "@/lib/utils";
+import {
+  ACTIVITY_TYPES,
+  TYPE_SPECIFIC_DOC_KEYS,
+  buildTypeFields,
+  calcTotalHours,
+  formatLak,
+  getFieldRules,
+  getFormType,
+  isLegacyActivity,
+  resolveTrainingCost,
+  typeFieldValuesFromDoc,
+  type FieldRule,
+  type TypeFieldValues,
+} from "@/lib/offsite-form-types";
 import type {
   ActivityCode,
+  FormType,
   TeammateEntry,
   EmployeeDoc,
   Department,
@@ -96,50 +113,38 @@ import {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const ACTIVITIES = [
+// Codes and names come from ACTIVITY_TYPES; this adds only the card UI.
+const ACTIVITIES: {
+  formType: FormType;
+  Icon: React.ElementType;
+  nameEn: string;
+  desc: string;
+}[] = [
   {
-    code: "MEET_CLIENT" as ActivityCode,
-    Icon: Handshake,
-    nameLo: "ໂຄສະນາພາຍນອກ",
-    nameEn: "Meet Client",
-    desc: "ນຳສະເໜີ ຫຼື ປະສານງານກັບລູກຄ້າ",
+    formType: "workOutside",
+    Icon: Briefcase,
+    nameEn: "General",
+    desc: "ພົບລູກຄ້າ, ປະຊຸມ, ອອກບູດ ແລະ ວຽກນອກສຳນັກງານອື່ນໆ",
   },
   {
-    code: "MEETING" as ActivityCode,
-    Icon: Users,
-    nameLo: "ປະຊຸມພາຍນອກ",
-    nameEn: "External Meeting",
-    desc: "ປະຊຸມນອກສຳນັກງານ",
+    formType: "overtime",
+    Icon: Clock,
+    nameEn: "Overtime",
+    desc: "ເຮັດວຽກໃນວັນພັກ ພ້ອມເວລາ ແລະ ຈຳນວນຊົ່ວໂມງ",
   },
   {
-    code: "BOOTH" as ActivityCode,
-    Icon: Store,
-    nameLo: "ອອກບູດງານ",
-    nameEn: "Booth Exhibition",
-    desc: "ນຳສະເໜີຜະລິດຕະພັນໃນງານ",
+    formType: "training",
+    Icon: GraduationCap,
+    nameEn: "Training / Study visit",
+    desc: "ຝຶກອົບຮົມ, ສຳມະນາ, ທັດສະນະສຶກສາ ພ້ອມຄ່າໃຊ້ຈ່າຍ",
   },
   {
-    code: "PROMO" as ActivityCode,
-    Icon: Megaphone,
-    nameLo: "ໂປຣໂມຊັນ",
-    nameEn: "Promotion",
-    desc: "ໂຄສະນາ ແລະ ການຕະຫຼາດ",
+    formType: "audit",
+    Icon: ClipboardCheck,
+    nameEn: "Audit",
+    desc: "ລົງກວດກາ ພ້ອມລາຍການເອກະສານທີ່ຕ້ອງກະກຽມ",
   },
-  {
-    code: "TRAINING" as ActivityCode,
-    Icon: BookOpen,
-    nameLo: "ຝຶກອົບຮົມ",
-    nameEn: "Training",
-    desc: "ສຳມະນາ ແລະ ການອົບຮົມ",
-  },
-  {
-    code: "OTHERS" as ActivityCode,
-    Icon: Plus,
-    nameLo: "ອື່ນໆ",
-    nameEn: "Others",
-    desc: "ກິດຈະກຳອື່ນໆ ທີ່ບໍ່ໄດ້ກໍານົດຂ້າງເທິງ",
-  },
-] as const;
+];
 
 const LAO_WEEKDAYS = [
   "ວັນອາທິດ",
@@ -240,6 +245,15 @@ function ScheduleDatePickerButton({
   );
 }
 
+// Label suffix in the style the form already uses: red * or "(ທາງເລືອກ)".
+function RuleMark({ rule }: { rule: FieldRule }) {
+  return rule === "required" ? (
+    <span className="text-destructive">*</span>
+  ) : (
+    <span className="text-muted-foreground text-xs">(ທາງເລືອກ)</span>
+  );
+}
+
 // Firestore rejects undefined values — strip them via JSON round-trip
 function stripUndefined<T>(obj: T): T {
   return JSON.parse(JSON.stringify(obj)) as T;
@@ -293,9 +307,34 @@ export default function OffsiteRequestForm({
   }, [step]);
 
   // ── step 1 ──
+  // formType and activityCode move together for the 4 current types. They're
+  // kept apart so an old-code doc (formType 'workOutside', code e.g. BOOTH)
+  // can be edited without its code being rewritten.
+  const [formType, setFormType] = useState<FormType | null>(() =>
+    initialData ? getFormType(initialData) : null,
+  );
   const [activityCode, setActivityCode] = useState<ActivityCode | null>(
     () => initialData?.activityType.code ?? null,
   );
+  // The doc's own old-era type, so the user can switch back to it after
+  // clicking one of the 4 new cards.
+  const initialLegacy =
+    initialData &&
+    isLegacyActivity(getFormType(initialData), initialData.activityType.code)
+      ? initialData.activityType
+      : null;
+  const isLegacy = !!formType && isLegacyActivity(formType, activityCode);
+
+  function selectFormType(type: FormType) {
+    setFormType(type);
+    setActivityCode(ACTIVITY_TYPES[type].code);
+  }
+
+  function selectInitialLegacy() {
+    if (!initialLegacy) return;
+    setFormType("workOutside");
+    setActivityCode(initialLegacy.code);
+  }
 
   // ── step 2 ──
   const [subject, setSubject] = useState(() => initialData?.subject ?? "");
@@ -311,6 +350,35 @@ export default function OffsiteRequestForm({
   const [equipmentUsed, setEquipmentUsed] = useState(
     () => initialData?.equipmentUsed ?? "",
   );
+  // Fields that depend on the form type. Switching type keeps them all in
+  // state; buildTypeFields picks only the chosen type's fields at submit.
+  const [typeValues, setTypeValues] = useState<TypeFieldValues>(() =>
+    typeFieldValuesFromDoc(initialData),
+  );
+  // Overtime hours follow start/end time until the user types their own.
+  const [totalHoursEdited, setTotalHoursEdited] = useState(
+    () => initialData?.totalHours != null,
+  );
+
+  function setTypeField<K extends keyof TypeFieldValues>(
+    key: K,
+    value: TypeFieldValues[K],
+  ) {
+    markDirty();
+    setTypeValues((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function setTime(key: "startTime" | "endTime", value: string) {
+    markDirty();
+    setTypeValues((prev) => {
+      const next = { ...prev, [key]: value };
+      if (!totalHoursEdited) {
+        const hours = calcTotalHours(next.startTime, next.endTime);
+        next.totalHours = hours !== null ? String(hours) : "";
+      }
+      return next;
+    });
+  }
 
   // ── step 3 ──
   const [teammates, setTeammates] = useState<TeammateEntry[]>(
@@ -380,16 +448,73 @@ export default function OffsiteRequestForm({
 
   // ─── Derived ────────────────────────────────────────────────────────────────
 
-  const activityMeta = useMemo(
-    () => ACTIVITIES.find((a) => a.code === activityCode),
-    [activityCode],
+  // What step 2 shows and requires, and the name written to activityType.
+  const rules = useMemo(
+    () => (formType ? getFieldRules(formType, isLegacy) : {}),
+    [formType, isLegacy],
+  );
+  const activityMeta = useMemo(() => {
+    if (!formType || !activityCode) return null;
+    if (isLegacy) {
+      return {
+        Icon: History,
+        name: initialLegacy?.code === activityCode ? initialLegacy.name : activityCode,
+        nameEn: "ປະເພດເດີມ",
+      };
+    }
+    const card = ACTIVITIES.find((a) => a.formType === formType);
+    return {
+      Icon: card?.Icon ?? Briefcase,
+      name: ACTIVITY_TYPES[formType].name,
+      nameEn: card?.nameEn ?? "",
+    };
+  }, [formType, activityCode, isLegacy, initialLegacy]);
+
+  // Training cost: with cost rows the total is computed and read-only.
+  const trainingCost = useMemo(
+    () => resolveTrainingCost(typeValues),
+    [typeValues],
+  );
+  const hasCostRows = trainingCost.costItems.length > 0;
+  // Exactly what submit will write, so the review never shows a field the
+  // chosen type drops.
+  const reviewFields = useMemo(
+    () => (formType ? buildTypeFields(formType, typeValues) : {}),
+    [formType, typeValues],
   );
 
   // ─── Validation ─────────────────────────────────────────────────────────────
 
   function validateStep2() {
     const e: Partial<Record<string, string>> = {};
+    const v = typeValues;
     if (!subject.trim()) e.subject = "ກະລຸນາໃສ່ຫົວຂໍ້";
+    if (rules.location === "required" && !v.location.trim())
+      e.location = "ກະລຸນາໃສ່ສະຖານທີ່";
+    if (rules.times === "required") {
+      if (!v.startTime) e.startTime = "ກະລຸນາໃສ່ເວລາເລີ່ມ";
+      if (!v.endTime) e.endTime = "ກະລຸນາໃສ່ເວລາສິ້ນສຸດ";
+    }
+    if (rules.times && v.startTime && v.endTime && v.endTime <= v.startTime)
+      e.endTime = "ເວລາສິ້ນສຸດຕ້ອງຫຼັງເວລາເລີ່ມ";
+    if (rules.totalHours === "required" && !(Number(v.totalHours) > 0))
+      e.totalHours = "ກະລຸນາໃສ່ຈຳນວນຊົ່ວໂມງ";
+    if (rules.costItems && trainingCost.costTotals && trainingCost.costTotals.usd > 0) {
+      if (!(Number(v.lakPerUsd) > 0)) e.lakPerUsd = "ມີລາຍການເປັນໂດລາ ກະລຸນາໃສ່ອັດຕາແລກປ່ຽນ";
+    }
+    if (
+      rules.costItems &&
+      v.costRows.some(
+        (r) => r.item.trim() && !(r.amount.trim() && Number(r.amount) >= 0),
+      )
+    )
+      e.costItems = "ກະລຸນາໃສ່ຈຳນວນເງິນໃຫ້ທຸກລາຍການ";
+    if (rules.estimatedCost === "required") {
+      const cost = rules.costItems ? trainingCost.estimatedCost : Number(v.estimatedCost);
+      if (!(cost != null && cost > 0)) e.estimatedCost = "ກະລຸນາໃສ່ຄ່າໃຊ້ຈ່າຍລວມ";
+    }
+    if (rules.schedule === "required" && scheduleDetails.length === 0)
+      e.schedule = "ກະລຸນາເພີ່ມຕາຕະລາງກຳນົດການຢ່າງໜ້ອຍ 1 ມື້";
     setErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -407,6 +532,8 @@ export default function OffsiteRequestForm({
         fullNameLo: `${emp.firstNameLo} ${emp.lastNameLo}`,
         email: emp.email,
         jobTitle: emp.jobTitle,
+        // Dropped by stripUndefined at submit when the employee has none
+        jobTitleLo: emp.jobTitleLo || undefined,
         department: emp.department,
         position: emp.jobTitle,
         remark: "",
@@ -619,7 +746,10 @@ export default function OffsiteRequestForm({
 
   function resetForm() {
     setStep(1);
+    setFormType(null);
     setActivityCode(null);
+    setTypeValues(typeFieldValuesFromDoc());
+    setTotalHoursEdited(false);
     setSubject("");
     setReferences([]);
     setObjective("");
@@ -707,6 +837,10 @@ export default function OffsiteRequestForm({
         ...new Set([user.uid, ...teammates.map((t) => t.uid)]),
       ];
 
+      // Only the chosen type's fields. An old-code doc keeps its code and
+      // stored name and gets no formType, so it still reads exactly as before.
+      const typeFields = buildTypeFields(formType!, typeValues);
+
       const payload = {
         requester: {
           uid: user.uid,
@@ -718,7 +852,8 @@ export default function OffsiteRequestForm({
           workLocation: requesterLoc,
           photoUrl: userImage || undefined,
         },
-        activityType: { code: activityCode!, name: activity.nameLo },
+        ...(isLegacy ? {} : { formType: formType! }),
+        activityType: { code: activityCode!, name: activity.name },
         subject,
         references: references.filter((r) => r.trim()),
         objective,
@@ -738,15 +873,30 @@ export default function OffsiteRequestForm({
         updatedAt: now,
         updatedBy: fullNameEn,
         docLink,
+        ...typeFields,
       };
 
       if (isEditMode && initialData) {
         const cleanPayload = stripUndefined(payload);
         const initialDataRecord = initialData as unknown as Record<string, unknown>;
-        const before = Object.fromEntries(
-          Object.keys(cleanPayload).map((key) => [key, initialDataRecord[key]]),
+        // Type-specific keys the doc has but this save doesn't write — left
+        // over from a type switch, or a field the user cleared — are deleted.
+        const removedKeys = TYPE_SPECIFIC_DOC_KEYS.filter(
+          (key) => !(key in cleanPayload) && initialDataRecord[key] !== undefined,
         );
-        await updateDoc(doc(db, "workOutside", initialData.id), cleanPayload);
+        const deletions: Record<string, FieldValue> = Object.fromEntries(
+          removedKeys.map((key) => [key, deleteField()]),
+        );
+        const before = Object.fromEntries(
+          [...Object.keys(cleanPayload), ...removedKeys].map((key) => [
+            key,
+            initialDataRecord[key],
+          ]),
+        );
+        await updateDoc(doc(db, "workOutside", initialData.id), {
+          ...cleanPayload,
+          ...deletions,
+        });
         await logAudit({
           action: "offsite.request.update",
           actorUid: user.uid ?? user.id ?? "",
@@ -851,14 +1001,47 @@ export default function OffsiteRequestForm({
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {ACTIVITIES.map(({ code, Icon, nameLo, nameEn, desc }) => {
-              const selected = activityCode === code;
+          {initialLegacy && (
+            <button
+              type="button"
+              onClick={selectInitialLegacy}
+              className={cn(
+                "flex w-full items-center gap-3 rounded-xl border p-4 text-left transition-all",
+                "hover:border-primary/60 hover:bg-primary/5",
+                isLegacy
+                  ? "border-primary ring-2 ring-primary bg-primary/5"
+                  : "border-dashed border-border bg-card",
+              )}
+            >
+              <div
+                className={cn(
+                  "w-10 h-10 shrink-0 rounded-lg flex items-center justify-center",
+                  isLegacy
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground",
+                )}
+              >
+                <History className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="font-semibold text-foreground text-sm">
+                  {initialLegacy.name || initialLegacy.code}
+                </p>
+                <p className="text-xs text-muted-foreground leading-snug">
+                  ປະເພດເດີມຂອງຄຳຂໍນີ້ — ເກັບໄວ້ຄືເກົ່າ ຫຼື ເລືອກປະເພດໃໝ່ຂ້າງລຸ່ມ
+                </p>
+              </div>
+            </button>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {ACTIVITIES.map(({ formType: type, Icon, nameEn, desc }) => {
+              const selected = !isLegacy && formType === type;
               return (
                 <button
-                  key={code}
+                  key={type}
                   type="button"
-                  onClick={() => setActivityCode(code)}
+                  onClick={() => selectFormType(type)}
                   className={cn(
                     "flex flex-col gap-2 rounded-xl border p-4 text-left transition-all",
                     "hover:border-primary/60 hover:bg-primary/5",
@@ -879,7 +1062,7 @@ export default function OffsiteRequestForm({
                   </div>
                   <div>
                     <p className="font-semibold text-foreground text-sm">
-                      {nameLo}
+                      {ACTIVITY_TYPES[type].name}
                     </p>
                     <p className="text-xs text-muted-foreground">{nameEn}</p>
                   </div>
@@ -892,7 +1075,7 @@ export default function OffsiteRequestForm({
           </div>
 
           <div className="flex justify-end pt-2">
-            <Button onClick={() => setStep(2)} disabled={!activityCode}>
+            <Button onClick={() => setStep(2)} disabled={!formType || !activityCode}>
               ຕໍ່ໄປ
               <ChevronRight className="w-4 h-4 ml-1" />
             </Button>
@@ -910,7 +1093,7 @@ export default function OffsiteRequestForm({
             <p className="text-sm text-muted-foreground">
               ປະເພດ:{" "}
               <span className="font-medium text-foreground">
-                {activityMeta?.nameLo}
+                {activityMeta?.name}
               </span>
             </p>
           </div>
@@ -964,6 +1147,98 @@ export default function OffsiteRequestForm({
               />
               {errors.subject && <FieldError>{errors.subject}</FieldError>}
             </Field>
+
+            {rules.location && (
+              <Field>
+                <FieldLabel>
+                  ສະຖານທີ່ <RuleMark rule={rules.location} />
+                </FieldLabel>
+                <Input
+                  value={typeValues.location}
+                  onChange={(e) => setTypeField("location", e.target.value)}
+                  maxLength={300}
+                  placeholder="ສະຖານທີ່ປະຕິບັດງານ..."
+                />
+                {errors.location && <FieldError>{errors.location}</FieldError>}
+              </Field>
+            )}
+
+            {rules.customerName && (
+              <Field>
+                <FieldLabel>
+                  ຊື່ລູກຄ້າ <RuleMark rule={rules.customerName} />
+                </FieldLabel>
+                <Input
+                  value={typeValues.customerName}
+                  onChange={(e) => setTypeField("customerName", e.target.value)}
+                  maxLength={200}
+                  placeholder="ຊື່ລູກຄ້າ ຫຼື ກຸ່ມລູກຄ້າ..."
+                />
+              </Field>
+            )}
+
+            {rules.details && (
+              <Field>
+                <FieldLabel>
+                  ລາຍລະອຽດ <RuleMark rule={rules.details} />
+                </FieldLabel>
+                <Textarea
+                  value={typeValues.details}
+                  onChange={(e) => setTypeField("details", e.target.value)}
+                  maxLength={2000}
+                  rows={3}
+                  placeholder="ລາຍລະອຽດຂອງວຽກ..."
+                />
+              </Field>
+            )}
+
+            {rules.times && (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <Field>
+                  <FieldLabel>
+                    ເວລາເລີ່ມ <RuleMark rule={rules.times} />
+                  </FieldLabel>
+                  <Input
+                    type="time"
+                    value={typeValues.startTime}
+                    onChange={(e) => setTime("startTime", e.target.value)}
+                  />
+                  {errors.startTime && <FieldError>{errors.startTime}</FieldError>}
+                </Field>
+                <Field>
+                  <FieldLabel>
+                    ເວລາສິ້ນສຸດ <RuleMark rule={rules.times} />
+                  </FieldLabel>
+                  <Input
+                    type="time"
+                    value={typeValues.endTime}
+                    onChange={(e) => setTime("endTime", e.target.value)}
+                  />
+                  {errors.endTime && <FieldError>{errors.endTime}</FieldError>}
+                </Field>
+                {rules.totalHours && (
+                  <Field>
+                    <FieldLabel>
+                      ຈຳນວນຊົ່ວໂມງ <RuleMark rule={rules.totalHours} />
+                    </FieldLabel>
+                    <Input
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      step={0.5}
+                      value={typeValues.totalHours}
+                      onChange={(e) => {
+                        setTotalHoursEdited(true);
+                        setTypeField("totalHours", e.target.value);
+                      }}
+                    />
+                    {errors.totalHours && (
+                      <FieldError>{errors.totalHours}</FieldError>
+                    )}
+                  </Field>
+                )}
+              </div>
+            )}
 
             <Field>
               <FieldLabel>
@@ -1022,10 +1297,9 @@ export default function OffsiteRequestForm({
             <Field>
               <FieldLabel>
                 ຕາຕະລາງກຳນົດການ{" "}
-                <span className="text-muted-foreground text-xs">
-                  (ທາງເລືອກ)
-                </span>
+                <RuleMark rule={rules.schedule ?? "optional"} />
               </FieldLabel>
+              {errors.schedule && <FieldError>{errors.schedule}</FieldError>}
               <div className="space-y-3">
                 {scheduleDetails.map((day, dayIdx) => (
                   <div key={dayIdx} className="rounded-lg border p-3 space-y-3">
@@ -1140,6 +1414,459 @@ export default function OffsiteRequestForm({
                 placeholder="ອຸປະກອນ, ພາຫະນະ ແລະ ອື່ນໆ ທີ່ນຳໃຊ້..."
               />
             </Field>
+
+            {rules.costItems && (
+              <Field>
+                <FieldLabel>
+                  ລາຍການຄ່າໃຊ້ຈ່າຍ <RuleMark rule={rules.costItems} />
+                </FieldLabel>
+                <div className="space-y-2">
+                  {typeValues.costRows.map((row, idx) => (
+                    <div key={idx} className="rounded-lg border p-3 space-y-2">
+                      <div className="flex gap-2">
+                        <span className="text-muted-foreground w-5 shrink-0 pt-2 text-xs tabular-nums">
+                          {idx + 1}.
+                        </span>
+                        <Input
+                          value={row.item}
+                          onChange={(e) =>
+                            setTypeField(
+                              "costRows",
+                              typeValues.costRows.map((r, i) =>
+                                i === idx ? { ...r, item: e.target.value } : r,
+                              ),
+                            )
+                          }
+                          placeholder="ລາຍການ ເຊັ່ນ ຄ່າລົງທະບຽນ"
+                          className="flex-1"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
+                          onClick={() =>
+                            setTypeField(
+                              "costRows",
+                              typeValues.costRows.filter((_, i) => i !== idx),
+                            )
+                          }
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                      <div className="flex flex-wrap gap-2 pl-7">
+                        <div className="flex rounded-md border p-0.5">
+                          {(["lak", "usd"] as const).map((cur) => (
+                            <button
+                              key={cur}
+                              type="button"
+                              onClick={() =>
+                                setTypeField(
+                                  "costRows",
+                                  typeValues.costRows.map((r, i) =>
+                                    i === idx ? { ...r, currency: cur } : r,
+                                  ),
+                                )
+                              }
+                              className={cn(
+                                "rounded px-2.5 py-1 text-xs font-medium",
+                                row.currency === cur
+                                  ? "bg-primary text-primary-foreground"
+                                  : "text-muted-foreground",
+                              )}
+                            >
+                              {cur === "lak" ? "ກີບ" : "USD"}
+                            </button>
+                          ))}
+                        </div>
+                        <Input
+                          type="number"
+                          inputMode="decimal"
+                          min={0}
+                          value={row.amount}
+                          onChange={(e) =>
+                            setTypeField(
+                              "costRows",
+                              typeValues.costRows.map((r, i) =>
+                                i === idx ? { ...r, amount: e.target.value } : r,
+                              ),
+                            )
+                          }
+                          placeholder="ຈຳນວນເງິນ"
+                          className="w-36"
+                        />
+                        <Input
+                          value={row.remark}
+                          onChange={(e) =>
+                            setTypeField(
+                              "costRows",
+                              typeValues.costRows.map((r, i) =>
+                                i === idx ? { ...r, remark: e.target.value } : r,
+                              ),
+                            )
+                          }
+                          placeholder="ໝາຍເຫດ ເຊັ່ນ ຈ່າຍຕາມບິນ"
+                          className="min-w-0 flex-1"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                  {errors.costItems && <FieldError>{errors.costItems}</FieldError>}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setTypeField("costRows", [
+                        ...typeValues.costRows,
+                        { item: "", currency: "lak", amount: "", remark: "" },
+                      ])
+                    }
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    ເພີ່ມລາຍການ
+                  </Button>
+                </div>
+                {trainingCost.costTotals && (
+                  <div className="mt-2 space-y-2 rounded-lg bg-muted/50 p-3 text-sm">
+                    {trainingCost.costTotals.usd > 0 && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-muted-foreground text-xs">
+                          ອັດຕາແລກປ່ຽນ: 1 USD =
+                        </span>
+                        <Input
+                          type="number"
+                          inputMode="decimal"
+                          min={0}
+                          value={typeValues.lakPerUsd}
+                          onChange={(e) => setTypeField("lakPerUsd", e.target.value)}
+                          placeholder="22000"
+                          className="h-8 w-28"
+                        />
+                        <span className="text-muted-foreground text-xs">ກີບ</span>
+                        {errors.lakPerUsd && (
+                          <FieldError className="w-full">{errors.lakPerUsd}</FieldError>
+                        )}
+                      </div>
+                    )}
+                    <dl className="grid grid-cols-2 gap-x-4 gap-y-1 tabular-nums">
+                      <dt className="text-muted-foreground">ລວມເປັນກີບ</dt>
+                      <dd className="text-right">{formatLak(trainingCost.costTotals.lak)}</dd>
+                      {trainingCost.costTotals.usd > 0 && (
+                        <>
+                          <dt className="text-muted-foreground">ລວມເປັນໂດລາ</dt>
+                          <dd className="text-right">
+                            {trainingCost.costTotals.usd.toLocaleString("en-US")} USD ={" "}
+                            {formatLak(trainingCost.costTotals.usdConvertedToLak)}
+                          </dd>
+                        </>
+                      )}
+                      <dt className="font-semibold">ລວມທັງໝົດ</dt>
+                      <dd className="text-right font-semibold">
+                        {formatLak(trainingCost.costTotals.grandTotalLak)}
+                      </dd>
+                    </dl>
+                  </div>
+                )}
+              </Field>
+            )}
+
+            {rules.estimatedCost && !hasCostRows && (
+              <Field>
+                <FieldLabel>
+                  ຄ່າໃຊ້ຈ່າຍລວມ (ກີບ) <RuleMark rule={rules.estimatedCost} />
+                </FieldLabel>
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  value={typeValues.estimatedCost}
+                  onChange={(e) => setTypeField("estimatedCost", e.target.value)}
+                  placeholder="0"
+                />
+                {rules.costItems && (
+                  <p className="text-muted-foreground text-xs">
+                    ຫຼື ເພີ່ມລາຍການຄ່າໃຊ້ຈ່າຍຂ້າງເທິງ ເພື່ອຄິດໄລ່ອັດຕະໂນມັດ
+                  </p>
+                )}
+                {errors.estimatedCost && (
+                  <FieldError>{errors.estimatedCost}</FieldError>
+                )}
+              </Field>
+            )}
+
+            {rules.trainingInfo && (
+              <>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <Field>
+                    <FieldLabel>
+                      ຜູ້ຈັດ <RuleMark rule={rules.trainingInfo} />
+                    </FieldLabel>
+                    <Input
+                      value={typeValues.organizer}
+                      onChange={(e) => setTypeField("organizer", e.target.value)}
+                      maxLength={300}
+                      placeholder="ອົງກອນ ຫຼື ໜ່ວຍງານທີ່ຈັດ"
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel>
+                      ກຳນົດລົງທະບຽນ <RuleMark rule={rules.trainingInfo} />
+                    </FieldLabel>
+                    <Input
+                      type="date"
+                      value={typeValues.registrationDeadline}
+                      onChange={(e) =>
+                        setTypeField("registrationDeadline", e.target.value)
+                      }
+                    />
+                  </Field>
+                </div>
+                <Field>
+                  <FieldLabel>
+                    ຜູ້ປະສານງານ <RuleMark rule={rules.trainingInfo} />
+                  </FieldLabel>
+                  <div className="space-y-2">
+                    {typeValues.coordinators.map((c, idx) => (
+                      <div key={idx} className="flex gap-2">
+                        <Input
+                          value={c.name}
+                          onChange={(e) =>
+                            setTypeField(
+                              "coordinators",
+                              typeValues.coordinators.map((x, i) =>
+                                i === idx ? { ...x, name: e.target.value } : x,
+                              ),
+                            )
+                          }
+                          placeholder="ຊື່"
+                          className="min-w-0 flex-1"
+                        />
+                        <Input
+                          type="tel"
+                          value={c.phone}
+                          onChange={(e) =>
+                            setTypeField(
+                              "coordinators",
+                              typeValues.coordinators.map((x, i) =>
+                                i === idx ? { ...x, phone: e.target.value } : x,
+                              ),
+                            )
+                          }
+                          placeholder="020 xxxx xxxx"
+                          className="w-40"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
+                          onClick={() =>
+                            setTypeField(
+                              "coordinators",
+                              typeValues.coordinators.filter((_, i) => i !== idx),
+                            )
+                          }
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    ))}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setTypeField("coordinators", [
+                          ...typeValues.coordinators,
+                          { name: "", phone: "" },
+                        ])
+                      }
+                    >
+                      <Plus className="w-4 h-4 mr-1" />
+                      ເພີ່ມຜູ້ປະສານງານ
+                    </Button>
+                  </div>
+                </Field>
+              </>
+            )}
+
+            {rules.documentChecklist && (
+              <Field>
+                <FieldLabel>
+                  ລາຍການເອກະສານທີ່ຕ້ອງກະກຽມ{" "}
+                  <RuleMark rule={rules.documentChecklist} />
+                </FieldLabel>
+                <div className="space-y-3">
+                  {typeValues.documentChecklist.map((group, gIdx) => {
+                    const updateGroup = (next: typeof group) =>
+                      setTypeField(
+                        "documentChecklist",
+                        typeValues.documentChecklist.map((g, i) =>
+                          i === gIdx ? next : g,
+                        ),
+                      );
+                    return (
+                      <div key={gIdx} className="rounded-lg border p-3 space-y-2">
+                        <div className="flex gap-2">
+                          <Input
+                            value={group.group}
+                            onChange={(e) =>
+                              updateGroup({ ...group, group: e.target.value })
+                            }
+                            placeholder="ກຸ່ມ ເຊັ່ນ ຂະແໜງ/ໜ່ວຍງານບັນຊີ"
+                            className="flex-1 font-medium"
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
+                            onClick={() =>
+                              setTypeField(
+                                "documentChecklist",
+                                typeValues.documentChecklist.filter(
+                                  (_, i) => i !== gIdx,
+                                ),
+                              )
+                            }
+                          >
+                            <X className="w-4 h-4" />
+                          </Button>
+                        </div>
+                        {group.items.map((it, iIdx) => (
+                          <div key={iIdx} className="flex gap-2 pl-2">
+                            <span className="text-muted-foreground w-5 shrink-0 pt-2 text-xs tabular-nums">
+                              {iIdx + 1}.
+                            </span>
+                            <Input
+                              value={it.item}
+                              onChange={(e) =>
+                                updateGroup({
+                                  ...group,
+                                  items: group.items.map((x, i) =>
+                                    i === iIdx ? { ...x, item: e.target.value } : x,
+                                  ),
+                                })
+                              }
+                              placeholder="ລາຍການເອກະສານ"
+                              className="min-w-0 flex-1"
+                            />
+                            <Input
+                              value={it.remark}
+                              onChange={(e) =>
+                                updateGroup({
+                                  ...group,
+                                  items: group.items.map((x, i) =>
+                                    i === iIdx ? { ...x, remark: e.target.value } : x,
+                                  ),
+                                })
+                              }
+                              placeholder="ໝາຍເຫດ"
+                              className="w-32 sm:w-40"
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
+                              onClick={() =>
+                                updateGroup({
+                                  ...group,
+                                  items: group.items.filter((_, i) => i !== iIdx),
+                                })
+                              }
+                            >
+                              <X className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        ))}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="ml-2"
+                          onClick={() =>
+                            updateGroup({
+                              ...group,
+                              items: [...group.items, { item: "", remark: "" }],
+                            })
+                          }
+                        >
+                          <Plus className="w-4 h-4 mr-1" />
+                          ເພີ່ມເອກະສານ
+                        </Button>
+                      </div>
+                    );
+                  })}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setTypeField("documentChecklist", [
+                        ...typeValues.documentChecklist,
+                        { group: "", items: [{ item: "", remark: "" }] },
+                      ])
+                    }
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    ເພີ່ມກຸ່ມ
+                  </Button>
+                </div>
+              </Field>
+            )}
+
+            {rules.notes && (
+              <Field>
+                <FieldLabel>
+                  ໝາຍເຫດ <RuleMark rule={rules.notes} />
+                </FieldLabel>
+                <div className="space-y-2">
+                  {typeValues.notes.map((note, idx) => (
+                    <div key={idx} className="flex gap-2">
+                      <Textarea
+                        value={note}
+                        onChange={(e) =>
+                          setTypeField(
+                            "notes",
+                            typeValues.notes.map((n, i) =>
+                              i === idx ? e.target.value : n,
+                            ),
+                          )
+                        }
+                        rows={2}
+                        placeholder={`ໝາຍເຫດ ${idx + 1}...`}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
+                        onClick={() =>
+                          setTypeField(
+                            "notes",
+                            typeValues.notes.filter((_, i) => i !== idx),
+                          )
+                        }
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setTypeField("notes", [...typeValues.notes, ""])}
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    ເພີ່ມໝາຍເຫດ
+                  </Button>
+                </div>
+              </Field>
+            )}
 
             <Field>
               <FieldLabel>ເອກະສານອ້າງອີງ (ຖ້າມີ)</FieldLabel>
@@ -1352,7 +2079,7 @@ export default function OffsiteRequestForm({
                   <div className="flex items-center gap-2">
                     <activityMeta.Icon className="w-4 h-4 text-primary shrink-0" />
                     <span className="text-sm">
-                      {activityMeta.nameLo}{" "}
+                      {activityMeta.name}{" "}
                       <span className="text-muted-foreground">
                         ({activityMeta.nameEn})
                       </span>
@@ -1419,6 +2146,86 @@ export default function OffsiteRequestForm({
                       <dt className="text-muted-foreground">ອຸປະກອນ</dt>
                       <dd className="font-medium break-words line-clamp-2">
                         {equipmentUsed}
+                      </dd>
+                    </>
+                  )}
+
+                  {reviewFields.location && (
+                    <>
+                      <dt className="text-muted-foreground">ສະຖານທີ່</dt>
+                      <dd className="font-medium break-words line-clamp-2">
+                        {reviewFields.location}
+                      </dd>
+                    </>
+                  )}
+
+                  {reviewFields.customerName && (
+                    <>
+                      <dt className="text-muted-foreground">ລູກຄ້າ</dt>
+                      <dd className="font-medium break-words">
+                        {reviewFields.customerName}
+                      </dd>
+                    </>
+                  )}
+
+                  {(reviewFields.startTime || reviewFields.endTime) && (
+                    <>
+                      <dt className="text-muted-foreground">ເວລາ</dt>
+                      <dd className="font-medium tabular-nums">
+                        {reviewFields.startTime || "—"} – {reviewFields.endTime || "—"}
+                        {reviewFields.totalHours != null &&
+                          ` (${reviewFields.totalHours} ຊົ່ວໂມງ)`}
+                      </dd>
+                    </>
+                  )}
+
+                  {reviewFields.estimatedCost != null && (
+                    <>
+                      <dt className="text-muted-foreground">ຄ່າໃຊ້ຈ່າຍລວມ</dt>
+                      <dd className="font-medium tabular-nums">
+                        {formatLak(reviewFields.estimatedCost)}
+                        {reviewFields.costItems &&
+                          ` (${reviewFields.costItems.length} ລາຍການ)`}
+                      </dd>
+                    </>
+                  )}
+
+                  {reviewFields.organizer && (
+                    <>
+                      <dt className="text-muted-foreground">ຜູ້ຈັດ</dt>
+                      <dd className="font-medium break-words">
+                        {reviewFields.organizer}
+                      </dd>
+                    </>
+                  )}
+
+                  {reviewFields.coordinators && (
+                    <>
+                      <dt className="text-muted-foreground">ຜູ້ປະສານງານ</dt>
+                      <dd className="font-medium">
+                        {reviewFields.coordinators.length} ທ່ານ
+                      </dd>
+                    </>
+                  )}
+
+                  {reviewFields.documentChecklist && (
+                    <>
+                      <dt className="text-muted-foreground">ເອກະສານທີ່ຕ້ອງກະກຽມ</dt>
+                      <dd className="font-medium">
+                        {reviewFields.documentChecklist.reduce(
+                          (n, g) => n + g.items.length,
+                          0,
+                        )}{" "}
+                        ລາຍການ, {reviewFields.documentChecklist.length} ກຸ່ມ
+                      </dd>
+                    </>
+                  )}
+
+                  {reviewFields.notes && (
+                    <>
+                      <dt className="text-muted-foreground">ໝາຍເຫດ</dt>
+                      <dd className="font-medium">
+                        {reviewFields.notes.length} ຂໍ້
                       </dd>
                     </>
                   )}

@@ -15,17 +15,14 @@ import {
 } from '@/components/ui/select'
 
 // ** config / utils / types / hooks
-import { formatMonthKey } from '@/lib/format'
+import { activityLabel, formatMonthKey } from '@/lib/format'
+import { ACTIVITY_FILTER_CODES } from '@/lib/offsite-form-types'
 import type { OffsiteFilters } from '@/hooks/useMyOffsiteRequests'
-import type { ActivityCode } from '@/types/workOutside'
 
-const ACTIVITY_OPTIONS: { code: ActivityCode; label: string }[] = [
-  { code: 'MEET_CLIENT', label: 'ພົບລູກຄ້າ' },
-  { code: 'MEETING', label: 'ປະຊຸມພາຍນອກ' },
-  { code: 'BOOTH', label: 'ອອກບູດງານ' },
-  { code: 'PROMO', label: 'ໂປຣໂມຊັນ' },
-  { code: 'TRAINING', label: 'ຝຶກອົບຮົມ' },
-]
+const ACTIVITY_OPTIONS = ACTIVITY_FILTER_CODES.map((code) => ({
+  code,
+  label: activityLabel(code),
+}))
 
 interface Props {
   filters: OffsiteFilters

@@ -64,6 +64,7 @@ import {
   formatMonthYearLao,
 } from "@/components/laoDate";
 import type { ActivityCode, OffsiteRequestDoc } from "@/types/workOutside";
+import { ACTIVITY_FILTER_CODES } from "@/lib/offsite-form-types";
 import type { LeaveRequest } from "@/lib/types";
 
 // ** services
@@ -87,13 +88,7 @@ function toSafeDate(value: unknown): Date | null {
 
 const CURRENT_YEAR = new Date().getFullYear().toString();
 
-const ACTIVITY_CODES: ActivityCode[] = [
-  "MEET_CLIENT",
-  "MEETING",
-  "BOOTH",
-  "PROMO",
-  "TRAINING",
-];
+const ACTIVITY_CODES: ActivityCode[] = ACTIVITY_FILTER_CODES;
 
 function getStatusVariant(status: string) {
   switch (status) {
@@ -1006,7 +1001,7 @@ export default function HistoryPage() {
                             <div className="flex items-center justify-between gap-2">
                               <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                                 <ActivityTypeBadge
-                                  code={request.activityType.code}
+                                  code={request.activityType.code} name={request.activityType.name}
                                 />
                                 <span className="bg-background text-muted-foreground shrink-0 rounded-full border px-2 py-0.5 text-[10px]">
                                   {isRequester ? "ຜູ້ຍື່ນຄຳຂໍ" : "ສະມາຊິກທີມ"}

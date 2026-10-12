@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { ActivityTypeBadge } from "@/components/offsite/ActivityTypeBadge";
+import { OffsiteTypeDetails } from "@/components/offsite/OffsiteTypeDetails";
 
 // ** third party
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -373,7 +374,7 @@ export default function OffsiteDetailClient() {
               <span className="text-muted-foreground font-mono text-xs">
                 {record.requestNo}
               </span>
-              <ActivityTypeBadge code={record.activityType.code} />
+              <ActivityTypeBadge code={record.activityType.code} name={record.activityType.name} />
             </div>
             <h1 className="text-foreground text-lg font-bold">
               {record.subject}
@@ -487,6 +488,8 @@ export default function OffsiteDetailClient() {
                 </p>
               </div>
             )}
+
+            <OffsiteTypeDetails record={record} />
           </CardContent>
         </Card>
 
