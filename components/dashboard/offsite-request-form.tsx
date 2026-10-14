@@ -15,6 +15,7 @@ import {
   Clock,
   GraduationCap,
   ClipboardCheck,
+  MapPinned,
   History,
   CalendarIcon,
   ChevronLeft,
@@ -79,9 +80,15 @@ import { db } from "@/lib/firebase";
 import { cn } from "@/lib/utils";
 import {
   ACTIVITY_TYPES,
-  TYPE_SPECIFIC_DOC_KEYS,
-  buildTypeFields,
+  FIELDS_BY_TYPE,
+  getRequiredApprovers,
+  buildContentFields,
+  calcDurationDays,
   calcTotalHours,
+  dateModeFromDoc,
+  type DateMode,
+  contentKeysToDelete,
+  isShown,
   formatLak,
   getFieldRules,
   getFormType,
@@ -143,6 +150,12 @@ const ACTIVITIES: {
     Icon: ClipboardCheck,
     nameEn: "Audit",
     desc: "ລົງກວດກາ ພ້ອມລາຍການເອກະສານທີ່ຕ້ອງກະກຽມ",
+  },
+  {
+    formType: "visit",
+    Icon: MapPinned,
+    nameEn: "Visit / Follow-up",
+    desc: "ລົງຢ້ຽມຢາມ, ຕິດຕາມ ແລະ ແລກປ່ຽນບົດຮຽນກັບສາຂາ",
   },
 ];
 
@@ -245,6 +258,50 @@ function ScheduleDatePickerButton({
   );
 }
 
+// Calendar-only date input (no typing), holding a "yyyy-MM-dd" string.
+function DatePickerField({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  onChange: (iso: string) => void;
+  disabled?: (d: Date) => boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = value ? parseISO(value) : undefined;
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          className={cn(
+            "w-full justify-start font-normal",
+            !value && "text-muted-foreground",
+          )}
+        >
+          <CalendarIcon className="w-4 h-4 mr-2" />
+          {selected ? formatScheduleDate(selected) : "ເລືອກວັນທີ"}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-0" align="start">
+        <Calendar
+          mode="single"
+          selected={selected}
+          defaultMonth={selected}
+          disabled={disabled}
+          onSelect={(d) => {
+            if (d) onChange(format(d, "yyyy-MM-dd"));
+            setOpen(false);
+          }}
+          initialFocus
+        />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 // Label suffix in the style the form already uses: red * or "(ທາງເລືອກ)".
 function RuleMark({ rule }: { rule: FieldRule }) {
   return rule === "required" ? (
@@ -325,6 +382,15 @@ export default function OffsiteRequestForm({
       : null;
   const isLegacy = !!formType && isLegacyActivity(formType, activityCode);
 
+  // AUDIT is offered only to roles with AuditDashboard. An existing audit
+  // request keeps its card so the user can still see and keep its type.
+  const visibleActivities = useMemo(() => {
+    const canAudit =
+      !!user?.rolePermissions?.AuditDashboard ||
+      (!!initialData && getFormType(initialData) === "audit");
+    return ACTIVITIES.filter((a) => a.formType !== "audit" || canAudit);
+  }, [user?.rolePermissions?.AuditDashboard, initialData]);
+
   function selectFormType(type: FormType) {
     setFormType(type);
     setActivityCode(ACTIVITY_TYPES[type].code);
@@ -338,6 +404,28 @@ export default function OffsiteRequestForm({
 
   // ── step 2 ──
   const [subject, setSubject] = useState(() => initialData?.subject ?? "");
+  // Request dates, picked on their own — the schedule below is description
+  // only and no longer sets them.
+  const [dateMode, setDateMode] = useState<DateMode>(() =>
+    dateModeFromDoc(initialData),
+  );
+  const [startDate, setStartDate] = useState(() => initialData?.startDate ?? "");
+  const [endDate, setEndDate] = useState(() =>
+    dateModeFromDoc(initialData) === "range" ? (initialData?.endDate ?? "") : "",
+  );
+
+  function changeDateMode(mode: DateMode) {
+    markDirty();
+    setDateMode(mode);
+    // range → single keeps the start day; single → range waits for an end day
+    setEndDate("");
+  }
+
+  function changeStartDate(iso: string) {
+    markDirty();
+    setStartDate(iso);
+    if (endDate && endDate <= iso) setEndDate("");
+  }
   const [references, setReferences] = useState<string[]>(
     () => initialData?.references ?? [],
   );
@@ -351,7 +439,7 @@ export default function OffsiteRequestForm({
     () => initialData?.equipmentUsed ?? "",
   );
   // Fields that depend on the form type. Switching type keeps them all in
-  // state; buildTypeFields picks only the chosen type's fields at submit.
+  // state; buildContentFields picks only the chosen type's fields at submit.
   const [typeValues, setTypeValues] = useState<TypeFieldValues>(() =>
     typeFieldValuesFromDoc(initialData),
   );
@@ -449,10 +537,31 @@ export default function OffsiteRequestForm({
   // ─── Derived ────────────────────────────────────────────────────────────────
 
   // What step 2 shows and requires, and the name written to activityType.
+  // Step 2 can't be reached without a type; GENERAL is only a typing fallback.
   const rules = useMemo(
-    () => (formType ? getFieldRules(formType, isLegacy) : {}),
+    () =>
+      formType ? getFieldRules(formType, isLegacy) : FIELDS_BY_TYPE.GENERAL,
     [formType, isLegacy],
   );
+  // Overtime asks for the work done, not a trip purpose.
+  const objectiveLabel = formType === "overtime" && !isLegacy ? "ໜ້າວຽກ" : "ຈຸດປະສົງ";
+  // The Excel box names only the fields an import can fill for this type.
+  const excelFieldsText = useMemo(() => {
+    const labels = (
+      [
+        ["subject", "ຫົວຂໍ້"],
+        ["references", "ອີງຕາມ"],
+        ["objective", objectiveLabel],
+        ["equipmentUsed", "ອຸປະກອນ"],
+        ["schedule", "ຕາຕະລາງກຳນົດການ"],
+      ] as const
+    )
+      .filter(([key]) => isShown(rules[key]))
+      .map(([, label]) => label);
+    return labels.length > 1
+      ? `${labels.slice(0, -1).join(", ")} ແລະ ${labels[labels.length - 1]}`
+      : labels.join("");
+  }, [rules, objectiveLabel]);
   const activityMeta = useMemo(() => {
     if (!formType || !activityCode) return null;
     if (isLegacy) {
@@ -478,9 +587,15 @@ export default function OffsiteRequestForm({
   const hasCostRows = trainingCost.costItems.length > 0;
   // Exactly what submit will write, so the review never shows a field the
   // chosen type drops.
-  const reviewFields = useMemo(
-    () => (formType ? buildTypeFields(formType, typeValues) : {}),
-    [formType, typeValues],
+  const contentFields = useMemo(
+    () =>
+      buildContentFields(rules, typeValues, {
+        references,
+        objective,
+        scheduleDetails,
+        equipmentUsed,
+      }),
+    [rules, typeValues, references, objective, scheduleDetails, equipmentUsed],
   );
 
   // ─── Validation ─────────────────────────────────────────────────────────────
@@ -489,28 +604,40 @@ export default function OffsiteRequestForm({
     const e: Partial<Record<string, string>> = {};
     const v = typeValues;
     if (!subject.trim()) e.subject = "ກະລຸນາໃສ່ຫົວຂໍ້";
+    if (rules.dates === "required") {
+      if (!startDate) {
+        e.dates = dateMode === "single" ? "ກະລຸນາເລືອກວັນທີ" : "ກະລຸນາເລືອກວັນເລີ່ມ";
+      } else if (dateMode === "range") {
+        if (!endDate) e.dates = "ກະລຸນາເລືອກວັນສິ້ນສຸດ";
+        else if (endDate === startDate)
+          e.dates = "ວັນເລີ່ມ ແລະ ວັນສິ້ນສຸດເປັນມື້ດຽວກັນ — ກະລຸນາໃຊ້ແບບ \"ມື້ດຽວ\"";
+        else if (endDate < startDate) e.dates = "ວັນສິ້ນສຸດຕ້ອງຫຼັງວັນເລີ່ມ";
+      }
+    }
+    if (rules.objective === "required" && !objective.trim())
+      e.objective = `ກະລຸນາໃສ່${objectiveLabel}`;
     if (rules.location === "required" && !v.location.trim())
       e.location = "ກະລຸນາໃສ່ສະຖານທີ່";
     if (rules.times === "required") {
       if (!v.startTime) e.startTime = "ກະລຸນາໃສ່ເວລາເລີ່ມ";
       if (!v.endTime) e.endTime = "ກະລຸນາໃສ່ເວລາສິ້ນສຸດ";
     }
-    if (rules.times && v.startTime && v.endTime && v.endTime <= v.startTime)
+    if (isShown(rules.times) && v.startTime && v.endTime && v.endTime <= v.startTime)
       e.endTime = "ເວລາສິ້ນສຸດຕ້ອງຫຼັງເວລາເລີ່ມ";
     if (rules.totalHours === "required" && !(Number(v.totalHours) > 0))
       e.totalHours = "ກະລຸນາໃສ່ຈຳນວນຊົ່ວໂມງ";
-    if (rules.costItems && trainingCost.costTotals && trainingCost.costTotals.usd > 0) {
+    if (isShown(rules.costItems) && trainingCost.costTotals && trainingCost.costTotals.usd > 0) {
       if (!(Number(v.lakPerUsd) > 0)) e.lakPerUsd = "ມີລາຍການເປັນໂດລາ ກະລຸນາໃສ່ອັດຕາແລກປ່ຽນ";
     }
     if (
-      rules.costItems &&
+      isShown(rules.costItems) &&
       v.costRows.some(
         (r) => r.item.trim() && !(r.amount.trim() && Number(r.amount) >= 0),
       )
     )
       e.costItems = "ກະລຸນາໃສ່ຈຳນວນເງິນໃຫ້ທຸກລາຍການ";
     if (rules.estimatedCost === "required") {
-      const cost = rules.costItems ? trainingCost.estimatedCost : Number(v.estimatedCost);
+      const cost = isShown(rules.costItems) ? trainingCost.estimatedCost : Number(v.estimatedCost);
       if (!(cost != null && cost > 0)) e.estimatedCost = "ກະລຸນາໃສ່ຄ່າໃຊ້ຈ່າຍລວມ";
     }
     if (rules.schedule === "required" && scheduleDetails.length === 0)
@@ -716,27 +843,30 @@ export default function OffsiteRequestForm({
         }
       }
 
-      if (
-        !newSubject &&
-        !newObjective &&
-        !newEquipmentUsed &&
-        newReferences.length === 0 &&
-        newSchedule.length === 0
-      ) {
+      // Fill only what the current type shows — a hidden field would carry
+      // the value in state without the user ever seeing it.
+      const fill = {
+        subject: isShown(rules.subject) && !!newSubject,
+        objective: isShown(rules.objective) && !!newObjective,
+        equipmentUsed: isShown(rules.equipmentUsed) && !!newEquipmentUsed,
+        references: isShown(rules.references) && newReferences.length > 0,
+        schedule: isShown(rules.schedule) && newSchedule.length > 0,
+      };
+      if (!Object.values(fill).some(Boolean)) {
         toast.error("ບໍ່ພົບຂໍ້ມູນທີ່ກົງກັບຮູບແບບໄຟລ໌");
         return;
       }
 
-      if (newSubject) setSubject(newSubject);
-      if (newObjective) setObjective(newObjective);
-      if (newEquipmentUsed) setEquipmentUsed(newEquipmentUsed);
-      if (newReferences.length > 0) setReferences(newReferences);
-      if (newSchedule.length > 0) setScheduleDetails(newSchedule);
+      if (fill.subject) setSubject(newSubject);
+      if (fill.objective) setObjective(newObjective);
+      if (fill.equipmentUsed) setEquipmentUsed(newEquipmentUsed);
+      if (fill.references) setReferences(newReferences);
+      if (fill.schedule) setScheduleDetails(newSchedule);
       markDirty();
       toast.success("ດຶງຂໍ້ມູນຈາກ Excel ສຳເລັດ");
     } catch (err) {
       console.error(err);
-      toast.error("ອ່ານໄຟລ໌ Excel ລົ້ມເຫລວ ກະລຸນາກວດສອບຮູບແບບໄຟລ໌");
+      toast.error("ອ່ານໄຟລ໌ Excel ລົ້ມເຫຼວ ກະລຸນາກວດສອບຮູບແບບໄຟລ໌");
     } finally {
       setIsParsingExcel(false);
     }
@@ -751,6 +881,9 @@ export default function OffsiteRequestForm({
     setTypeValues(typeFieldValuesFromDoc());
     setTotalHoursEdited(false);
     setSubject("");
+    setDateMode("single");
+    setStartDate("");
+    setEndDate("");
     setReferences([]);
     setObjective("");
     setScheduleDetails([]);
@@ -787,19 +920,11 @@ export default function OffsiteRequestForm({
       const activity = activityMeta!;
       const now = new Date().toISOString();
 
-      // Trip dates aren't picked manually anymore — derive them from whichever
-      // schedule days have a real calendar date (calendar picker or Excel date cell).
-      const scheduleIsoDates = scheduleDetails
-        .map((d) => d.dateIso)
-        .filter((d): d is string => !!d)
-        .sort();
-      const derivedStartDate = scheduleIsoDates[0] ?? "";
-      const derivedEndDate =
-        scheduleIsoDates[scheduleIsoDates.length - 1] ?? "";
-      const derivedDurationDays = scheduleDetails.length;
-      const monthKey = derivedStartDate
-        ? format(parseISO(derivedStartDate), "MM-yyyy")
-        : format(new Date(now), "MM-yyyy");
+      // Dates come from the date picker only; the schedule doesn't touch them.
+      // validateStep2 has already made sure they're set and in order.
+      const requestEndDate = dateMode === "single" ? startDate : endDate;
+      const durationDays = calcDurationDays(startDate, requestEndDate);
+      const monthKey = format(parseISO(startDate), "MM-yyyy");
 
       const requesterDept: Department =
         typeof user.department === "object" && user.department !== null
@@ -837,10 +962,9 @@ export default function OffsiteRequestForm({
         ...new Set([user.uid, ...teammates.map((t) => t.uid)]),
       ];
 
-      // Only the chosen type's fields. An old-code doc keeps its code and
-      // stored name and gets no formType, so it still reads exactly as before.
-      const typeFields = buildTypeFields(formType!, typeValues);
-
+      // Content comes only from fields the chosen type shows (contentFields).
+      // An old-code doc keeps its code and stored name and gets no formType,
+      // so it still reads exactly as before.
       const payload = {
         requester: {
           uid: user.uid,
@@ -855,15 +979,11 @@ export default function OffsiteRequestForm({
         ...(isLegacy ? {} : { formType: formType! }),
         activityType: { code: activityCode!, name: activity.name },
         subject,
-        references: references.filter((r) => r.trim()),
-        objective,
-        scheduleDetails,
-        equipmentUsed,
         departmentUid: requesterDept.uuid || "",
         requesterWorkLocationUid: requesterLoc.uuid || "",
-        startDate: derivedStartDate,
-        endDate: derivedEndDate,
-        durationDays: derivedDurationDays,
+        startDate,
+        endDate: requestEndDate,
+        durationDays,
         monthKey,
         teammateTitle: teammates.length,
         teammate: teammates,
@@ -873,16 +993,42 @@ export default function OffsiteRequestForm({
         updatedAt: now,
         updatedBy: fullNameEn,
         docLink,
-        ...typeFields,
+        ...contentFields,
       };
 
       if (isEditMode && initialData) {
-        const cleanPayload = stripUndefined(payload);
+        // A type switch can change the approver chain (AUDIT skips hr for
+        // LPB). Edits only run before any decision, so a rebuilt chain is all
+        // pending. LPB is read from the doc's chain, not the editor's role.
+        const docApprovers = initialData.requiredApprovers ?? [];
+        const nextApprovers = getRequiredApprovers(
+          activityCode!,
+          docApprovers.includes("manager"),
+        );
+        const chainChanged =
+          docApprovers.length > 0 &&
+          nextApprovers.join() !== docApprovers.join();
+        const cleanPayload = stripUndefined({
+          ...payload,
+          ...(chainChanged
+            ? {
+                requiredApprovers: nextApprovers,
+                approvals: nextApprovers.map((role) => ({
+                  role,
+                  decision: "pending",
+                })),
+              }
+            : {}),
+        });
         const initialDataRecord = initialData as unknown as Record<string, unknown>;
-        // Type-specific keys the doc has but this save doesn't write — left
-        // over from a type switch, or a field the user cleared — are deleted.
-        const removedKeys = TYPE_SPECIFIC_DOC_KEYS.filter(
-          (key) => !(key in cleanPayload) && initialDataRecord[key] !== undefined,
+        // Content keys the doc has but this save doesn't write — left over
+        // from a type switch, or a field the user cleared — are deleted. An
+        // old-code doc keeps whatever it has in fields GENERAL hides.
+        const removedKeys = contentKeysToDelete(
+          rules,
+          isLegacy,
+          cleanPayload,
+          initialData,
         );
         const deletions: Record<string, FieldValue> = Object.fromEntries(
           removedKeys.map((key) => [key, deleteField()]),
@@ -914,20 +1060,14 @@ export default function OffsiteRequestForm({
         toast.success(`ແກ້ໄຂສຳເລັດ — ${initialData.requestNo}`);
       } else {
         const requestNo = generateRequestNo();
-        const isLPB = !!user.rolePermissions?.LPB;
-        const requiredApprovers = isLPB
-          ? ["departmentHead", "hr", "manager"]
-          : ["departmentHead", "hr"];
-        const approvals = isLPB
-          ? [
-              { role: "departmentHead", decision: "pending" },
-              { role: "hr", decision: "pending" },
-              { role: "manager", decision: "pending" },
-            ]
-          : [
-              { role: "departmentHead", decision: "pending" },
-              { role: "hr", decision: "pending" },
-            ];
+        const requiredApprovers = getRequiredApprovers(
+          activityCode!,
+          !!user.rolePermissions?.LPB,
+        );
+        const approvals = requiredApprovers.map((role) => ({
+          role,
+          decision: "pending",
+        }));
         const createPayload = stripUndefined({
           ...payload,
           requestNo,
@@ -1035,7 +1175,7 @@ export default function OffsiteRequestForm({
           )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {ACTIVITIES.map(({ formType: type, Icon, nameEn, desc }) => {
+            {visibleActivities.map(({ formType: type, Icon, nameEn, desc }) => {
               const selected = !isLegacy && formType === type;
               return (
                 <button
@@ -1103,10 +1243,10 @@ export default function OffsiteRequestForm({
               <FileSpreadsheet className="w-4 h-4 text-muted-foreground shrink-0" />
               <div className="min-w-0">
                 <p className="text-sm font-medium truncate">
-                  ອັບໂຫລດ Excel ເພື່ອຕື່ມຂໍ້ມູນອັດຕະໂນມັດ
+                  ອັບໂຫຼດ Excel ເພື່ອຕື່ມຂໍ້ມູນອັດຕະໂນມັດ
                 </p>
                 <p className="text-xs text-muted-foreground truncate">
-                  ຫົວຂໍ້, ອີງຕາມ, ຈຸດປະສົງ, ອຸປະກອນ ແລະ ຕາຕະລາງກຳນົດການ
+                  {excelFieldsText}
                 </p>
               </div>
             </div>
@@ -1148,7 +1288,62 @@ export default function OffsiteRequestForm({
               {errors.subject && <FieldError>{errors.subject}</FieldError>}
             </Field>
 
-            {rules.location && (
+            {isShown(rules.dates) && (
+              <Field>
+                <FieldLabel>
+                  ວັນທີ <RuleMark rule={rules.dates} />
+                </FieldLabel>
+                <div className="flex w-fit rounded-md border p-0.5">
+                  {(
+                    [
+                      ["single", "ມື້ດຽວ"],
+                      ["range", "ຫຼາຍມື້"],
+                    ] as const
+                  ).map(([mode, label]) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => changeDateMode(mode)}
+                      className={cn(
+                        "rounded px-3 py-1 text-xs font-medium",
+                        dateMode === mode
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground",
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {dateMode === "single" ? (
+                  <DatePickerField value={startDate} onChange={changeStartDate} />
+                ) : (
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <p className="text-muted-foreground text-xs">ວັນເລີ່ມ</p>
+                      <DatePickerField value={startDate} onChange={changeStartDate} />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-muted-foreground text-xs">ວັນສິ້ນສຸດ</p>
+                      <DatePickerField
+                        value={endDate}
+                        onChange={(iso) => {
+                          markDirty();
+                          setEndDate(iso);
+                        }}
+                        // Must be after the start day; the same day is "ມື້ດຽວ"
+                        disabled={(d) =>
+                          !!startDate && format(d, "yyyy-MM-dd") <= startDate
+                        }
+                      />
+                    </div>
+                  </div>
+                )}
+                {errors.dates && <FieldError>{errors.dates}</FieldError>}
+              </Field>
+            )}
+
+            {isShown(rules.location) && (
               <Field>
                 <FieldLabel>
                   ສະຖານທີ່ <RuleMark rule={rules.location} />
@@ -1163,7 +1358,7 @@ export default function OffsiteRequestForm({
               </Field>
             )}
 
-            {rules.customerName && (
+            {isShown(rules.customerName) && (
               <Field>
                 <FieldLabel>
                   ຊື່ລູກຄ້າ <RuleMark rule={rules.customerName} />
@@ -1177,7 +1372,7 @@ export default function OffsiteRequestForm({
               </Field>
             )}
 
-            {rules.details && (
+            {isShown(rules.details) && (
               <Field>
                 <FieldLabel>
                   ລາຍລະອຽດ <RuleMark rule={rules.details} />
@@ -1192,7 +1387,7 @@ export default function OffsiteRequestForm({
               </Field>
             )}
 
-            {rules.times && (
+            {isShown(rules.times) && (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <Field>
                   <FieldLabel>
@@ -1216,7 +1411,7 @@ export default function OffsiteRequestForm({
                   />
                   {errors.endTime && <FieldError>{errors.endTime}</FieldError>}
                 </Field>
-                {rules.totalHours && (
+                {isShown(rules.totalHours) && (
                   <Field>
                     <FieldLabel>
                       ຈຳນວນຊົ່ວໂມງ <RuleMark rule={rules.totalHours} />
@@ -1240,12 +1435,10 @@ export default function OffsiteRequestForm({
               </div>
             )}
 
+            {isShown(rules.references) && (
             <Field>
               <FieldLabel>
-                ອີງຕາມ{" "}
-                <span className="text-muted-foreground text-xs">
-                  (ທາງເລືອກ)
-                </span>
+                ອີງຕາມ <RuleMark rule={rules.references} />
               </FieldLabel>
               <div className="space-y-2">
                 {references.map((ref, idx) => (
@@ -1277,27 +1470,33 @@ export default function OffsiteRequestForm({
                 </Button>
               </div>
             </Field>
+            )}
 
-            <Field>
-              <FieldLabel>
-                ຈຸດປະສົງ{" "}
-                <span className="text-muted-foreground text-xs">
-                  (ທາງເລືອກ)
-                </span>
-              </FieldLabel>
-              <Textarea
-                value={objective}
-                onChange={(e) => setObjective(e.target.value)}
-                maxLength={1000}
-                rows={3}
-                placeholder="ຈຸດປະສົງຂອງການເດີນທາງ..."
-              />
-            </Field>
+            {isShown(rules.objective) && (
+              <Field>
+                <FieldLabel>
+                  {objectiveLabel} <RuleMark rule={rules.objective} />
+                </FieldLabel>
+                <Textarea
+                  value={objective}
+                  onChange={(e) => setObjective(e.target.value)}
+                  maxLength={1000}
+                  rows={3}
+                  placeholder={
+                    formType === "overtime"
+                      ? "ວຽກທີ່ຈະເຮັດໃນວັນພັກ..."
+                      : "ຈຸດປະສົງຂອງການເດີນທາງ..."
+                  }
+                />
+                {errors.objective && <FieldError>{errors.objective}</FieldError>}
+              </Field>
+            )}
 
+            {isShown(rules.schedule) && (
             <Field>
               <FieldLabel>
                 ຕາຕະລາງກຳນົດການ{" "}
-                <RuleMark rule={rules.schedule ?? "optional"} />
+                <RuleMark rule={rules.schedule} />
               </FieldLabel>
               {errors.schedule && <FieldError>{errors.schedule}</FieldError>}
               <div className="space-y-3">
@@ -1398,24 +1597,24 @@ export default function OffsiteRequestForm({
                 </Button>
               </div>
             </Field>
+            )}
 
-            <Field>
-              <FieldLabel>
-                ອຸປະກອນທີ່ນຳໃຊ້{" "}
-                <span className="text-muted-foreground text-xs">
-                  (ທາງເລືອກ)
-                </span>
-              </FieldLabel>
-              <Textarea
-                value={equipmentUsed}
-                onChange={(e) => setEquipmentUsed(e.target.value)}
-                maxLength={1000}
-                rows={3}
-                placeholder="ອຸປະກອນ, ພາຫະນະ ແລະ ອື່ນໆ ທີ່ນຳໃຊ້..."
-              />
-            </Field>
+            {isShown(rules.equipmentUsed) && (
+              <Field>
+                <FieldLabel>
+                  ອຸປະກອນ / ພາຫະນະ <RuleMark rule={rules.equipmentUsed} />
+                </FieldLabel>
+                <Textarea
+                  value={equipmentUsed}
+                  onChange={(e) => setEquipmentUsed(e.target.value)}
+                  maxLength={1000}
+                  rows={3}
+                  placeholder="ອຸປະກອນ, ພາຫະນະ ແລະ ອື່ນໆ ທີ່ນຳໃຊ້..."
+                />
+              </Field>
+            )}
 
-            {rules.costItems && (
+            {isShown(rules.costItems) && (
               <Field>
                 <FieldLabel>
                   ລາຍການຄ່າໃຊ້ຈ່າຍ <RuleMark rule={rules.costItems} />
@@ -1572,7 +1771,7 @@ export default function OffsiteRequestForm({
               </Field>
             )}
 
-            {rules.estimatedCost && !hasCostRows && (
+            {isShown(rules.estimatedCost) && !hasCostRows && (
               <Field>
                 <FieldLabel>
                   ຄ່າໃຊ້ຈ່າຍລວມ (ກີບ) <RuleMark rule={rules.estimatedCost} />
@@ -1585,7 +1784,7 @@ export default function OffsiteRequestForm({
                   onChange={(e) => setTypeField("estimatedCost", e.target.value)}
                   placeholder="0"
                 />
-                {rules.costItems && (
+                {isShown(rules.costItems) && (
                   <p className="text-muted-foreground text-xs">
                     ຫຼື ເພີ່ມລາຍການຄ່າໃຊ້ຈ່າຍຂ້າງເທິງ ເພື່ອຄິດໄລ່ອັດຕະໂນມັດ
                   </p>
@@ -1596,7 +1795,7 @@ export default function OffsiteRequestForm({
               </Field>
             )}
 
-            {rules.trainingInfo && (
+            {isShown(rules.trainingInfo) && (
               <>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <Field>
@@ -1692,7 +1891,7 @@ export default function OffsiteRequestForm({
               </>
             )}
 
-            {rules.documentChecklist && (
+            {isShown(rules.documentChecklist) && (
               <Field>
                 <FieldLabel>
                   ລາຍການເອກະສານທີ່ຕ້ອງກະກຽມ{" "}
@@ -1818,7 +2017,7 @@ export default function OffsiteRequestForm({
               </Field>
             )}
 
-            {rules.notes && (
+            {isShown(rules.notes) && (
               <Field>
                 <FieldLabel>
                   ໝາຍເຫດ <RuleMark rule={rules.notes} />
@@ -1868,8 +2067,11 @@ export default function OffsiteRequestForm({
               </Field>
             )}
 
+            {isShown(rules.docLink) && (
             <Field>
-              <FieldLabel>ເອກະສານອ້າງອີງ (ຖ້າມີ)</FieldLabel>
+              <FieldLabel>
+                ເອກະສານແນບ <RuleMark rule={rules.docLink} />
+              </FieldLabel>
               <div className="space-y-2">
                 {isEditMode && initialData?.docLink && !docFile && (
                   <a
@@ -1893,6 +2095,7 @@ export default function OffsiteRequestForm({
                 )}
               </div>
             </Field>
+            )}
           </FieldGroup>
 
           <div className="flex justify-between pt-2">
@@ -2109,30 +2312,41 @@ export default function OffsiteRequestForm({
                   <dt className="text-muted-foreground">ຫົວຂໍ້</dt>
                   <dd className="font-medium break-words">{subject || "—"}</dd>
 
-                  {objective && (
+                  {startDate && (
                     <>
-                      <dt className="text-muted-foreground">ຈຸດປະສົງ</dt>
-                      <dd className="font-medium break-words line-clamp-2">
-                        {objective}
+                      <dt className="text-muted-foreground">ວັນທີ</dt>
+                      <dd className="font-medium tabular-nums">
+                        {dateMode === "range" && endDate
+                          ? `ວັນທີ ${format(parseISO(startDate), "dd/MM/yyyy")} ຫາ ${format(parseISO(endDate), "dd/MM/yyyy")} (${calcDurationDays(startDate, endDate)} ມື້)`
+                          : `ວັນທີ ${format(parseISO(startDate), "dd/MM/yyyy")}`}
                       </dd>
                     </>
                   )}
 
-                  {references.some((r) => r.trim()) && (
+                  {contentFields.objective && (
+                    <>
+                      <dt className="text-muted-foreground">{objectiveLabel}</dt>
+                      <dd className="font-medium break-words line-clamp-2">
+                        {contentFields.objective}
+                      </dd>
+                    </>
+                  )}
+
+                  {!!contentFields.references?.length && (
                     <>
                       <dt className="text-muted-foreground">ອີງຕາມ</dt>
                       <dd className="font-medium break-words">
-                        {references.filter((r) => r.trim()).length} ລາຍການ
+                        {contentFields.references.length} ລາຍການ
                       </dd>
                     </>
                   )}
 
-                  {scheduleDetails.length > 0 && (
+                  {!!contentFields.scheduleDetails?.length && (
                     <>
                       <dt className="text-muted-foreground">ຕາຕະລາງກຳນົດການ</dt>
                       <dd className="font-medium">
-                        {scheduleDetails.length} ມື້,{" "}
-                        {scheduleDetails.reduce(
+                        {contentFields.scheduleDetails.length} ມື້,{" "}
+                        {contentFields.scheduleDetails.reduce(
                           (n, d) => n + d.timeline.length,
                           0,
                         )}{" "}
@@ -2141,91 +2355,91 @@ export default function OffsiteRequestForm({
                     </>
                   )}
 
-                  {equipmentUsed && (
+                  {contentFields.equipmentUsed && (
                     <>
                       <dt className="text-muted-foreground">ອຸປະກອນ</dt>
                       <dd className="font-medium break-words line-clamp-2">
-                        {equipmentUsed}
+                        {contentFields.equipmentUsed}
                       </dd>
                     </>
                   )}
 
-                  {reviewFields.location && (
+                  {contentFields.location && (
                     <>
                       <dt className="text-muted-foreground">ສະຖານທີ່</dt>
                       <dd className="font-medium break-words line-clamp-2">
-                        {reviewFields.location}
+                        {contentFields.location}
                       </dd>
                     </>
                   )}
 
-                  {reviewFields.customerName && (
+                  {contentFields.customerName && (
                     <>
                       <dt className="text-muted-foreground">ລູກຄ້າ</dt>
                       <dd className="font-medium break-words">
-                        {reviewFields.customerName}
+                        {contentFields.customerName}
                       </dd>
                     </>
                   )}
 
-                  {(reviewFields.startTime || reviewFields.endTime) && (
+                  {(contentFields.startTime || contentFields.endTime) && (
                     <>
                       <dt className="text-muted-foreground">ເວລາ</dt>
                       <dd className="font-medium tabular-nums">
-                        {reviewFields.startTime || "—"} – {reviewFields.endTime || "—"}
-                        {reviewFields.totalHours != null &&
-                          ` (${reviewFields.totalHours} ຊົ່ວໂມງ)`}
+                        {contentFields.startTime || "—"} – {contentFields.endTime || "—"}
+                        {contentFields.totalHours != null &&
+                          ` (${contentFields.totalHours} ຊົ່ວໂມງ)`}
                       </dd>
                     </>
                   )}
 
-                  {reviewFields.estimatedCost != null && (
+                  {contentFields.estimatedCost != null && (
                     <>
                       <dt className="text-muted-foreground">ຄ່າໃຊ້ຈ່າຍລວມ</dt>
                       <dd className="font-medium tabular-nums">
-                        {formatLak(reviewFields.estimatedCost)}
-                        {reviewFields.costItems &&
-                          ` (${reviewFields.costItems.length} ລາຍການ)`}
+                        {formatLak(contentFields.estimatedCost)}
+                        {contentFields.costItems &&
+                          ` (${contentFields.costItems.length} ລາຍການ)`}
                       </dd>
                     </>
                   )}
 
-                  {reviewFields.organizer && (
+                  {contentFields.organizer && (
                     <>
                       <dt className="text-muted-foreground">ຜູ້ຈັດ</dt>
                       <dd className="font-medium break-words">
-                        {reviewFields.organizer}
+                        {contentFields.organizer}
                       </dd>
                     </>
                   )}
 
-                  {reviewFields.coordinators && (
+                  {contentFields.coordinators && (
                     <>
                       <dt className="text-muted-foreground">ຜູ້ປະສານງານ</dt>
                       <dd className="font-medium">
-                        {reviewFields.coordinators.length} ທ່ານ
+                        {contentFields.coordinators.length} ທ່ານ
                       </dd>
                     </>
                   )}
 
-                  {reviewFields.documentChecklist && (
+                  {contentFields.documentChecklist && (
                     <>
                       <dt className="text-muted-foreground">ເອກະສານທີ່ຕ້ອງກະກຽມ</dt>
                       <dd className="font-medium">
-                        {reviewFields.documentChecklist.reduce(
+                        {contentFields.documentChecklist.reduce(
                           (n, g) => n + g.items.length,
                           0,
                         )}{" "}
-                        ລາຍການ, {reviewFields.documentChecklist.length} ກຸ່ມ
+                        ລາຍການ, {contentFields.documentChecklist.length} ກຸ່ມ
                       </dd>
                     </>
                   )}
 
-                  {reviewFields.notes && (
+                  {contentFields.notes && (
                     <>
                       <dt className="text-muted-foreground">ໝາຍເຫດ</dt>
                       <dd className="font-medium">
-                        {reviewFields.notes.length} ຂໍ້
+                        {contentFields.notes.length} ຂໍ້
                       </dd>
                     </>
                   )}

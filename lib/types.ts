@@ -352,6 +352,7 @@ export interface PolicyRecord {
   countMode?: "workingDays" | "calendarDays";
   active?: boolean;
   rules?: PolicyRule[];
+  order?: number;
 }
 
 // Authoritative per-employee, per-policy, per-period balance — written by the

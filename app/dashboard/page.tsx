@@ -394,7 +394,7 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between gap-4">
         <div className="flex flex-col gap-1">
           <h1 className="text-foreground text-2xl font-bold">
-            ຍີນດີຕ້ອນຮັບ, {user?.firstNameLo}
+            ຍິນດີຕ້ອນຮັບ, {user?.firstNameLo}
           </h1>
           <p className="text-muted-foreground">
             {formatDayDateLao(new Date())}
@@ -615,7 +615,7 @@ export default function DashboardPage() {
                   <div className="flex flex-col items-center justify-center gap-2 py-8">
                     <AlertTriangle className="text-destructive h-10 w-10" />
                     <p className="text-destructive text-sm">
-                      ໂຫຼດຂໍ້ມູນລົ້ມເຫລວ
+                      ໂຫຼດຂໍ້ມູນລົ້ມເຫຼວ
                     </p>
                   </div>
                 ) : lateRanking.length === 0 ? (

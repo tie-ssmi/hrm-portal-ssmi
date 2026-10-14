@@ -55,7 +55,7 @@ import { extractWorkLocationLog } from "@/services/audit-log";
 const roleLabel: Record<LeaveApproverRole, string> = {
   departmentHead: "ຫົວໜ້າພະແນກ",
   hr: "ຝ່າຍ HR",
-  manager: "ຜູ້ຈັດການ",
+  manager: "ຄະນະອຳນວຍການ",
 };
 
 const periodLabel: Record<string, string> = {
@@ -427,7 +427,7 @@ export default function LeaveDetailClient({ leaveId }: { leaveId?: string }) {
           />
           <InfoRow
             icon={<Briefcase className="h-4 w-4" />}
-            label="ຕໍາແໜ່ງ"
+            label="ຕຳແໜ່ງ"
             value={leave.jobTitle || ""}
           />
           <InfoRow
@@ -498,7 +498,7 @@ export default function LeaveDetailClient({ leaveId }: { leaveId?: string }) {
           ) : (
             <div className="border-muted bg-muted/30 text-muted-foreground flex items-center gap-2 rounded-lg border p-3 text-sm">
               <FileText className="h-4 w-4 shrink-0" />
-              <span>ເອກະສານຖືກແນບມາ (ລໍຖ້າໂຫລດ...)</span>
+              <span>ເອກະສານຖືກແນບມາ (ລໍຖ້າໂຫຼດ...)</span>
             </div>
           ))}
 
@@ -583,7 +583,7 @@ export default function LeaveDetailClient({ leaveId }: { leaveId?: string }) {
           <DialogHeader>
             <DialogTitle>ຢືນຢັນການອະນຸມັດ</DialogTitle>
             <DialogDescription>
-              ອະນຸມັດຄໍາຮ້ອງຂໍຂອງ{" "}
+              ອະນຸມັດຄຳຮ້ອງຂໍຂອງ{" "}
               <strong>{leave.leaveUserName || leave.createdBy}</strong>
             </DialogDescription>
           </DialogHeader>
@@ -631,7 +631,7 @@ export default function LeaveDetailClient({ leaveId }: { leaveId?: string }) {
           <DialogHeader>
             <DialogTitle>ຢືນຢັນການປະຕິເສດ</DialogTitle>
             <DialogDescription>
-              ປະຕິເສດຄໍາຮ້ອງຂໍຂອງ{" "}
+              ປະຕິເສດຄຳຮ້ອງຂໍຂອງ{" "}
               <strong>{leave.leaveUserName || leave.createdBy}</strong>
             </DialogDescription>
           </DialogHeader>

@@ -508,7 +508,7 @@ export default function InsteadLeaveRequestForm() {
         ),
       }, { autoApproveDeptHead: true, reviewedBy: createdBy })
       await refetchMyCurrentLeaves()
-      toast.success('ສົ່ງຄໍາຮ້ອງຂໍສໍາເລັດ (ອະນຸມັດຂັ້ນຕົ້ນແລ້ວ)')
+      toast.success('ສົ່ງຄຳຮ້ອງຂໍສຳເລັດ (ອະນຸມັດຂັ້ນຕົ້ນແລ້ວ)')
       setOpenConfirmDialog(false)
       setConfirmLeave(false)
       
@@ -519,7 +519,7 @@ export default function InsteadLeaveRequestForm() {
       toast.error(
         err instanceof UploadTruncatedError
           ? UPLOAD_TRUNCATED_MESSAGE
-          : 'ບໍ່ສາມາດສົ່ງຄໍາຮ້ອງຂໍໄດ້',
+          : 'ບໍ່ສາມາດສົ່ງຄຳຮ້ອງຂໍໄດ້',
       )
       console.error(err)
     } finally {
@@ -544,7 +544,7 @@ export default function InsteadLeaveRequestForm() {
             ກັບຄືນ
           </button>
           <CardTitle className="text-lg">ແບບຟອມຂໍພັກແທນ</CardTitle>
-          <CardDescription>ຍື່ນລາພັກໃຫ້ພະນັກງານທີ່ບໍ່ສາມາດດໍາເນີນການດ້ວຍຕົນເອງໄດ້</CardDescription>
+          <CardDescription>ຍື່ນລາພັກໃຫ້ພະນັກງານທີ່ບໍ່ສາມາດດຳເນີນການດ້ວຍຕົນເອງໄດ້</CardDescription>
         </CardHeader>
 
         <CardContent className="space-y-1">
@@ -552,7 +552,7 @@ export default function InsteadLeaveRequestForm() {
           <div className="flex gap-2.5 items-start rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 px-3 py-2.5 mb-4">
             <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
             <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
-              ການລາພັກແທນໃຊ້ໄດ້ສະເພາະກໍລະນີທີ່ຜູ້ກ່ຽວບໍ່ສາມາດເຂົ້າລະບົບໄດ້ ຫຼື ເຫດສຸດເສີນເທົ່ານັ້ນ
+              ການລາພັກແທນໃຊ້ໄດ້ສະເພາະກໍລະນີທີ່ຜູ້ກ່ຽວບໍ່ສາມາດເຂົ້າລະບົບໄດ້ ຫຼື ເຫດສຸກເສີນເທົ່ານັ້ນ
             </p>
           </div>
 
@@ -573,7 +573,7 @@ export default function InsteadLeaveRequestForm() {
                   subLabel: emp.jobTitle,
                 }))}
                 placeholder="ເລືອກພະນັກງານ..."
-                searchPlaceholder="ຄົ້ນຫາຊື່ຫຼືຕໍາແໜ່ງ..."
+                searchPlaceholder="ຄົ້ນຫາຊື່ຫຼືຕຳແໜ່ງ..."
               />
 
               {selectedLeaveFor && (
@@ -696,7 +696,7 @@ export default function InsteadLeaveRequestForm() {
                   })),
                 ]}
                 placeholder="ບໍ່ລະບຸ"
-                searchPlaceholder="ຄົ້ນຫາຊື່ຫຼືຕໍາແໜ່ງ..."
+                searchPlaceholder="ຄົ້ນຫາຊື່ຫຼືຕຳແໜ່ງ..."
               />
 
               {selectedSuccessor && (
@@ -827,7 +827,7 @@ export default function InsteadLeaveRequestForm() {
                     <Timer className="w-4 h-4 shrink-0" />
                     <div>
                       <p className="font-medium">ອັບໂຫຼດພາຍຫຼັງ</p>
-                      <p className="text-xs text-muted-foreground">ສົ່ງຄໍາຮ້ອງກ່ອນ ແລ້ວຄ່ອຍແນບໃຫ້ທີ່ຫຼັງ</p>
+                      <p className="text-xs text-muted-foreground">ສົ່ງຄຳຮ້ອງກ່ອນ ແລ້ວຄ່ອຍແນບໃຫ້ທີ່ຫຼັງ</p>
                     </div>
                     {docUploadChoice === 'later' && <CheckCircle className="w-4 h-4 ml-auto shrink-0" />}
                   </button>
@@ -849,7 +849,7 @@ export default function InsteadLeaveRequestForm() {
                       <X className="w-4 h-4 shrink-0" />
                       <div>
                         <p className="font-medium">ບໍ່ຕ້ອງການເອກະສານ</p>
-                        <p className="text-xs text-muted-foreground">ດໍາເນີນການໂດຍບໍ່ຕ້ອງແນບໄຟລ໌</p>
+                        <p className="text-xs text-muted-foreground">ດຳເນີນການໂດຍບໍ່ຕ້ອງແນບໄຟລ໌</p>
                       </div>
                       {docUploadChoice === 'skip' && <CheckCircle className="w-4 h-4 ml-auto shrink-0" />}
                     </button>
@@ -875,7 +875,7 @@ export default function InsteadLeaveRequestForm() {
 
             <Button type="submit" className="w-full h-11" size="lg">
               <Send className="w-4 h-4 mr-2" />
-              ສົ່ງຄໍາຮ້ອງຂໍ
+              ສົ່ງຄຳຮ້ອງຂໍ
             </Button>
           </form>
         </CardContent>
@@ -890,7 +890,7 @@ export default function InsteadLeaveRequestForm() {
               ຢືນຢັນການລາພັກແທນ
             </DialogTitle>
             <DialogDescription className="text-amber-700 dark:text-amber-400">
-              ການລາພັກແທນໃຊ້ໄດ້ສະເພາະກໍລະນີສຸດເສີນ ຫຼື ບໍ່ສາມາດເຂົ້າລະບົບໄດ້
+              ການລາພັກແທນໃຊ້ໄດ້ສະເພາະກໍລະນີສຸກເສີນ ຫຼື ບໍ່ສາມາດເຂົ້າລະບົບໄດ້
             </DialogDescription>
           </DialogHeader>
 
@@ -949,20 +949,20 @@ export default function InsteadLeaveRequestForm() {
         <CardHeader className="pb-3">
           <CardTitle className="text-base">
             {selectedLeaveFor
-              ? `ຄໍາຮ້ອງຂໍລ່າສຸດຂອງ ${employeeName(selectedLeaveFor)}`
-              : 'ຄໍາຮ້ອງຂໍລ່າສຸດ'}
+              ? `ຄຳຮ້ອງຂໍລ່າສຸດຂອງ ${employeeName(selectedLeaveFor)}`
+              : 'ຄຳຮ້ອງຂໍລ່າສຸດ'}
           </CardTitle>
         </CardHeader>
         <CardContent>
           {!selectedLeaveForUid ? (
             <div className="flex flex-col items-center py-6 text-muted-foreground gap-2">
               <FileText className="w-8 h-8 opacity-30" />
-              <p className="text-sm">ເລືອກຜູ້ລາພັກກ່ອນເພື່ອເບິ່ງຄໍາຮ້ອງຂໍລ່າສຸດ</p>
+              <p className="text-sm">ເລືອກຜູ້ລາພັກກ່ອນເພື່ອເບິ່ງຄຳຮ້ອງຂໍລ່າສຸດ</p>
             </div>
           ) : myCurrentLeaveRequests.length === 0 ? (
             <div className="flex flex-col items-center py-6 text-muted-foreground gap-2">
               <FileText className="w-8 h-8 opacity-30" />
-              <p className="text-sm">ຍັງບໍ່ມີຄໍາຮ້ອງຂໍ</p>
+              <p className="text-sm">ຍັງບໍ່ມີຄຳຮ້ອງຂໍ</p>
             </div>
           ) : (
             <div className="space-y-2">
@@ -1045,7 +1045,7 @@ export default function InsteadLeaveRequestForm() {
                 <>
                   <Separator />
                   <div>
-                    <p className="text-xs text-muted-foreground mb-2">ການອານຸມັດ</p>
+                    <p className="text-xs text-muted-foreground mb-2">ການອະນຸມັດ</p>
                     <div className="space-y-1.5">
                       {selectedLeave.approvals.map((approval, i) => (
                         <div key={i} className="flex items-center justify-between">

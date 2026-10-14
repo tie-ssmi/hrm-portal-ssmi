@@ -53,3 +53,26 @@ export async function fetchWorkLocationType(uuid?: string): Promise<string | und
     return undefined
   }
 }
+
+export interface WorkLocationListItem {
+  uid: string
+  name: string
+  nameEn?: string
+  order?: number
+}
+
+// Every workLocation doc with its admin-set `order` — used to sort branch
+// filters. Deleted branches are kept: old records still carry their name.
+export async function fetchAllWorkLocations(): Promise<WorkLocationListItem[]> {
+  const snap = await getDocs(collection(db, 'workLocation'))
+  return snap.docs.map((d) => {
+    const data = d.data()
+    const nameEn = data.nameEn || data.nameEN
+    return {
+      uid: d.id,
+      name: toName(data) || d.id,
+      ...(typeof nameEn === 'string' ? { nameEn } : {}),
+      ...(typeof data.order === 'number' ? { order: data.order } : {}),
+    }
+  })
+}

@@ -81,7 +81,7 @@ return (
 <Card>
 <CardHeader>
 <CardTitle className="text-lg">ແບບຟອມຂໍພັກຜ່ອນ</CardTitle>
-<CardDescription>ສົ່ງຄໍາຮ້ອງຂໍພັກຜ່ອນ</CardDescription>
+<CardDescription>ສົ່ງຄຳຮ້ອງຂໍພັກຜ່ອນ</CardDescription>
 </CardHeader>
 <CardContent>
 <form onSubmit={onSubmit} className="space-y-4">
@@ -240,7 +240,7 @@ rows={3}
 
 <Button type="submit" className="w-full" disabled={isSubmitting}>
 {isSubmitting ? <Spinner className="mr-2" /> : <Send className="w-4 h-4 mr-2" />}
-ສົ່ງຄໍາຮ້ອງຂໍ
+ສົ່ງຄຳຮ້ອງຂໍ
 </Button>
 </form>
 </CardContent>

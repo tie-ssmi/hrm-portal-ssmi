@@ -33,6 +33,7 @@ import { translateJobTitle } from '@/components/translater'
 // ** config / utils / types / hooks
 import { useAuth } from '@/lib/auth-context'
 import { useTodayCheckInAttendance } from '@/lib/use-attendance-queries'
+import { useWorkLocations } from '@/lib/use-work-location-queries'
 import type { AttendanceRecord } from '@/lib/types'
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -116,11 +117,12 @@ function CheckInPageContent() {
     }
   }, [userWorkLocation])
 
+  const { compareWorkLocation } = useWorkLocations()
   const workLocations = useMemo(() => {
     const set = new Set<string>()
     allRecords.forEach(r => { if (r.workLocation?.name) set.add(r.workLocation.name) })
-    return Array.from(set).sort()
-  }, [allRecords])
+    return Array.from(set).sort(compareWorkLocation)
+  }, [allRecords, compareWorkLocation])
 
   const filtered = useMemo(() => {
     const activeLocation =
@@ -199,7 +201,7 @@ function CheckInPageContent() {
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-2">
               <Clock className="h-4 w-4 text-amber-500" />
-              <p className="text-xs text-muted-foreground">ສາຍ</p>
+              <p className="text-xs text-muted-foreground">ມາຊ້າ</p>
             </div>
             <p className="mt-1 text-2xl font-bold text-foreground">{stats.late}</p>
           </CardContent>
@@ -208,7 +210,7 @@ function CheckInPageContent() {
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-2">
               <LogOut className="h-4 w-4 text-muted-foreground" />
-              <p className="text-xs text-muted-foreground">ອອກແລ້ວ</p>
+              <p className="text-xs text-muted-foreground">ກັບແລ້ວ</p>
             </div>
             <p className="mt-1 text-2xl font-bold text-foreground">{stats.checkedOut}</p>
           </CardContent>
@@ -312,7 +314,7 @@ function CheckInPageContent() {
                   <TableHeader className="bg-muted/40">
                     <TableRow className="hover:bg-muted/40">
                       <TableHead className="w-12 px-4">#</TableHead>
-                      <TableHead className="px-4 min-w-[200px]">ຊື່ / ຕໍາແໜ່ງ</TableHead>
+                      <TableHead className="px-4 min-w-[200px]">ຊື່ / ຕຳແໜ່ງ</TableHead>
                       <TableHead className="px-4 min-w-[140px]">ພະແນກ</TableHead>
                       <TableHead className="px-4 w-24">ເຂົ້າ</TableHead>
                       <TableHead className="px-4 w-24">ອອກ</TableHead>

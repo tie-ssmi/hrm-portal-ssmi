@@ -61,6 +61,7 @@ export function activityLabel(code: ActivityCode | string): string {
     case 'OVERTIME': return 'ເຮັດວຽກວັນພັກ (OT)'
     case 'TRAINING': return 'ຝຶກອົບຮົມ / ທັດສະນະສຶກສາ'
     case 'AUDIT': return 'ລົງກວດກາ'
+    case 'VISIT': return 'ຢ້ຽມຢາມ / ຕິດຕາມ'
     // Old 6-type codes, still on older requests
     case 'MEET_CLIENT': return 'ພົບລູກຄ້າ'
     case 'MEETING': return 'ປະຊຸມພາຍນອກ'

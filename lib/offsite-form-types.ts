@@ -2,6 +2,8 @@
 // The form, its review step, the badges/filters and both detail pages read the
 // type table and field rules from here so they can't drift apart.
 
+import { differenceInCalendarDays, parseISO } from 'date-fns'
+
 import type {
   ActivityCode,
   CostItem,
@@ -17,9 +19,10 @@ export const ACTIVITY_TYPES: Record<FormType, { code: CurrentActivityCode; name:
   overtime: { code: 'OVERTIME', name: 'ເຮັດວຽກວັນພັກ (OT)' },
   training: { code: 'TRAINING', name: 'ຝຶກອົບຮົມ / ທັດສະນະສຶກສາ' },
   audit: { code: 'AUDIT', name: 'ລົງກວດກາ' },
+  visit: { code: 'VISIT', name: 'ຢ້ຽມຢາມ / ຕິດຕາມ' },
 }
 
-export const FORM_TYPES: FormType[] = ['workOutside', 'overtime', 'training', 'audit']
+export const FORM_TYPES: FormType[] = ['workOutside', 'overtime', 'training', 'audit', 'visit']
 
 export const LEGACY_ACTIVITY_CODES: LegacyActivityCode[] = [
   'MEET_CLIENT',
@@ -29,7 +32,7 @@ export const LEGACY_ACTIVITY_CODES: LegacyActivityCode[] = [
   'OTHERS',
 ]
 
-// Filter dropdowns list the current 4 first, then the old codes so old
+// Filter dropdowns list the current types first, then the old codes so old
 // requests stay findable. TRAINING appears once and matches both eras.
 export const ACTIVITY_FILTER_CODES: ActivityCode[] = [
   ...FORM_TYPES.map((t) => ACTIVITY_TYPES[t].code),
@@ -49,91 +52,209 @@ export function isLegacyActivity(formType: FormType, code: ActivityCode | null |
 
 // ── Field rules ──────────────────────────────────────────────────────────────
 
-export type TypeField =
-  | 'location'
+// Every field the form can show. Some cover several doc keys (see
+// DOC_KEY_FIELD): times = startTime + endTime, costItems = costItems +
+// exchangeRate + costTotals, trainingInfo = organizer + registrationDeadline +
+// coordinators.
+export type FieldKey =
+  | 'subject'
+  | 'dates' // startDate + endDate, picked on their own (not from the schedule)
+  | 'references'
+  | 'objective'
   | 'details'
+  | 'location'
   | 'customerName'
-  | 'times' // startTime + endTime
+  | 'schedule'
+  | 'times'
   | 'totalHours'
+  | 'equipmentUsed'
   | 'estimatedCost'
-  | 'costItems' // costItems + exchangeRate + costTotals
-  | 'trainingInfo' // organizer + registrationDeadline + coordinators
+  | 'costItems'
+  | 'trainingInfo'
   | 'documentChecklist'
   | 'notes'
-  | 'schedule'
+  | 'docLink'
 
-export type FieldRule = 'required' | 'optional'
+export type FieldRule = 'required' | 'optional' | 'hidden'
+export type FieldRules = Record<FieldKey, FieldRule>
 
-// Absent key = field not shown for that type and never written to the doc.
-export const FIELD_RULES: Record<FormType, Partial<Record<TypeField, FieldRule>>> = {
-  workOutside: {
+// The one table that rendering, validation, the review step and the payload
+// all read. 'hidden' = not rendered, not validated, not reviewed, never
+// written to the doc.
+export const FIELDS_BY_TYPE: Record<CurrentActivityCode, FieldRules> = {
+  GENERAL: {
+    subject: 'required',
+    dates: 'required',
+    references: 'optional',
+    objective: 'optional',
+    details: 'optional',
     location: 'required',
-    details: 'optional',
     customerName: 'optional',
-    times: 'optional',
-    estimatedCost: 'optional',
-    notes: 'optional',
     schedule: 'optional',
+    times: 'optional',
+    totalHours: 'hidden',
+    equipmentUsed: 'optional',
+    estimatedCost: 'optional',
+    costItems: 'hidden',
+    trainingInfo: 'hidden',
+    documentChecklist: 'hidden',
+    notes: 'optional',
+    docLink: 'optional',
   },
-  overtime: {
+  OVERTIME: {
+    subject: 'required',
+    dates: 'required',
+    references: 'optional',
+    objective: 'required',
+    details: 'hidden',
     location: 'optional',
-    details: 'optional',
+    customerName: 'hidden',
+    schedule: 'optional',
     times: 'required',
     totalHours: 'required',
+    equipmentUsed: 'hidden',
+    estimatedCost: 'hidden',
+    costItems: 'hidden',
+    trainingInfo: 'hidden',
+    documentChecklist: 'hidden',
     notes: 'optional',
-    schedule: 'optional',
+    docLink: 'optional',
   },
-  training: {
-    location: 'required',
+  TRAINING: {
+    subject: 'required',
+    dates: 'required',
+    references: 'optional',
+    objective: 'optional',
     details: 'optional',
+    location: 'required',
+    customerName: 'hidden',
+    schedule: 'required',
+    times: 'hidden',
+    totalHours: 'hidden',
+    equipmentUsed: 'hidden',
     estimatedCost: 'required',
     costItems: 'optional',
     trainingInfo: 'optional',
+    documentChecklist: 'hidden',
     notes: 'optional',
-    schedule: 'required',
+    docLink: 'optional',
   },
-  audit: {
-    location: 'required',
+  AUDIT: {
+    subject: 'required',
+    dates: 'required',
+    references: 'optional',
+    objective: 'optional',
     details: 'optional',
+    location: 'required',
+    customerName: 'hidden',
+    schedule: 'required',
+    times: 'hidden',
+    totalHours: 'hidden',
+    equipmentUsed: 'optional',
+    estimatedCost: 'hidden',
+    costItems: 'hidden',
+    trainingInfo: 'hidden',
     documentChecklist: 'optional',
     notes: 'optional',
+    docLink: 'optional',
+  },
+  VISIT: {
+    subject: 'required',
+    dates: 'required',
+    references: 'optional',
+    objective: 'required',
+    details: 'optional',
+    location: 'required',
+    customerName: 'hidden',
     schedule: 'required',
+    times: 'hidden',
+    totalHours: 'hidden',
+    equipmentUsed: 'optional',
+    estimatedCost: 'optional',
+    costItems: 'hidden',
+    trainingInfo: 'hidden',
+    documentChecklist: 'hidden',
+    notes: 'optional',
+    docLink: 'optional',
   },
 }
 
-// Rules for a given form. Old-code docs get the general field set, but nothing
-// on it is required: forcing a location onto an already-filed request would
-// block re-saving it for a field it never had.
-export function getFieldRules(
-  formType: FormType,
-  legacy: boolean,
-): Partial<Record<TypeField, FieldRule>> {
-  const rules = FIELD_RULES[formType]
-  if (!legacy) return rules
-  return Object.fromEntries(Object.keys(rules).map((k) => [k, 'optional'])) as Partial<
-    Record<TypeField, FieldRule>
-  >
+export function isShown(rule: FieldRule | undefined): rule is 'required' | 'optional' {
+  return rule === 'required' || rule === 'optional'
 }
 
-// Every doc key a type-specific field can write. On edit, the keys the chosen
-// type doesn't show are deleted so switching type leaves nothing behind.
-export const TYPE_SPECIFIC_DOC_KEYS = [
-  'location',
-  'details',
-  'customerName',
-  'startTime',
-  'endTime',
-  'totalHours',
-  'estimatedCost',
-  'costItems',
-  'exchangeRate',
-  'costTotals',
-  'organizer',
-  'registrationDeadline',
-  'coordinators',
-  'documentChecklist',
-  'notes',
-] as const
+// Rules for the form being filled. Old-code docs get GENERAL's field set with
+// only the subject and dates required: forcing a location onto an
+// already-filed request would block re-saving it for a field it never had.
+// Dates stay required — an old doc whose startDate is empty must get one.
+export function getFieldRules(formType: FormType, legacy: boolean): FieldRules {
+  if (!legacy) return FIELDS_BY_TYPE[ACTIVITY_TYPES[formType].code]
+  return Object.fromEntries(
+    Object.entries(FIELDS_BY_TYPE.GENERAL).map(([key, rule]) => [
+      key,
+      key !== 'subject' && key !== 'dates' && rule === 'required' ? 'optional' : rule,
+    ]),
+  ) as FieldRules
+}
+
+// ── Approvers ────────────────────────────────────────────────────────────────
+
+export type OffsiteApproverRole = 'departmentHead' | 'hr' | 'manager'
+
+// LPB requesters normally go departmentHead → hr → manager; these types skip
+// hr. Non-LPB requesters are always departmentHead → hr.
+const LPB_APPROVERS_BY_TYPE: Partial<Record<ActivityCode, OffsiteApproverRole[]>> = {
+  AUDIT: ['departmentHead', 'manager'],
+}
+
+export function getRequiredApprovers(code: ActivityCode, lpb: boolean): OffsiteApproverRole[] {
+  if (!lpb) return ['departmentHead', 'hr']
+  return LPB_APPROVERS_BY_TYPE[code] ?? ['departmentHead', 'hr', 'manager']
+}
+
+// ── Dates ────────────────────────────────────────────────────────────────────
+
+export type DateMode = 'single' | 'range'
+
+// How an existing doc opens: equal dates (or none at all, from the old
+// typed-date bug) → single; two different dates → range.
+export function dateModeFromDoc(doc?: { startDate?: string; endDate?: string }): DateMode {
+  return doc?.startDate && doc.endDate && doc.endDate !== doc.startDate ? 'range' : 'single'
+}
+
+// Calendar days from start to end, both included, weekends counted.
+// "2026-09-13".."2026-09-18" → 6; a single day → 1.
+export function calcDurationDays(startDate: string, endDate: string): number {
+  return differenceInCalendarDays(parseISO(endDate), parseISO(startDate)) + 1
+}
+
+// Doc keys the config controls, and the field each belongs to. On edit, keys
+// the chosen type hides are deleted so a type switch leaves nothing behind —
+// except on old-code docs, whose values in hidden fields are left untouched.
+export const DOC_KEY_FIELD = {
+  references: 'references',
+  objective: 'objective',
+  details: 'details',
+  location: 'location',
+  customerName: 'customerName',
+  scheduleDetails: 'schedule',
+  startTime: 'times',
+  endTime: 'times',
+  totalHours: 'totalHours',
+  equipmentUsed: 'equipmentUsed',
+  estimatedCost: 'estimatedCost',
+  costItems: 'costItems',
+  exchangeRate: 'costItems',
+  costTotals: 'costItems',
+  organizer: 'trainingInfo',
+  registrationDeadline: 'trainingInfo',
+  coordinators: 'trainingInfo',
+  documentChecklist: 'documentChecklist',
+  notes: 'notes',
+} as const satisfies Record<string, FieldKey>
+
+export type ContentDocKey = keyof typeof DOC_KEY_FIELD
+export const CONTENT_DOC_KEYS = Object.keys(DOC_KEY_FIELD) as ContentDocKey[]
 
 // ── Calculations ─────────────────────────────────────────────────────────────
 
@@ -234,44 +355,62 @@ export function resolveTrainingCost(values: Pick<TypeFieldValues, 'costRows' | '
   }
 }
 
-// The type-specific doc fields for one form type: only fields that type shows,
-// and only those with a value. Fields left out of the result are, on edit,
-// deleted from the doc (see TYPE_SPECIFIC_DOC_KEYS).
-export type TypeFields = Partial<Pick<WorkOutsideRecord, (typeof TYPE_SPECIFIC_DOC_KEYS)[number]>>
+// Fields that predate the 4-type form. They follow the config too now.
+export interface CoreFieldValues {
+  references: string[]
+  objective: string
+  scheduleDetails: WorkOutsideRecord['scheduleDetails']
+  equipmentUsed: string
+}
+
+export type ContentFields = Partial<Pick<WorkOutsideRecord, ContentDocKey>>
 
 type TextKey = 'location' | 'details' | 'customerName' | 'startTime' | 'endTime' | 'organizer' | 'registrationDeadline'
 
-export function buildTypeFields(formType: FormType, values: TypeFieldValues): TypeFields {
-  const rules = FIELD_RULES[formType]
-  const out: TypeFields = {}
+// The content fields to write: only fields the rules show. The original four
+// are written as before when shown (empty string / array included); the newer
+// ones only when they have a value.
+export function buildContentFields(
+  rules: FieldRules,
+  values: TypeFieldValues,
+  core: CoreFieldValues,
+): ContentFields {
+  const out: ContentFields = {}
   const text = (key: TextKey, v: string) => {
     if (v.trim()) out[key] = v.trim()
   }
 
-  if (rules.location) text('location', values.location)
-  if (rules.details) text('details', values.details)
-  if (rules.customerName) text('customerName', values.customerName)
-  if (rules.times) {
+  if (isShown(rules.references)) out.references = core.references.filter((r) => r.trim())
+  if (isShown(rules.objective)) out.objective = core.objective
+  if (isShown(rules.schedule)) out.scheduleDetails = core.scheduleDetails
+  if (isShown(rules.equipmentUsed)) out.equipmentUsed = core.equipmentUsed
+
+  if (isShown(rules.location)) text('location', values.location)
+  if (isShown(rules.details)) text('details', values.details)
+  if (isShown(rules.customerName)) text('customerName', values.customerName)
+  if (isShown(rules.times)) {
     text('startTime', values.startTime)
     text('endTime', values.endTime)
   }
-  if (rules.totalHours) {
+  if (isShown(rules.totalHours)) {
     const hours = toNumber(values.totalHours)
     if (hours !== null) out.totalHours = hours
   }
 
-  if (rules.costItems) {
+  if (isShown(rules.costItems)) {
     const cost = resolveTrainingCost(values)
     if (cost.costItems.length > 0) out.costItems = cost.costItems
     if (cost.exchangeRate) out.exchangeRate = cost.exchangeRate
     if (cost.costTotals) out.costTotals = cost.costTotals
-    if (cost.estimatedCost !== null) out.estimatedCost = cost.estimatedCost
-  } else if (rules.estimatedCost) {
+    if (isShown(rules.estimatedCost) && cost.estimatedCost !== null) {
+      out.estimatedCost = cost.estimatedCost
+    }
+  } else if (isShown(rules.estimatedCost)) {
     const cost = toNumber(values.estimatedCost)
     if (cost !== null) out.estimatedCost = cost
   }
 
-  if (rules.trainingInfo) {
+  if (isShown(rules.trainingInfo)) {
     text('organizer', values.organizer)
     text('registrationDeadline', values.registrationDeadline)
     const coordinators = values.coordinators
@@ -280,7 +419,7 @@ export function buildTypeFields(formType: FormType, values: TypeFieldValues): Ty
     if (coordinators.length > 0) out.coordinators = coordinators
   }
 
-  if (rules.documentChecklist) {
+  if (isShown(rules.documentChecklist)) {
     const groups = values.documentChecklist
       .map((g) => ({
         group: g.group.trim(),
@@ -296,12 +435,28 @@ export function buildTypeFields(formType: FormType, values: TypeFieldValues): Ty
     if (groups.length > 0) out.documentChecklist = groups
   }
 
-  if (rules.notes) {
+  if (isShown(rules.notes)) {
     const notes = values.notes.map((n) => n.trim()).filter(Boolean)
     if (notes.length > 0) out.notes = notes
   }
 
   return out
+}
+
+// Content keys an edit should delete: ones the doc has but this save doesn't
+// write. On an old-code doc, keys GENERAL hides are left as they are.
+export function contentKeysToDelete(
+  rules: FieldRules,
+  legacy: boolean,
+  written: object,
+  doc: Partial<Record<ContentDocKey, unknown>>,
+): ContentDocKey[] {
+  return CONTENT_DOC_KEYS.filter(
+    (key) =>
+      !(key in written) &&
+      doc[key] !== undefined &&
+      !(legacy && rules[DOC_KEY_FIELD[key]] === 'hidden'),
+  )
 }
 
 // Form values for a saved doc (edit mode), or blanks for a new request.

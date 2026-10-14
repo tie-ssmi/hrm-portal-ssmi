@@ -114,6 +114,7 @@ function toPolicyRecord(id: string, data: Record<string, unknown>): PolicyRecord
     countMode,
     active,
     rules,
+    order: toOptionalNumber(data.order),
   }
 }
 
@@ -163,6 +164,8 @@ export async function fetchPoliciesForGender(gender?: string | null): Promise<Po
         const normalizedRole = normalizeValue(policy.role)
         return normalizedRole === 'all' || normalizedRole === normalizedGender
       })
+      // Admin-set display order; policies without one go last.
+      .sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity))
   } catch (error) {
     console.error('Error fetching policies for gender:', error)
     return []

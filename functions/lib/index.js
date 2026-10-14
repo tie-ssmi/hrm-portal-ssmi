@@ -36,7 +36,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.logAuditEvent = exports.recordCheckOut = exports.recordCheckIn = exports.notifyOffsiteDecisionEmail = exports.notifyNewOffsiteRequest = exports.notifyLeaveDecisionEmail = exports.notifyNewLeaveRequest = exports.checkAttendanceAt814 = exports.checkAttendanceAt800 = exports.backfillUserRoleMirrors = exports.syncEmployeeMirrors = exports.getServerTime = void 0;
+exports.logAuditEvent = exports.recordOTCheckOut = exports.recordOTCheckIn = exports.recordCheckOut = exports.recordCheckIn = exports.notifyOffsiteDecisionEmail = exports.notifyNewOffsiteRequest = exports.notifyLeaveDecisionEmail = exports.notifyNewLeaveRequest = exports.checkAttendanceAt814 = exports.checkAttendanceAt800 = exports.backfillUserRoleMirrors = exports.syncEmployeeMirrors = exports.getServerTime = void 0;
 const admin = __importStar(require("firebase-admin"));
 const https_1 = require("firebase-functions/v2/https");
 const scheduler_1 = require("firebase-functions/v2/scheduler");
@@ -44,6 +44,7 @@ const firestore_1 = require("firebase-functions/v2/firestore");
 const web_push_1 = __importDefault(require("web-push"));
 const resend_1 = require("./email/resend");
 const attendance_auth_1 = require("./attendance-auth");
+const attendance_ot_1 = require("./attendance-ot");
 const portal_leave_email_1 = require("./email/portal-leave-email");
 const leave_recipient_resolver_1 = require("./email/leave-recipient-resolver");
 const portal_offsite_email_1 = require("./email/portal-offsite-email");
@@ -978,10 +979,12 @@ function logAppCheckShadow(app, fnName) {
 // The trade-off is accepted deliberately: someone who clears site data gets a
 // fresh localId and is not caught. That was already true for every iOS user
 // before this change, since the fingerprint was skipped there anyway.
-async function assertDeviceNotUsedByOtherAccount(isoDate, userUuid, deviceLocalId, deviceFingerprint, field, errorMessage) {
+async function assertDeviceNotUsedByOtherAccount(isoDate, userUuid, deviceLocalId, deviceFingerprint, field, errorMessage, 
+// OT punches are checked against their own collection, not normal attendance
+collectionName = "attendance") {
     if (!deviceLocalId && !deviceFingerprint)
         return;
-    const attendance = admin.firestore().collection("attendance");
+    const attendance = admin.firestore().collection(collectionName);
     const sameDay = (signal, value) => attendance
         .where("dateKey", "==", isoDate)
         .where(signal, "==", value)
@@ -1218,6 +1221,116 @@ exports.recordCheckOut = (0, https_1.onCall)(
             },
             ipAddress: checkOutIp,
             userAgent: checkOutUserAgent,
+        });
+    }
+    return { attendanceId, checkOutTime: checkTime, workHours };
+});
+function requireOTEvidence(data) {
+    if (!data.imageURL) {
+        throw new https_1.HttpsError("invalid-argument", "ກະລຸນາຖ່າຍຮູບກ່ອນ Check-In/Out OT");
+    }
+    if (!data.location || typeof data.location.lat !== "number" || typeof data.location.lng !== "number") {
+        throw new https_1.HttpsError("invalid-argument", "ບໍ່ມີຂໍ້ມູນ GPS — ກະລຸນາເປີດຕຳແໜ່ງ ແລ້ວລອງໃໝ່");
+    }
+    return { lat: data.location.lat, lng: data.location.lng };
+}
+function requestIp(rawRequest) {
+    var _a, _b;
+    const forwarded = rawRequest.headers["x-forwarded-for"];
+    const first = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+    return (_b = (typeof first === "string" ? (_a = first.split(",")[0]) === null || _a === void 0 ? void 0 : _a.trim() : undefined)) !== null && _b !== void 0 ? _b : rawRequest.ip;
+}
+async function findTodayOTRequest(uid, isoDate) {
+    // participantIds holds bare uids on OT docs (the form writes them that way);
+    // pickTodayOTRequest then narrows to approved OT covering today, teammates only.
+    const snap = await admin
+        .firestore()
+        .collection("workOutside")
+        .where("participantIds", "array-contains", uid)
+        .get();
+    const requests = snap.docs.map((d) => (Object.assign({ id: d.id }, d.data())));
+    return (0, attendance_ot_1.pickTodayOTRequest)(requests, uid, isoDate);
+}
+exports.recordOTCheckIn = (0, https_1.onCall)({ region: "asia-southeast1", cors: callableCorsOrigins, invoker: "public" }, async (request) => {
+    var _a, _b;
+    if (!request.auth) {
+        throw new https_1.HttpsError("unauthenticated", "Must be signed in");
+    }
+    logAppCheckShadow(request.app, "recordOTCheckIn");
+    const data = request.data;
+    (0, attendance_auth_1.assertCallerOwnsAttendance)(request.auth.uid, data.userUuid, "check in");
+    const location = requireOTEvidence(data);
+    const { date, isoDate, checkTime } = getVientianeParts();
+    const ot = await findTodayOTRequest(data.userUuid, isoDate);
+    if (!ot) {
+        throw new https_1.HttpsError("failed-precondition", "ທ່ານບໍ່ມີຄຳຂໍ OT ທີ່ອະນຸມັດແລ້ວສຳລັບມື້ນີ້");
+    }
+    const attendanceId = `${data.userUuid}_${date}`;
+    const ref = admin.firestore().collection("attendanceOT").doc(attendanceId);
+    const existing = await ref.get();
+    if ((_a = existing.data()) === null || _a === void 0 ? void 0 : _a.checkInTime) {
+        throw new https_1.HttpsError("already-exists", "ທ່ານ Check-In OT ມື້ນີ້ແລ້ວ");
+    }
+    const userAgent = request.rawRequest.headers["user-agent"];
+    await assertDeviceNotUsedByOtherAccount(isoDate, data.userUuid, data.deviceLocalId, data.deviceFingerprint, "checkInTime", "ອຸປະກອນນີ້ຖືກໃຊ້ Check-In OT ມື້ນີ້ແລ້ວດ້ວຍບັນຊີອື່ນ ❌", "attendanceOT");
+    const status = (0, attendance_ot_1.computeOTCheckInStatus)(checkTime, ot.startTime);
+    const ip = requestIp(request.rawRequest);
+    const priorLocationPoint = await getPriorLocationPoint(data.userUuid, isoDate);
+    // isOffsite=true: no office to be near, so the "too precise for indoors"
+    // heuristic doesn't apply; impossible-travel still runs.
+    const locationFlags = computeLocationFlags(location, data.accuracy, true, timestampFromParts(isoDate, checkTime), priorLocationPoint);
+    await ref.set(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ _id: attendanceId, uid: data.userUuid, userUuid: data.userUuid, date, dateKey: isoDate, checkInTime: checkTime, status, checkInLocation: location, checkInImageURL: data.imageURL, otRequestId: ot.id }, (ot.requestNo ? { otRequestNo: ot.requestNo } : {})), (ot.startTime ? { otStartTime: ot.startTime } : {})), (ot.endTime ? { otEndTime: ot.endTime } : {})), (data.fullNameEn != null ? { fullNameEn: data.fullNameEn } : {})), (data.fullNameLo != null ? { fullNameLo: data.fullNameLo } : {})), (data.jobTitle != null ? { jobTitle: data.jobTitle } : {})), (data.jobTitleLo != null ? { jobTitleLo: data.jobTitleLo } : {})), (data.employeeImage != null ? { employeeImage: data.employeeImage } : {})), (data.department ? { department: data.department } : {})), (data.workLocation ? { workLocation: data.workLocation } : {})), (data.deviceLocalId ? { deviceLocalId: data.deviceLocalId } : {})), (data.deviceFingerprint ? { deviceFingerprint: data.deviceFingerprint } : {})), (data.deviceModel ? { deviceModel: data.deviceModel } : {})), (data.accuracy != null ? { checkInAccuracy: data.accuracy } : {})), (ip ? { checkInIp: ip } : {})), (userAgent ? { checkInUserAgent: userAgent } : {})), (locationFlags.length > 0 ? { checkInLocationFlags: locationFlags } : {})), { note: null, createdAt: new Date().toISOString(), createdBy: data.userUuid, updatedAt: new Date().toISOString(), updatedBy: data.userUuid }), { merge: true });
+    if (locationFlags.length > 0) {
+        await logLocationFlagAudit({
+            action: "attendanceOT.checkIn.locationFlag",
+            actorUid: request.auth.uid,
+            actorName: data.fullNameLo || data.fullNameEn,
+            targetId: attendanceId,
+            after: { locationFlags, location, accuracy: (_b = data.accuracy) !== null && _b !== void 0 ? _b : null },
+            ipAddress: ip,
+            userAgent,
+        });
+    }
+    return { attendanceId, date, isoDate, checkTime, status, otRequestId: ot.id };
+});
+exports.recordOTCheckOut = (0, https_1.onCall)({ region: "asia-southeast1", cors: callableCorsOrigins, invoker: "public" }, async (request) => {
+    var _a;
+    if (!request.auth) {
+        throw new https_1.HttpsError("unauthenticated", "Must be signed in");
+    }
+    logAppCheckShadow(request.app, "recordOTCheckOut");
+    const data = request.data;
+    (0, attendance_auth_1.assertCallerOwnsAttendance)(request.auth.uid, data.userUuid, "check out");
+    const location = requireOTEvidence(data);
+    const { date, isoDate, checkTime } = getVientianeParts();
+    const attendanceId = `${data.userUuid}_${date}`;
+    const ref = admin.firestore().collection("attendanceOT").doc(attendanceId);
+    const existingData = (await ref.get()).data();
+    const checkInTime = existingData === null || existingData === void 0 ? void 0 : existingData.checkInTime;
+    if (!checkInTime) {
+        throw new https_1.HttpsError("failed-precondition", "ກະລຸນາ Check-In OT ກ່ອນ");
+    }
+    if (existingData === null || existingData === void 0 ? void 0 : existingData.checkOutTime) {
+        throw new https_1.HttpsError("already-exists", "ທ່ານ Check-Out OT ມື້ນີ້ແລ້ວ");
+    }
+    const userAgent = request.rawRequest.headers["user-agent"];
+    await assertDeviceNotUsedByOtherAccount(isoDate, data.userUuid, data.deviceLocalId, data.deviceFingerprint, "checkOutTime", "ອຸປະກອນນີ້ຖືກໃຊ້ Check-Out OT ມື້ນີ້ແລ້ວດ້ວຍບັນຊີອື່ນ ❌", "attendanceOT");
+    const ip = requestIp(request.rawRequest);
+    const checkInLoc = existingData === null || existingData === void 0 ? void 0 : existingData.checkInLocation;
+    const locationFlags = computeLocationFlags(location, data.accuracy, true, timestampFromParts(isoDate, checkTime), (checkInLoc === null || checkInLoc === void 0 ? void 0 : checkInLoc.lat) != null && (checkInLoc === null || checkInLoc === void 0 ? void 0 : checkInLoc.lng) != null
+        ? { lat: checkInLoc.lat, lng: checkInLoc.lng, timestampMs: timestampFromParts(isoDate, checkInTime) }
+        : null);
+    const workHours = (0, attendance_ot_1.calcWorkHours)(checkInTime, checkTime);
+    await ref.set(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ checkOutTime: checkTime, workHours, checkOutLocation: location, checkOutImageURL: data.imageURL }, (data.deviceLocalId ? { deviceLocalId: data.deviceLocalId } : {})), (data.deviceFingerprint ? { deviceFingerprint: data.deviceFingerprint } : {})), (data.deviceModel ? { deviceModel: data.deviceModel } : {})), (data.accuracy != null ? { checkOutAccuracy: data.accuracy } : {})), (ip ? { checkOutIp: ip } : {})), (userAgent ? { checkOutUserAgent: userAgent } : {})), (locationFlags.length > 0 ? { checkOutLocationFlags: locationFlags } : {})), { updatedAt: new Date().toISOString(), updatedBy: data.userUuid }), { merge: true });
+    if (locationFlags.length > 0) {
+        await logLocationFlagAudit({
+            action: "attendanceOT.checkOut.locationFlag",
+            actorUid: request.auth.uid,
+            actorName: data.fullNameLo || data.fullNameEn,
+            targetId: attendanceId,
+            after: { locationFlags, location, accuracy: (_a = data.accuracy) !== null && _a !== void 0 ? _a : null },
+            ipAddress: ip,
+            userAgent,
         });
     }
     return { attendanceId, checkOutTime: checkTime, workHours };

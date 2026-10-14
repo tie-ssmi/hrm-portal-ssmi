@@ -23,6 +23,7 @@ import { Spinner } from "@/components/ui/spinner";
 // ** config / utils / types / hooks
 import { useAuth } from "@/lib/auth-context";
 import { useAllTodayOffsite } from "@/lib/use-work-outside-queries";
+import { useWorkLocations } from "@/lib/use-work-location-queries";
 import type { Department, OffsiteRequestDoc } from "@/types/workOutside";
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -90,14 +91,15 @@ export default function OffsiteTodayPage() {
   );
   const [search, setSearch] = useState("");
 
+  const { compareWorkLocation } = useWorkLocations();
   const workLocations = useMemo(() => {
     const set = new Set<string>();
     allRecords.forEach((r) => {
       const name = r.requester?.workLocation?.nameLo;
       if (name) set.add(name);
     });
-    return Array.from(set).sort();
-  }, [allRecords]);
+    return Array.from(set).sort(compareWorkLocation);
+  }, [allRecords, compareWorkLocation]);
 
   const filteredRecords = useMemo(() => {
     const activeLocation =
@@ -183,7 +185,7 @@ export default function OffsiteTodayPage() {
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-2">
               <Building2 className="text-muted-foreground h-4 w-4" />
-              <p className="text-muted-foreground text-xs">ພາກແນກ</p>
+              <p className="text-muted-foreground text-xs">ພະແນກ</p>
             </div>
             <p className="text-foreground mt-1 text-2xl font-bold">
               {grouped.length}

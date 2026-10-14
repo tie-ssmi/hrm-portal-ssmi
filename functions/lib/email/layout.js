@@ -59,7 +59,7 @@ exports.COLORS = {
 exports.APPROVER_ROLE_LABEL = {
     departmentHead: "ຫົວໜ້າພະແນກ",
     hr: "ບໍລິຫານ ແລະ ບຸກຄະລາກອນ",
-    manager: "ຜູ້ຈັດການ",
+    manager: "ຄະນະອຳນວຍການ",
 };
 /**
  * Email bodies carry free text a colleague typed (leave reason, rejection

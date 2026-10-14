@@ -9,6 +9,7 @@ import {
   Clock,
   GraduationCap,
   ClipboardCheck,
+  MapPinned,
 } from 'lucide-react'
 
 // ** config / utils / types / hooks
@@ -23,6 +24,7 @@ const ICON_MAP: Record<ActivityCode, IconComponent> = {
   OVERTIME: Clock,
   TRAINING: GraduationCap,
   AUDIT: ClipboardCheck,
+  VISIT: MapPinned,
   // Old 6-type codes, still on older requests
   MEET_CLIENT: Handshake,
   MEETING: Users,
@@ -36,6 +38,7 @@ const COLOR_MAP: Record<ActivityCode, string> = {
   OVERTIME: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
   TRAINING: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400',
   AUDIT: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400',
+  VISIT: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
   MEET_CLIENT: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
   MEETING: 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400',
   BOOTH: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',

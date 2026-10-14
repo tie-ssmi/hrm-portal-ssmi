@@ -1,8 +1,8 @@
-// The 4 form types the portal offers. formType and activityType.code pair 1:1
+// The 5 form types the portal offers. formType and activityType.code pair 1:1
 // (see ACTIVITY_TYPES in lib/offsite-form-types.ts). A doc with no formType is
 // a pre-4-type request — read it as 'workOutside'.
-export type FormType = 'workOutside' | 'overtime' | 'training' | 'audit'
-export type CurrentActivityCode = 'GENERAL' | 'OVERTIME' | 'TRAINING' | 'AUDIT'
+export type FormType = 'workOutside' | 'overtime' | 'training' | 'audit' | 'visit'
+export type CurrentActivityCode = 'GENERAL' | 'OVERTIME' | 'TRAINING' | 'AUDIT' | 'VISIT'
 // Codes from the old 6-type form. No longer selectable, but still on old docs.
 // TRAINING existed in both sets and is listed once, in CurrentActivityCode.
 export type LegacyActivityCode = 'MEET_CLIENT' | 'MEETING' | 'BOOTH' | 'PROMO' | 'OTHERS'

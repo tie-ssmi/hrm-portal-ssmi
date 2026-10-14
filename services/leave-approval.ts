@@ -41,9 +41,9 @@ export function resolveLeaveRequestStatus(approvals?: LeaveApprovalStep[]): Leav
 
 export function getLeaveApproverRuleText(duration?: number | null): string {
   if (duration !== null && duration !== undefined && duration >= 3) {
-    return 'ຜູ້ອານຸມັດ: ຫົວໜ້າພາແນກ, ບໍລິຫານ ບຸກຄະລາກອນ, ແລະ ຜູ້ຈັດການ'
+    return 'ຜູ້ອະນຸມັດ: ຫົວໜ້າພະແນກ, ບໍລິຫານ ບຸກຄະລາກອນ, ແລະ ຄະນະອຳນວຍການ'
   }
-  return 'ຜູ້ອານຸມັດ: ຫົວໜ້າພາແນກ ແລະ ບໍລິຫານ ບຸກຄະລາກອນ'
+  return 'ຜູ້ອະນຸມັດ: ຫົວໜ້າພະແນກ ແລະ ບໍລິຫານ ບຸກຄະລາກອນ'
 }
 
 // Lao text has several encodings that render identically: ຳ (U+0EB3) vs

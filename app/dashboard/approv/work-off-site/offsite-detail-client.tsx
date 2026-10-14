@@ -69,7 +69,7 @@ import { updateOffsiteApproval } from "@/services/workOutside";
 const ROLE_LABEL: Record<string, string> = {
   departmentHead: "ຫົວໜ້າພະແນກ",
   hr: "ຝ່າຍ HR",
-  manager: "ຜູ້ຈັດການ",
+  manager: "ຄະນະອຳນວຍການ",
 };
 
 function InfoField({
@@ -398,7 +398,7 @@ export default function OffsiteDetailClient() {
             icon={<Users className="h-3.5 w-3.5" />}
           />
           <InfoField
-            label="ຕໍາແໜ່ງ"
+            label="ຕຳແໜ່ງ"
             value={record.requester.jobTitle}
             icon={<Briefcase className="h-3.5 w-3.5" />}
           />

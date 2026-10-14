@@ -51,7 +51,7 @@ import "driver.js/dist/driver.css";
 const ROLE_LABEL: Record<string, string> = {
   departmentHead: "ຫົວໜ້າພະແນກ",
   hr: "HR",
-  manager: "ຜູ້ຈັດການ",
+  manager: "ຄະນະອຳນວຍການ",
 };
 
 export type ApprovalEntry = {
@@ -115,12 +115,12 @@ type OffsiteTableProps = {
   className?: string;
 };
 
-type TabValue = "all" | "pending" | "inprogress" | "rejected";
+type TabValue = "pending" | "inprogress" | "approved" | "rejected";
 
 const TABS: { value: TabValue; label: string }[] = [
-  { value: "all", label: "ທັງໝົດ" },
   { value: "pending", label: "ລໍຖ້າ" },
   { value: "inprogress", label: "ດຳເນີນການ" },
+  { value: "approved", label: "ອະນຸມັດ" },
   { value: "rejected", label: "ປະຕິເສດ" },
 ];
 
@@ -174,8 +174,8 @@ function tabMatch(item: OffsiteTableItem, tab: TabValue): boolean {
       approvals.some((a) => a.decision === "pending")
     );
   }
-  if (tab === "rejected") return item.status === "rejected";
-  return true;
+  if (tab === "approved") return item.status === "approved";
+  return item.status === "rejected";
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -224,7 +224,7 @@ export default function OffsiteTable({
   canApproveBranch = false,
   className,
 }: OffsiteTableProps) {
-  const [activeTab, setActiveTab] = useState<TabValue>("all");
+  const [activeTab, setActiveTab] = useState<TabValue>("pending");
   const [deptFilter, setDeptFilter] = useState("all");
 
   // ── Driver.js tour ──
@@ -244,7 +244,7 @@ export default function OffsiteTable({
           element: "#offsite-table-tabs",
           popover: {
             title: "ຕົວກັ່ນຕອງ",
-            description: "ກັ່ນຕອງຕາມສະຖານະ: ທັງໝົດ, ລໍຖ້າ, ດຳເນີນການ, ປະຕິເສດ",
+            description: "ກັ່ນຕອງຕາມສະຖານະ: ລໍຖ້າ, ດຳເນີນການ, ອະນຸມັດ, ປະຕິເສດ",
             side: "bottom" as const,
             align: "start" as const,
           },
@@ -252,8 +252,8 @@ export default function OffsiteTable({
         {
           element: "#offsite-table-list",
           popover: {
-            title: "ລາຍການຄໍາຮ້ອງຂໍ",
-            description: "ເບິ່ງລາຍລະອຽດ, ອະນຸມັດ ຫຼື ປະຕິເສດ ແຕ່ລະຄໍາຮ້ອງ",
+            title: "ລາຍການຄຳຮ້ອງຂໍ",
+            description: "ເບິ່ງລາຍລະອຽດ, ອະນຸມັດ ຫຼື ປະຕິເສດ ແຕ່ລະຄຳຮ້ອງ",
             side: "top" as const,
             align: "center" as const,
           },
@@ -288,9 +288,9 @@ export default function OffsiteTable({
         ? data.filter((i) => i.requester?.department?.title === deptFilter)
         : data;
     return {
-      all: base.length,
       pending: base.filter((i) => tabMatch(i, "pending")).length,
       inprogress: base.filter((i) => tabMatch(i, "inprogress")).length,
+      approved: base.filter((i) => tabMatch(i, "approved")).length,
       rejected: base.filter((i) => tabMatch(i, "rejected")).length,
     };
   }, [data, deptFilter, canApproveBranch]);
@@ -301,9 +301,7 @@ export default function OffsiteTable({
       result = result.filter(
         (i) => i.requester?.department?.title === deptFilter,
       );
-    if (activeTab !== "all")
-      result = result.filter((i) => tabMatch(i, activeTab));
-    return result;
+    return result.filter((i) => tabMatch(i, activeTab));
   }, [data, activeTab, deptFilter, canApproveBranch]);
 
   return (
@@ -494,7 +492,7 @@ export default function OffsiteTable({
                   <TableRow className="hover:bg-muted/40">
                     <TableHead className="w-12 px-4">#</TableHead>
                     <TableHead className="px-4 min-w-[200px]">
-                      ຊື່ / ຕໍາແໜ່ງ
+                      ຊື່ / ຕຳແໜ່ງ
                     </TableHead>
                     <TableHead className="px-4 min-w-[180px]">
                       ກິດຈະກຳ / ຫົວຂໍ້
