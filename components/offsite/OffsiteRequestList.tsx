@@ -105,7 +105,7 @@ export function OffsiteRequestList({
   if (error) {
     return (
       <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 flex items-center justify-between gap-4">
-        <p className="text-sm text-destructive">ໂຫຼດຂໍ້ມູນລົ້ມເຫລວ: {error.message}</p>
+        <p className="text-sm text-destructive">ໂຫຼດຂໍ້ມູນລົ້ມເຫຼວ: {error.message}</p>
         <Button variant="outline" size="sm" onClick={onRetry} className="gap-1.5 shrink-0">
           <RefreshCw className="w-3.5 h-3.5" />
           ລອງໃໝ່

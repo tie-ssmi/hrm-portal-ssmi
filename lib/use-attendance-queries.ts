@@ -47,7 +47,7 @@ function upsertAttendanceRecord(
   return updated
 }
 
-function toDepartmentPayload(
+export function toDepartmentPayload(
   department: unknown
 ): { name: string; uid: string } | undefined {
   if (!department) return undefined
@@ -68,7 +68,7 @@ function toDepartmentPayload(
   return undefined
 }
 
-function toWorkLocationPayload(
+export function toWorkLocationPayload(
   workLocation: unknown
 ): { code?: string; name: string; uid?: string } | undefined {
   if (!workLocation) return undefined

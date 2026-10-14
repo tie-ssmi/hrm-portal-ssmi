@@ -97,7 +97,7 @@ function LeaveDetailSheet({
             />
             <DetailRow
               icon={<Building2 className="h-4 w-4" />}
-              label="ພາກແນກ"
+              label="ພະແນກ"
               value={leave?.department}
             />
             <DetailRow

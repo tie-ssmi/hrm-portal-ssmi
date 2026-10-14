@@ -64,6 +64,7 @@ import {
   formatMonthYearLao,
 } from "@/components/laoDate";
 import type { ActivityCode, OffsiteRequestDoc } from "@/types/workOutside";
+import { ACTIVITY_FILTER_CODES } from "@/lib/offsite-form-types";
 import type { LeaveRequest } from "@/lib/types";
 
 // ** services
@@ -87,13 +88,7 @@ function toSafeDate(value: unknown): Date | null {
 
 const CURRENT_YEAR = new Date().getFullYear().toString();
 
-const ACTIVITY_CODES: ActivityCode[] = [
-  "MEET_CLIENT",
-  "MEETING",
-  "BOOTH",
-  "PROMO",
-  "TRAINING",
-];
+const ACTIVITY_CODES: ActivityCode[] = ACTIVITY_FILTER_CODES;
 
 function getStatusVariant(status: string) {
   switch (status) {
@@ -195,7 +190,7 @@ function mergeFullDayLeaves(requests: LeaveRequest[]): LeaveRequest[] {
 const APPROVAL_ROLE_LABEL: Record<string, string> = {
   departmentHead: "ຫົວໜ້າພະແນກ",
   hr: "HR",
-  manager: "ຜູ້ຈັດການ",
+  manager: "ຄະນະອຳນວຍການ",
 };
 
 function LeaveDetailContent({ leave }: { leave: LeaveRequest }) {
@@ -639,13 +634,14 @@ export default function HistoryPage() {
   if (isLoading) {
     return <HistorySkeleton />;
   }
+  const thisYear = new Date().getFullYear();
 
   return (
     <>
       <div className="space-y-6">
         <div>
           <h1 className="text-foreground text-2xl font-bold">ປະຫວັດ</h1>
-          <p className="text-muted-foreground">ເບິ່ງປະຫວັດຕ່າງໆຂອງທ່ານ</p>
+          <p className="text-muted-foreground">ເບິ່ງປະຫວັດຕ່າງໆຂອງທ່ານ ໃນປີ {thisYear}</p>
         </div>
 
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -656,7 +652,7 @@ export default function HistoryPage() {
                   <Calendar className="text-chart-1 h-5 w-5" />
                 </div>
                 <div>
-                  <p className="text-muted-foreground text-xs">ຈຳນວນມື້ມາການ</p>
+                  <p className="text-muted-foreground text-xs">ຈຳນວນມື້ມາວຽກ</p>
                   <p className="text-foreground text-xl font-bold">
                     {yearAttendanceCount}
                   </p>
@@ -673,7 +669,7 @@ export default function HistoryPage() {
                 </div>
                 <div>
                   <p className="text-muted-foreground text-xs">
-                    ຈຳນວນມື້ທີລາພັກ
+                    ຈຳນວນມື້ທີ່ລາພັກ
                   </p>
                   <p className="text-foreground text-xl font-bold">
                     {yearLeaveDays}
@@ -916,7 +912,7 @@ export default function HistoryPage() {
                             </p>
                             <div className="text-muted-foreground mt-3 flex hidden items-center gap-4 text-xs md:block">
                               <span>
-                                ມື້ສົ່ງຄຳຮອງ :{" "}
+                                ມື້ສົ່ງຄຳຮ້ອງ:{" "}
                                 {createdD ? formatDayDateLao(createdD) : "—"}
                               </span>
                               {request.reviewedBy && (
@@ -925,7 +921,7 @@ export default function HistoryPage() {
                             </div>
                             <div className="text-muted-foreground mt-3 flex items-center gap-4 text-xs md:hidden">
                               <span>
-                                ມື້ສົ່ງຄຳຮອງ :{" "}
+                                ມື້ສົ່ງຄຳຮ້ອງ:{" "}
                                 {createdD ? formatDateLao(createdD) : "—"}
                               </span>
                               {request.reviewedBy && (
@@ -1006,7 +1002,7 @@ export default function HistoryPage() {
                             <div className="flex items-center justify-between gap-2">
                               <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                                 <ActivityTypeBadge
-                                  code={request.activityType.code}
+                                  code={request.activityType.code} name={request.activityType.name}
                                 />
                                 <span className="bg-background text-muted-foreground shrink-0 rounded-full border px-2 py-0.5 text-[10px]">
                                   {isRequester ? "ຜູ້ຍື່ນຄຳຂໍ" : "ສະມາຊິກທີມ"}

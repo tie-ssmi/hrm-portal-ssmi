@@ -88,7 +88,7 @@ export function OffsiteRequestRow({ doc, currentUid, onView, onEdit, onCancel }:
 
       {/* activity */}
       <td className="px-3 py-3 align-middle">
-        <ActivityTypeBadge code={doc.activityType.code} />
+        <ActivityTypeBadge code={doc.activityType.code} name={doc.activityType.name} />
       </td>
 
       {/* subject */}
@@ -226,7 +226,7 @@ export function OffsiteRequestCard({ doc, currentUid, onView, onEdit, onCancel }
       </div>
 
       <div className="flex flex-wrap gap-1.5 items-center">
-        <ActivityTypeBadge code={doc.activityType.code} />
+        <ActivityTypeBadge code={doc.activityType.code} name={doc.activityType.name} />
         <StatusBadge status={doc.status} />
         <span className="text-[10px] bg-muted text-muted-foreground rounded-full px-1.5 py-0.5 font-medium">
           {doc.durationDays} ມື້

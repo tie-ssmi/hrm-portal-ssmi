@@ -39,6 +39,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { CameraCapture } from "@/components/camera-capture";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { OTCheckInPanel } from "@/components/attendance/ot-check-in-panel";
 import { formatDateLao, formatDayDateLao } from "@/components/laoDate";
 
 // ** third party
@@ -57,6 +59,7 @@ import {
   useTodayTrip,
 } from "@/lib/use-attendance-queries";
 import { useOfficialHolidays } from "@/lib/use-official-holidays-query";
+import { useTodayOTRequest } from "@/lib/use-attendance-ot-queries";
 import { appliesToLocation } from "@/services/officialHolidays";
 import { getVientianeIsoDate, getVientianeHourMinute } from "@/lib/server-time";
 import type { AttendanceRecord } from "@/lib/types";
@@ -92,7 +95,7 @@ const LiveClock = memo(function LiveClock() {
     <Card className="bg-primary text-primary-foreground mb-2 py-2">
       <CardContent className="pt-2">
         <div className="text-center">
-          <p className="text-sm opacity-80">ເວລາປະຈຸບັນ</p>
+          <p className="text-sm opacity-80">ເວລາປັດຈຸບັນ</p>
           <p className="mt-1 text-4xl font-bold">
             {time ? format(time, "HH:mm:ss") : "--:--:--"}
           </p>
@@ -225,7 +228,7 @@ const LocationCard = memo(function LocationCard({
             )}
             {hasPoorAccuracy && (
               <p className="text-xs text-amber-600">
-                ສັນຍານ GPS ບໍ່ແມ່ນຍໍາ ({Math.round(location.accuracy)} ແມັດ) —
+                ສັນຍານ GPS ບໍ່ແມ່ນຍຳ ({Math.round(location.accuracy)} ແມັດ) —
                 ລອງອອກໄປບ່ອນໂລ່ງແຈ້ງ ຫຼື ດຶງຂໍ້ມູນຕຳແໜ່ງໃໝ່
               </p>
             )}
@@ -514,7 +517,7 @@ const OffsiteDetailDialog = memo(function OffsiteDetailDialog({
 });
 
 // ເຫດຜົນຂອງການອອກກ່ອນເວລາ ຖືກບັງຄັບຢູ່ server (recordCheckOut) ນຳ —
-// ຢູ່ນີ້ພຽງກັນບໍ່ໃຫ້ຜູ້ໃຊ້ສົ່ງໄປແລ້ວຖືກປະຕິເສດເສີຍໆ.
+// ຢູ່ນີ້ພຽງກັນບໍ່ໃຫ້ຜູ້ໃຊ້ສົ່ງໄປແລ້ວຖືກປະຕິເສດເສຍໆ.
 const EARLY_CHECKOUT_REASON_MIN_CHARS = 30;
 
 // ເວລາເລີກວຽກ (ນາທີຂອງມື້) — ຕ້ອງກົງກັບ earlyCheckOutCutoffMinutes ໃນ functions/src/index.ts.
@@ -633,6 +636,8 @@ export default function AttendancePage() {
   const { data: todayTrip = null, isLoading: isLoadingTrip } = useTodayTrip(user?.uuid, todayIso);
   const checkInMutation = useCheckIn();
   const checkOutMutation = useCheckOut();
+  // Approved OT request covering today that lists this user as a teammate
+  const { data: otRequest = null } = useTodayOTRequest(user?.uuid, todayIso);
 
   const [location, setLocation] = useState<LocationState | null>(null);
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
@@ -808,11 +813,11 @@ export default function AttendancePage() {
         type === "checkIn" ? checkInMutRef.current : checkOutMutRef.current;
       const successMsg = isOffsite
         ? type === "checkIn"
-          ? "ເຂົ້າການ ນອກສຳເລັດ"
-          : "ອອກການ ນອກສຳເລັດ"
+          ? "ເຂົ້າວຽກນອກສຳເລັດ"
+          : "ອອກວຽກນອກສຳເລັດ"
         : type === "checkIn"
-          ? "ເຂົ້າການສຳເລັດແລ້ວ"
-          : "ອອກການສຳເລັດແລ້ວ";
+          ? "ເຂົ້າວຽກສຳເລັດແລ້ວ"
+          : "ອອກວຽກສຳເລັດແລ້ວ";
 
       try {
         if (isOffsite) {
@@ -948,18 +953,10 @@ export default function AttendancePage() {
     [],
   );
 
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-foreground text-2xl font-bold">
-          Check-In / Check-Out
-        </h1>
-        <p className="text-muted-foreground">
-          ບັນທຶກການເຂົ້າຮ່ວມຂອງທ່ານດ້ວຍການຢັ້ງຢືນ GPS
-        </p>
-      </div>
-
-      <LiveClock />
+  // Normal check-in, unchanged. On its own when there's no OT today, or as the
+  // first tab when there is.
+  const normalSection = (
+    <>
       <DailySummaryCard
         todayAttendance={todayAttendance}
         isLoadingHistory={isLoadingHistory}
@@ -1103,6 +1100,40 @@ export default function AttendancePage() {
         onConfirm={handleConfirmEarlyCheckOut}
         onCancel={() => setShowEarlyCheckOutConfirm(false)}
       />
+    </>
+  );
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-foreground text-2xl font-bold">
+          Check-In / Check-Out
+        </h1>
+        <p className="text-muted-foreground">
+          ບັນທຶກການເຂົ້າຮ່ວມຂອງທ່ານດ້ວຍການຢັ້ງຢືນ GPS
+        </p>
+      </div>
+
+      <LiveClock />
+
+      {otRequest && user ? (
+        // OT usually falls on a weekend or holiday, when normal check-in is
+        // blocked anyway — open on the OT tab then.
+        <Tabs defaultValue={isBlockedDay.blocked ? "ot" : "normal"}>
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="normal">Check-in ທົ່ວໄປ</TabsTrigger>
+            <TabsTrigger value="ot">Check-in OT</TabsTrigger>
+          </TabsList>
+          <TabsContent value="normal" className="space-y-6">
+            {normalSection}
+          </TabsContent>
+          <TabsContent value="ot">
+            <OTCheckInPanel user={user} otRequest={otRequest} todayIso={todayIso} />
+          </TabsContent>
+        </Tabs>
+      ) : (
+        normalSection
+      )}
     </div>
   );
 }

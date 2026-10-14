@@ -285,7 +285,7 @@ function FormsPageContent() {
         status: "FAILED",
         errorMessage: err instanceof Error ? err.message : String(err),
       });
-      toast.error("ຍົກເລີກລົ້ມເຫລວ ກະລຸນາລອງໃໝ່");
+      toast.error("ຍົກເລີກລົ້ມເຫຼວ ກະລຸນາລອງໃໝ່");
     } finally {
       setIsCancelling(false);
       setCancelTarget(null);
@@ -329,7 +329,7 @@ function FormsPageContent() {
           popover: {
             title: "ຟອມຂໍລາພັກ",
             description:
-              "ຍື່ນຄໍາຮ້ອງຂໍລາພັກ — ເລືອກປະເພດ, ວັນທີ ແລະ ສົ່ງຄໍາຮ້ອງ",
+              "ຍື່ນຄຳຮ້ອງຂໍລາພັກ — ເລືອກປະເພດ, ວັນທີ ແລະ ສົ່ງຄຳຮ້ອງ",
             side: "bottom" as const,
             align: "start" as const,
           },
@@ -365,9 +365,9 @@ function FormsPageContent() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-foreground text-2xl font-bold">Request Forms</h1>
+          <h1 className="text-foreground text-2xl font-bold">ແບບຟອມ</h1>
           <p className="text-muted-foreground">
-            Submit leave and off-site work requests
+            ສ້າງຄຳຂໍລາພັກ ແລະ ຄຳຂໍອອກວຽກນອກ
           </p>
         </div>
         <Button type="button" variant="ghost" size="icon" onClick={startTour}>

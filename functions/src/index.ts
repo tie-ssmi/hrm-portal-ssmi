@@ -6,6 +6,12 @@ import webpush from "web-push";
 import { sendResendEmail } from "./email/resend";
 import { assertCallerOwnsAttendance } from "./attendance-auth";
 import {
+  calcWorkHours,
+  computeOTCheckInStatus,
+  pickTodayOTRequest,
+  type OTRequestLike,
+} from "./attendance-ot";
+import {
   ADMIN_LEAVE_URL,
   APPROVER_ROLE_LABEL,
   PORTAL_APPROVAL_URL,
@@ -1415,10 +1421,12 @@ async function assertDeviceNotUsedByOtherAccount(
   deviceFingerprint: string | undefined,
   field: "checkInTime" | "checkOutTime",
   errorMessage: string,
+  // OT punches are checked against their own collection, not normal attendance
+  collectionName: "attendance" | "attendanceOT" = "attendance",
 ): Promise<void> {
   if (!deviceLocalId && !deviceFingerprint) return;
 
-  const attendance = admin.firestore().collection("attendance");
+  const attendance = admin.firestore().collection(collectionName);
   const sameDay = (signal: string, value: string) =>
     attendance
       .where("dateKey", "==", isoDate)
@@ -1822,6 +1830,253 @@ export const recordCheckOut = onCall(
         },
         ipAddress: checkOutIp,
         userAgent: checkOutUserAgent,
+      });
+    }
+
+    return { attendanceId, checkOutTime: checkTime, workHours };
+  },
+);
+
+// =========================================================================
+// ⏱️ 6b. OT CHECK-IN / CHECK-OUT (attendanceOT)
+// Same document shape as attendance, in its own collection. Allowed only for
+// a teammate on an approved OT request (workOutside formType "overtime") that
+// covers today. No geofence — OT can be anywhere — but GPS and a photo are
+// required on every punch. Status: present at or before the request's
+// startTime, late after. Rules: lib/attendance-ot.ts (client mirror).
+// =========================================================================
+
+type OTPunchPayload = {
+  userUuid: string;
+  location?: { lat: number; lng: number };
+  accuracy?: number;
+  imageURL?: string;
+  fullNameEn?: string;
+  fullNameLo?: string;
+  jobTitle?: string;
+  jobTitleLo?: string;
+  employeeImage?: string;
+  deviceLocalId?: string;
+  deviceFingerprint?: string;
+  deviceModel?: string;
+  department?: { name: string; uid: string };
+  workLocation?: { code?: string; name: string; uid?: string };
+};
+
+function requireOTEvidence(data: OTPunchPayload): { lat: number; lng: number } {
+  if (!data.imageURL) {
+    throw new HttpsError("invalid-argument", "ກະລຸນາຖ່າຍຮູບກ່ອນ Check-In/Out OT");
+  }
+  if (!data.location || typeof data.location.lat !== "number" || typeof data.location.lng !== "number") {
+    throw new HttpsError("invalid-argument", "ບໍ່ມີຂໍ້ມູນ GPS — ກະລຸນາເປີດຕຳແໜ່ງ ແລ້ວລອງໃໝ່");
+  }
+  return { lat: data.location.lat, lng: data.location.lng };
+}
+
+function requestIp(rawRequest: { headers: Record<string, unknown>; ip?: string }): string | undefined {
+  const forwarded = rawRequest.headers["x-forwarded-for"];
+  const first = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+  return (typeof first === "string" ? first.split(",")[0]?.trim() : undefined) ?? rawRequest.ip;
+}
+
+async function findTodayOTRequest(
+  uid: string,
+  isoDate: string,
+): Promise<OTRequestLike | null> {
+  // participantIds holds bare uids on OT docs (the form writes them that way);
+  // pickTodayOTRequest then narrows to approved OT covering today, teammates only.
+  const snap = await admin
+    .firestore()
+    .collection("workOutside")
+    .where("participantIds", "array-contains", uid)
+    .get();
+  const requests = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<OTRequestLike, "id">) }));
+  return pickTodayOTRequest(requests, uid, isoDate);
+}
+
+export const recordOTCheckIn = onCall(
+  { region: "asia-southeast1", cors: callableCorsOrigins, invoker: "public" },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Must be signed in");
+    }
+    logAppCheckShadow(request.app, "recordOTCheckIn");
+
+    const data = request.data as OTPunchPayload;
+    assertCallerOwnsAttendance(request.auth.uid, data.userUuid, "check in");
+    const location = requireOTEvidence(data);
+
+    const { date, isoDate, checkTime } = getVientianeParts();
+
+    const ot = await findTodayOTRequest(data.userUuid, isoDate);
+    if (!ot) {
+      throw new HttpsError(
+        "failed-precondition",
+        "ທ່ານບໍ່ມີຄຳຂໍ OT ທີ່ອະນຸມັດແລ້ວສຳລັບມື້ນີ້",
+      );
+    }
+
+    const attendanceId = `${data.userUuid}_${date}`;
+    const ref = admin.firestore().collection("attendanceOT").doc(attendanceId);
+    const existing = await ref.get();
+    if (existing.data()?.checkInTime) {
+      throw new HttpsError("already-exists", "ທ່ານ Check-In OT ມື້ນີ້ແລ້ວ");
+    }
+
+    const userAgent = request.rawRequest.headers["user-agent"] as string | undefined;
+    await assertDeviceNotUsedByOtherAccount(
+      isoDate,
+      data.userUuid,
+      data.deviceLocalId,
+      data.deviceFingerprint,
+      "checkInTime",
+      "ອຸປະກອນນີ້ຖືກໃຊ້ Check-In OT ມື້ນີ້ແລ້ວດ້ວຍບັນຊີອື່ນ ❌",
+      "attendanceOT",
+    );
+
+    const status = computeOTCheckInStatus(checkTime, ot.startTime);
+    const ip = requestIp(request.rawRequest);
+    const priorLocationPoint = await getPriorLocationPoint(data.userUuid, isoDate);
+    // isOffsite=true: no office to be near, so the "too precise for indoors"
+    // heuristic doesn't apply; impossible-travel still runs.
+    const locationFlags = computeLocationFlags(
+      location,
+      data.accuracy,
+      true,
+      timestampFromParts(isoDate, checkTime),
+      priorLocationPoint,
+    );
+
+    await ref.set(
+      {
+        _id: attendanceId,
+        uid: data.userUuid,
+        userUuid: data.userUuid,
+        date,
+        dateKey: isoDate,
+        checkInTime: checkTime,
+        status,
+        checkInLocation: location,
+        checkInImageURL: data.imageURL,
+        otRequestId: ot.id,
+        ...(ot.requestNo ? { otRequestNo: ot.requestNo } : {}),
+        ...(ot.startTime ? { otStartTime: ot.startTime } : {}),
+        ...(ot.endTime ? { otEndTime: ot.endTime } : {}),
+        ...(data.fullNameEn != null ? { fullNameEn: data.fullNameEn } : {}),
+        ...(data.fullNameLo != null ? { fullNameLo: data.fullNameLo } : {}),
+        ...(data.jobTitle != null ? { jobTitle: data.jobTitle } : {}),
+        ...(data.jobTitleLo != null ? { jobTitleLo: data.jobTitleLo } : {}),
+        ...(data.employeeImage != null ? { employeeImage: data.employeeImage } : {}),
+        ...(data.department ? { department: data.department } : {}),
+        ...(data.workLocation ? { workLocation: data.workLocation } : {}),
+        ...(data.deviceLocalId ? { deviceLocalId: data.deviceLocalId } : {}),
+        ...(data.deviceFingerprint ? { deviceFingerprint: data.deviceFingerprint } : {}),
+        ...(data.deviceModel ? { deviceModel: data.deviceModel } : {}),
+        ...(data.accuracy != null ? { checkInAccuracy: data.accuracy } : {}),
+        ...(ip ? { checkInIp: ip } : {}),
+        ...(userAgent ? { checkInUserAgent: userAgent } : {}),
+        ...(locationFlags.length > 0 ? { checkInLocationFlags: locationFlags } : {}),
+        note: null,
+        createdAt: new Date().toISOString(),
+        createdBy: data.userUuid,
+        updatedAt: new Date().toISOString(),
+        updatedBy: data.userUuid,
+      },
+      { merge: true },
+    );
+
+    if (locationFlags.length > 0) {
+      await logLocationFlagAudit({
+        action: "attendanceOT.checkIn.locationFlag",
+        actorUid: request.auth.uid,
+        actorName: data.fullNameLo || data.fullNameEn,
+        targetId: attendanceId,
+        after: { locationFlags, location, accuracy: data.accuracy ?? null },
+        ipAddress: ip,
+        userAgent,
+      });
+    }
+
+    return { attendanceId, date, isoDate, checkTime, status, otRequestId: ot.id };
+  },
+);
+
+export const recordOTCheckOut = onCall(
+  { region: "asia-southeast1", cors: callableCorsOrigins, invoker: "public" },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Must be signed in");
+    }
+    logAppCheckShadow(request.app, "recordOTCheckOut");
+
+    const data = request.data as OTPunchPayload;
+    assertCallerOwnsAttendance(request.auth.uid, data.userUuid, "check out");
+    const location = requireOTEvidence(data);
+
+    const { date, isoDate, checkTime } = getVientianeParts();
+    const attendanceId = `${data.userUuid}_${date}`;
+    const ref = admin.firestore().collection("attendanceOT").doc(attendanceId);
+    const existingData = (await ref.get()).data();
+    const checkInTime = existingData?.checkInTime as string | undefined;
+    if (!checkInTime) {
+      throw new HttpsError("failed-precondition", "ກະລຸນາ Check-In OT ກ່ອນ");
+    }
+    if (existingData?.checkOutTime) {
+      throw new HttpsError("already-exists", "ທ່ານ Check-Out OT ມື້ນີ້ແລ້ວ");
+    }
+
+    const userAgent = request.rawRequest.headers["user-agent"] as string | undefined;
+    await assertDeviceNotUsedByOtherAccount(
+      isoDate,
+      data.userUuid,
+      data.deviceLocalId,
+      data.deviceFingerprint,
+      "checkOutTime",
+      "ອຸປະກອນນີ້ຖືກໃຊ້ Check-Out OT ມື້ນີ້ແລ້ວດ້ວຍບັນຊີອື່ນ ❌",
+      "attendanceOT",
+    );
+
+    const ip = requestIp(request.rawRequest);
+    const checkInLoc = existingData?.checkInLocation as { lat?: number; lng?: number } | undefined;
+    const locationFlags = computeLocationFlags(
+      location,
+      data.accuracy,
+      true,
+      timestampFromParts(isoDate, checkTime),
+      checkInLoc?.lat != null && checkInLoc?.lng != null
+        ? { lat: checkInLoc.lat, lng: checkInLoc.lng, timestampMs: timestampFromParts(isoDate, checkInTime) }
+        : null,
+    );
+    const workHours = calcWorkHours(checkInTime, checkTime);
+
+    await ref.set(
+      {
+        checkOutTime: checkTime,
+        workHours,
+        checkOutLocation: location,
+        checkOutImageURL: data.imageURL,
+        ...(data.deviceLocalId ? { deviceLocalId: data.deviceLocalId } : {}),
+        ...(data.deviceFingerprint ? { deviceFingerprint: data.deviceFingerprint } : {}),
+        ...(data.deviceModel ? { deviceModel: data.deviceModel } : {}),
+        ...(data.accuracy != null ? { checkOutAccuracy: data.accuracy } : {}),
+        ...(ip ? { checkOutIp: ip } : {}),
+        ...(userAgent ? { checkOutUserAgent: userAgent } : {}),
+        ...(locationFlags.length > 0 ? { checkOutLocationFlags: locationFlags } : {}),
+        updatedAt: new Date().toISOString(),
+        updatedBy: data.userUuid,
+      },
+      { merge: true },
+    );
+
+    if (locationFlags.length > 0) {
+      await logLocationFlagAudit({
+        action: "attendanceOT.checkOut.locationFlag",
+        actorUid: request.auth.uid,
+        actorName: data.fullNameLo || data.fullNameEn,
+        targetId: attendanceId,
+        after: { locationFlags, location, accuracy: data.accuracy ?? null },
+        ipAddress: ip,
+        userAgent,
       });
     }
 

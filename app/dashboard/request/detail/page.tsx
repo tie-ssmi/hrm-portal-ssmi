@@ -21,6 +21,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "@/components/offsite/StatusBadge";
 import { ActivityTypeBadge } from "@/components/offsite/ActivityTypeBadge";
+import { OffsiteTypeDetails } from "@/components/offsite/OffsiteTypeDetails";
 
 // ** third party
 import { useQuery } from "@tanstack/react-query";
@@ -131,7 +132,7 @@ export default function OffsiteRequestDetailPage() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <ActivityTypeBadge code={record.activityType.code} />
+        <ActivityTypeBadge code={record.activityType.code} name={record.activityType.name} />
         <span className="bg-muted text-muted-foreground rounded-full px-2 py-0.5 text-xs font-medium">
           {record.durationDays} ມື້
         </span>
@@ -157,6 +158,8 @@ export default function OffsiteRequestDetailPage() {
           </InfoRow>
         )}
       </div>
+
+      <OffsiteTypeDetails record={record} />
 
       {record.references?.length > 0 && (
         <>

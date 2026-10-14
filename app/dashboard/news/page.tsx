@@ -25,7 +25,7 @@ export default function NewsPage() {
   {
     "createAt": "2026-03-19T02:30:00.000Z",
     "createBy": "ໂອລີເດດ ວົງສະຫວ່າງ",
-    "description": "ກອງປະຊຸມວາງແຜນຍຸດທະສາດປະຈຳເດືອນ ມີນາ 2026 ຮ່ວມກັບຜູ້ຈັດການທັງ 8 ສາຂາ ເພື່ອສະຫຼຸບຜົນການດຳເນີນງານໃນໄຕມາດທີ 1 ແລະ ກຳນົດທິດທາງການຂະຫຍາຍຕົວຂອງທຸລະກິດໃນໄລຍະຖັດໄປ",
+    "description": "ກອງປະຊຸມວາງແຜນຍຸດທະສາດປະຈຳເດືອນ ມີນາ 2026 ຮ່ວມກັບຄະນະອຳນວຍການທັງ 8 ສາຂາ ເພື່ອສະຫຼຸບຜົນການດຳເນີນງານໃນໄຕມາດທີ 1 ແລະ ກຳນົດທິດທາງການຂະຫຍາຍຕົວຂອງທຸລະກິດໃນໄລຍະຖັດໄປ",
     "docType": "image",
     "docURL": "https://firebasestorage.googleapis.com/v0/b/hrm-ssmi.firebasestorage.app/o/images%2Fprofiles%2Fcf8ef0cb-1b5a-465c-962f-77e40c642423.png?alt=media&token=139a6be9-1e60-43b6-98ba-f3b6be4b92b6",
     "note": "ກະລຸນາເຂົ້າຮ່ວມໃຫ້ກົງເວລາ",
@@ -35,7 +35,7 @@ export default function NewsPage() {
   {
     "createAt": "2026-03-19T02:30:00.000Z",
     "createBy": "ໂອລີເດດ ວົງສະຫວ່າງ",
-    "description": "ກອງປະຊຸມວາງແຜນຍຸດທະສາດປະຈຳເດືອນ ມີນາ 2026 ຮ່ວມກັບຜູ້ຈັດການທັງ 8 ສາຂາ ເພື່ອສະຫຼຸບຜົນການດຳເນີນງານໃນໄຕມາດທີ 1 ແລະ ກຳນົດທິດທາງການຂະຫຍາຍຕົວຂອງທຸລະກິດໃນໄລຍະຖັດໄປ",
+    "description": "ກອງປະຊຸມວາງແຜນຍຸດທະສາດປະຈຳເດືອນ ມີນາ 2026 ຮ່ວມກັບຄະນະອຳນວຍການທັງ 8 ສາຂາ ເພື່ອສະຫຼຸບຜົນການດຳເນີນງານໃນໄຕມາດທີ 1 ແລະ ກຳນົດທິດທາງການຂະຫຍາຍຕົວຂອງທຸລະກິດໃນໄລຍະຖັດໄປ",
     "docType": "image",
     "docURL": "https://firebasestorage.googleapis.com/v0/b/hrm-ssmi.firebasestorage.app/o/images%2Fprofiles%2Fcf8ef0cb-1b5a-465c-962f-77e40c642423.png?alt=media&token=139a6be9-1e60-43b6-98ba-f3b6be4b92b6",
     "note": "ກະລຸນາເຂົ້າຮ່ວມໃຫ້ກົງເວລາ",
@@ -66,7 +66,7 @@ export default function NewsPage() {
       "docType": "image",
       "docURL": "https://firebasestorage.googleapis.com/v0/b/hrm-ssmi.firebasestorage.app/o/images%2Fevents%2Fparty.png?alt=media",
       "note": "ຊຸດແຕ່ງກາຍສີຂາວ",
-      "title": "ງານລ້ຽງສັນສັນ"
+      "title": "ງານລ້ຽງສັງສັນ"
     },
     {
       "createAt": "2026-03-19T06:20:30.000Z",

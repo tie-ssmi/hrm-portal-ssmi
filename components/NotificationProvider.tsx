@@ -196,7 +196,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     // 🚗 2. ດັກຟັງໃບຂໍອອກນອກສະຖານທີ່ (workOutside)
     // =========================================================================
     // docs ໃໝ່ມີ departmentUid top-level ແລ້ວ — filter ຢູ່ Firestore level
-    // docs ເກົ່າທີ່ບໍ່ມີ field ນີ້ຈະບໍ່ match query (ຍອมຮັບໄດ້ ເພາະ docs ເກົ່າບໍ່ແມ່ນ pending ແລ້ວ)
+    // docs ເກົ່າທີ່ບໍ່ມີ field ນີ້ຈະບໍ່ match query (ຍອມຮັບໄດ້ ເພາະ docs ເກົ່າບໍ່ແມ່ນ pending ແລ້ວ)
     // canApproveBranch → drop departmentUid filter, scope by branch (work location) instead
     const qWork = canApproveBranch
       ? query(

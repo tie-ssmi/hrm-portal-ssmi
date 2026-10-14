@@ -57,7 +57,7 @@ export const COLORS = {
 export const APPROVER_ROLE_LABEL: Record<string, string> = {
   departmentHead: "ຫົວໜ້າພະແນກ",
   hr: "ບໍລິຫານ ແລະ ບຸກຄະລາກອນ",
-  manager: "ຜູ້ຈັດການ",
+  manager: "ຄະນະອຳນວຍການ",
 };
 
 /** One decided step of an approval chain, as stored in `approvals[]`. */

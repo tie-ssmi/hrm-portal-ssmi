@@ -10,7 +10,7 @@ export function RainEffect() {
   useEffect(() => {
     // ວາດເສັ້ນຍາວບາງໆ ໂຄ້ງໄປທາງດຽວກັບລົມ ພ້ອມ gradient ໃຫ້ຄືຮອຍເມັດຝົນຕົກແຮງ
     // (ເສັ້ນຊື່ໆ ບໍ່ມີ gradient/ມຸມແມ່ນເບິ່ງຄືເມັດຫິມະ ບໍ່ຄືຝົນ — rotationSpeed:[0,0]
-    // ໝາຍວາມວ່າ sprite ບໍ່ໝູນຕາມທິດທາງ, ສະນັ້ນຕ້ອງແຕ້ມມຸມນັ້ນເຂົ້າໃນ sprite ເອງ
+    // ໝາຍຄວາມວ່າ sprite ບໍ່ໝູນຕາມທິດທາງ, ສະນັ້ນຕ້ອງແຕ້ມມຸມນັ້ນເຂົ້າໃນ sprite ເອງ
     // ໃຫ້ກົງກັບທິດ wind ທີ່ໃຊ້ຢູ່ລຸ່ມນີ້)
     const canvas = document.createElement("canvas");
     canvas.width = 8;

@@ -64,7 +64,7 @@ function PendingDocCard({
       toast.success('ສົ່ງເອກະສານສຳເລັດ')
       setFile(null)
     } catch (error) {
-      const msg = error instanceof Error ? error.message : 'ສົ່ງເອກະສານລົ້ມເຫລວ ກະລຸນາລອງໃໝ່'
+      const msg = error instanceof Error ? error.message : 'ສົ່ງເອກະສານລົ້ມເຫຼວ ກະລຸນາລອງໃໝ່'
       toast.error(msg)
     } finally {
       setUploadProgress(null)

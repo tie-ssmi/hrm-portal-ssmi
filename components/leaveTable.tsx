@@ -44,7 +44,7 @@ import type { LeaveApprovalStep } from '@/lib/types'
 const ROLE_LABEL: Record<string, string> = {
 	departmentHead: 'ຫົວໜ້າພະແນກ',
 	hr: 'HR',
-	manager: 'ຜູ້ຈັດການ',
+	manager: 'ຄະນະອຳນວຍການ',
 }
 
 function getWhoPending(approvals?: LeaveApprovalStep[]): string | null {
@@ -82,20 +82,21 @@ type LeaveTableProps = {
 	className?: string
 }
 
-type TabValue = 'all' | 'pending' | 'inprogress' | 'rejected'
+type TabValue = 'pending' | 'inprogress' | 'approved' | 'rejected'
 
 const TABS: { value: TabValue; label: string }[] = [
-	{ value: 'all',        label: 'ທັງໝົດ' },
 	{ value: 'pending',    label: 'ລໍຖ້າ' },
 	{ value: 'inprogress', label: 'ດຳເນີນການ' },
+	{ value: 'approved',   label: 'ອະນຸມັດ' },
 	{ value: 'rejected',   label: 'ປະຕິເສດ' },
 ]
 
 function tabMatch(item: LeaveTableItem, tab: TabValue): boolean {
 	if (tab === 'pending')    return item.approvals?.[0]?.decision === 'pending' && item.status !== 'rejected'
-	if (tab === 'inprogress') return item.approvals?.[0]?.decision === 'approved' && item.status !== 'rejected'
-	if (tab === 'rejected')   return item.status === 'rejected'
-	return true
+	// Past the first step but not finished; fully approved ones go to 'approved'
+	if (tab === 'inprogress') return item.approvals?.[0]?.decision === 'approved' && item.status !== 'rejected' && item.status !== 'approved'
+	if (tab === 'approved')   return item.status === 'approved'
+	return item.status === 'rejected'
 }
 
 function computeRowMeta(item: LeaveTableItem) {
@@ -115,7 +116,7 @@ function formatDuration(duration?: number): string {
 
 export default function LeaveTable({ data, onViewDetail, onApprove, onReject, canApproveBranch = false, className }: LeaveTableProps) {
 	const router = useRouter()
-	const [activeTab, setActiveTab] = useState<TabValue>('all')
+	const [activeTab, setActiveTab] = useState<TabValue>('pending')
 	const [deptFilter, setDeptFilter] = useState('all')
 
 	const departments = useMemo(() => {
@@ -132,14 +133,14 @@ export default function LeaveTable({ data, onViewDetail, onApprove, onReject, ca
 	)
 
 	const counts = useMemo(() => ({
-		all:        deptFiltered.length,
 		pending:    deptFiltered.filter(i => tabMatch(i, 'pending')).length,
 		inprogress: deptFiltered.filter(i => tabMatch(i, 'inprogress')).length,
+		approved:   deptFiltered.filter(i => tabMatch(i, 'approved')).length,
 		rejected:   deptFiltered.filter(i => tabMatch(i, 'rejected')).length,
 	}), [deptFiltered])
 
 	const filtered = useMemo(() =>
-		activeTab === 'all' ? deptFiltered : deptFiltered.filter(i => tabMatch(i, activeTab)),
+		deptFiltered.filter(i => tabMatch(i, activeTab)),
 		[deptFiltered, activeTab],
 	)
 
@@ -160,7 +161,7 @@ export default function LeaveTable({ data, onViewDetail, onApprove, onReject, ca
 					element: '#leave-table-tabs',
 					popover: {
 						title: 'ຕົວກັ່ນຕອງ',
-						description: 'ກັ່ນຕອງຕາມສະຖານະ: ທັງໝົດ, ລໍຖ້າ, ດຳເນີນການ, ປະຕິເສດ',
+						description: 'ກັ່ນຕອງຕາມສະຖານະ: ລໍຖ້າ, ດຳເນີນການ, ອະນຸມັດ, ປະຕິເສດ',
 						side: 'bottom' as const,
 						align: 'start' as const,
 					},
@@ -168,8 +169,8 @@ export default function LeaveTable({ data, onViewDetail, onApprove, onReject, ca
 				{
 					element: '#leave-table-list',
 					popover: {
-						title: 'ລາຍການຄໍາຮ້ອງຂໍ',
-						description: 'ເບິ່ງລາຍລະອຽດ, ອະນຸมັດ ຫຼື ປະຕິເສດ ແຕ່ລະຄໍາຮ້ອງ',
+						title: 'ລາຍການຄຳຮ້ອງຂໍ',
+						description: 'ເບິ່ງລາຍລະອຽດ, ອະນຸມັດ ຫຼື ປະຕິເສດ ແຕ່ລະຄຳຮ້ອງ',
 						side: 'top' as const,
 						align: 'center' as const,
 					},
@@ -345,7 +346,7 @@ export default function LeaveTable({ data, onViewDetail, onApprove, onReject, ca
 								<TableHeader className="bg-muted/40">
 									<TableRow className="hover:bg-muted/40">
 										<TableHead className="w-12 px-4">#</TableHead>
-										<TableHead className="px-4 min-w-[200px]">ຊື່ / ຕໍາແໜ່ງ</TableHead>
+										<TableHead className="px-4 min-w-[200px]">ຊື່ / ຕຳແໜ່ງ</TableHead>
 										<TableHead className="px-4 min-w-[200px]">ເຫດຜົນ</TableHead>
 										<TableHead className="px-4 min-w-[160px]">ວັນທີ</TableHead>
 										<TableHead className="px-4 min-w-[140px]">ຜູ້ຮັບວຽກຕໍ່</TableHead>

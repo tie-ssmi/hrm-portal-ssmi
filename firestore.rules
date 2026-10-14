@@ -341,6 +341,17 @@ service cloud.firestore {
     }
 
     // ==========================================================
+    // attendanceOT — OT punches, same shape as attendance.
+    // Written ONLY by recordOTCheckIn / recordOTCheckOut (Admin SDK bypasses
+    // rules), which check the approved OT request, time, photo and GPS. Unlike
+    // attendance there is no client write path at all.
+    // ==========================================================
+    match /attendanceOT/{docId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // ==========================================================
     // officialHoliday
     // Tightened: write = admin only (was: any signed-in user — BUG)
     // ==========================================================

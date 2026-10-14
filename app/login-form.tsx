@@ -16,7 +16,7 @@ type AuthStep = 'idle' | 'setup-password' | 'link-google' | 'forgot-password'
 function loginErrorMessage(code?: string): string {
   switch (code) {
     case 'auth/too-many-requests':
-      return 'ພະຍາຍາມຫຼາຍເກີນໄປ. ກະລຸນາລໍຖ້າ 15 -30 ນາທີ ຫຼື ຣີເຊັດລະຫັດຜ່ານ.'
+      return 'ພະຍາຍາມຫຼາຍເກີນໄປ. ກະລຸນາລໍຖ້າ 15–30 ນາທີ ຫຼື ຣີເຊັດລະຫັດຜ່ານ.'
     case 'auth/invalid-credential':
     case 'auth/wrong-password':
       return 'ອີເມວ ຫຼື ລະຫັດຜ່ານບໍ່ຖືກຕ້ອງ.'

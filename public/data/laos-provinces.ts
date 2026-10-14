@@ -32,10 +32,10 @@ export const LAO_PROVINCES: LaoProvince[] = [
     name: "ແຂວງຜົ້ງສາລີ",
     districts: [
       { id: "0201", name: "ຜົ້ງສາລີ" },
-      { id: "0202", name: "ໃຫມ່" },
+      { id: "0202", name: "ໃໝ່" },
       { id: "0203", name: "ຂວາ" },
       { id: "0204", name: "ສຳພັນ" },
-      { id: "0205", name: "ບູນເຫນືອ" },
+      { id: "0205", name: "ບູນເໜືອ" },
       { id: "0206", name: "ຍອດອູ" },
       { id: "0207", name: "ບູນໃຕ້" },
     ],
@@ -45,7 +45,7 @@ export const LAO_PROVINCES: LaoProvince[] = [
     name: "ແຂວງຫຼວງນ້ຳທາ",
     districts: [
       { id: "0301", name: "ຫຼວງນ້ຳທາ" },
-      { id: "0302", name: "ສີງ" },
+      { id: "0302", name: "ສິງ" },
       { id: "0303", name: "ລອງ" },
       { id: "0304", name: "ວຽງພູຄາ" },
       { id: "0305", name: "ນາແລ" },
@@ -56,7 +56,7 @@ export const LAO_PROVINCES: LaoProvince[] = [
     name: "ແຂວງອຸດົມໄຊ",
     districts: [
       { id: "0401", name: "ໄຊ" },
-      { id: "0402", name: "ຫລາ" },
+      { id: "0402", name: "ຫຼາ" },
       { id: "0403", name: "ນາໝໍ້" },
       { id: "0404", name: "ງາ" },
       { id: "0405", name: "ແບງ" },

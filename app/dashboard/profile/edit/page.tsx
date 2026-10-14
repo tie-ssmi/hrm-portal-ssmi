@@ -72,10 +72,10 @@ const MARITAL_STATUSES: ComboboxOption[] = [
   { value: "Single", label: "ໂສດ" },
   { value: "Married", label: "ແຕ່ງງານແລ້ວ" },
   { value: "Divorced", label: "ຢ່າຮ້າງ" },
-  { value: "Widowed", label: "ເປັນຫມ້າຍ" },
+  { value: "Widowed", label: "ເປັນໝ້າຍ" },
 ];
 const RELIGIONS = ["ພຸດ", "ຜີ", "ຄຣິດ", "ອິສລາມ", "Other"];
-const ETHNICITIES = ["ລາວ", "ກຸມມຸ", "ມົ້ງ"];
+const ETHNICITIES = ["ລາວ", "ກຶມມຸ", "ມົ້ງ"];
 const BLOOD_TYPES = ["A", "B", "AB", "O", "ບໍ່ຮູ້"];
 const EDUCATION_LEVELS = [
   "ມັດທະຍົມຕົ້ນ",
@@ -315,9 +315,9 @@ function DocUploadSlot({
         onProgress: setProgress,
       });
       onUploaded(url);
-      toast.success("ອັບໂຫຼດສໍາເລັດ");
+      toast.success("ອັບໂຫຼດສຳເລັດ");
     } catch (err) {
-      toast.error(isFileIntegrityError(err) ? err.message : "ອັບໂຫຼດບໍ່ສໍາເລັດ");
+      toast.error(isFileIntegrityError(err) ? err.message : "ອັບໂຫຼດບໍ່ສຳເລັດ");
       console.error(err);
     } finally {
       setUploading(false);
@@ -639,7 +639,7 @@ export default function EditProfilePage() {
       }
       await Promise.all(writes);
       updateProfile(updates);
-      toast.success("ອັບເດດຂໍ້ມູນສ່ວນຕົວສໍາເລັດ");
+      toast.success("ອັບເດດຂໍ້ມູນສ່ວນຕົວສຳເລັດ");
       router.back();
     } catch (err) {
       toast.error("ບໍ່ສາມາດອັບເດດຂໍ້ມູນໄດ້");
@@ -930,7 +930,7 @@ export default function EditProfilePage() {
                 <MapPin className="text-primary h-4 w-4" />
                 ທີ່ຢູ່ປັດຈຸບັນ
               </CardTitle>
-              <CardDescription>ບ່ອນຢູ່ປະຈຸບັນ ແລະ ປະເພດທີ່ຢູ່ອາໄສ</CardDescription>
+              <CardDescription>ບ່ອນຢູ່ປັດຈຸບັນ ແລະ ປະເພດທີ່ຢູ່ອາໄສ</CardDescription>
             </CardHeader>
             <CardContent>
               <FieldGroup>
@@ -1003,7 +1003,7 @@ export default function EditProfilePage() {
                 <Droplets className="text-primary h-4 w-4" />
                 ຂໍ້ມູນອື່ນໆ
               </CardTitle>
-              <CardDescription>ປະເພດເລືອດ ແລະ ໃບຂັບລົດ</CardDescription>
+              <CardDescription>ປະເພດເລືອດ ແລະ ໃບຂັບຂີ່</CardDescription>
             </CardHeader>
             <CardContent>
               <FieldGroup>

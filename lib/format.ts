@@ -57,11 +57,17 @@ export function statusLabel(status: string): string {
 
 export function activityLabel(code: ActivityCode | string): string {
   switch (code) {
+    case 'GENERAL': return 'ອອກວຽກນອກທົ່ວໄປ'
+    case 'OVERTIME': return 'ເຮັດວຽກວັນພັກ (OT)'
+    case 'TRAINING': return 'ຝຶກອົບຮົມ / ທັດສະນະສຶກສາ'
+    case 'AUDIT': return 'ລົງກວດກາ'
+    case 'VISIT': return 'ຢ້ຽມຢາມ / ຕິດຕາມ'
+    // Old 6-type codes, still on older requests
     case 'MEET_CLIENT': return 'ພົບລູກຄ້າ'
     case 'MEETING': return 'ປະຊຸມພາຍນອກ'
     case 'BOOTH': return 'ອອກບູດງານ'
     case 'PROMO': return 'ໂປຣໂມຊັນ'
-    case 'TRAINING': return 'ຝຶກອົບຮົມ'
+    case 'OTHERS': return 'ອື່ນໆ'
     default: return code
   }
 }

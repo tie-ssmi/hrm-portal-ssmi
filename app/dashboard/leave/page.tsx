@@ -4,7 +4,7 @@
 import { Fragment, useMemo, useState } from "react";
 
 // ** assets / icons
-import { Search, Users, Building2 } from "lucide-react";
+import { Search, Users, Percent } from "lucide-react";
 
 // ** shared components
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,12 +31,12 @@ import { translateJobTitle } from "@/components/translater";
 
 // ** third party
 import { useQuery } from "@tanstack/react-query";
-import { collection, getDocs } from "firebase/firestore";
 
 // ** config / utils / types / hooks
 import { useAuth } from "@/lib/auth-context";
-import { db } from "@/lib/firebase";
 import { useAllTodayLeaves } from "@/lib/use-leave-queries";
+import { useWorkLocations } from "@/lib/use-work-location-queries";
+import { getEmployees } from "@/services/employees";
 import type { LeaveRequest } from "@/lib/types";
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -85,20 +85,7 @@ export default function LeaveTodayPage() {
   );
   const [search, setSearch] = useState("");
 
-  const { data: workLocationDocs = [] } = useQuery({
-    queryKey: ["workLocations", "all"],
-    queryFn: async () => {
-      const snap = await getDocs(collection(db, "workLocation"));
-      return snap.docs.map((d) => ({
-        uid: d.id,
-        name: (d.data().nameLo ||
-          d.data().nameEn ||
-          d.data().nameEN ||
-          d.id) as string,
-      }));
-    },
-    staleTime: 1000 * 60 * 10,
-  });
+  const { workLocations: workLocationDocs, compareWorkLocation } = useWorkLocations();
 
   // uid → name lookup
   const workLocationNameMap = useMemo(
@@ -112,23 +99,47 @@ export default function LeaveTodayPage() {
       allRecords.map((r) => r.workLocationUid).filter(Boolean),
     );
     if (myWorkLocationUid) uids.delete(myWorkLocationUid);
-    return Array.from(uids) as string[];
-  }, [allRecords, myWorkLocationUid]);
+    return (Array.from(uids) as string[]).sort(compareWorkLocation);
+  }, [allRecords, myWorkLocationUid, compareWorkLocation]);
+
+  const { data: employees = [] } = useQuery({
+    queryKey: ["employees", "all-active"],
+    queryFn: () => getEmployees(),
+    staleTime: 1000 * 60 * 10,
+  });
+
+  const matchesWorkLocation = (uid: string | undefined) => {
+    if (workLocationFilter === "__all__") return true;
+    if (workLocationFilter === "__user__") return uid === myWorkLocationUid;
+    return uid === workLocationFilter;
+  };
+
+  const locationRecords = useMemo(
+    () => allRecords.filter((r) => matchesWorkLocation(r.workLocationUid)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allRecords, workLocationFilter, myWorkLocationUid],
+  );
 
   const filtered = useMemo(() => {
-    return allRecords
-      .filter((r) => {
-        if (workLocationFilter === "__all__") return true;
-        if (workLocationFilter === "__user__")
-          return r.workLocationUid === myWorkLocationUid;
-        return r.workLocationUid === workLocationFilter;
-      })
-      .filter((r) => {
-        if (!search.trim()) return true;
-        const q = search.toLowerCase();
-        return (r.leaveUserName ?? "").toLowerCase().includes(q);
-      });
-  }, [allRecords, workLocationFilter, myWorkLocationUid, search]);
+    if (!search.trim()) return locationRecords;
+    const q = search.toLowerCase();
+    return locationRecords.filter((r) =>
+      (r.leaveUserName ?? "").toLowerCase().includes(q),
+    );
+  }, [locationRecords, search]);
+
+  // % of headcount on leave today, scoped by the work-location filter (not by search)
+  const leavePercent = useMemo(() => {
+    const headcount = employees.filter((e) =>
+      matchesWorkLocation(e.workLocation?.uuid),
+    ).length;
+    if (headcount === 0) return null;
+    const onLeave = new Set(
+      locationRecords.map((r) => r.leaveUserUuid).filter(Boolean),
+    ).size;
+    return (onLeave / headcount) * 100;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employees, locationRecords, workLocationFilter, myWorkLocationUid]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, LeaveRequest[]>();
@@ -174,11 +185,13 @@ export default function LeaveTodayPage() {
         <Card>
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-2">
-              <Building2 className="text-muted-foreground h-4 w-4" />
-              <p className="text-muted-foreground text-xs">ພາກແນກ</p>
+              <Percent className="text-muted-foreground h-4 w-4" />
+              <p className="text-muted-foreground text-xs">ລາພັກ</p>
             </div>
             <p className="text-foreground mt-1 text-2xl font-bold">
-              {grouped.length}
+              {leavePercent === null
+                ? "–"
+                : `${leavePercent.toFixed(2).replace(".", ",")} %`}
             </p>
           </CardContent>
         </Card>
@@ -301,7 +314,7 @@ export default function LeaveTodayPage() {
                         ຊື່ / ຕຳແໜ່ງ
                       </TableHead>
                       <TableHead className="min-w-[140px] px-4">
-                        ພາກແນກ
+                        ພະແນກ
                       </TableHead>
                       <TableHead className="w-32 px-4">ປະເພດລາ</TableHead>
                       <TableHead className="w-48 px-4">ວັນທີ</TableHead>

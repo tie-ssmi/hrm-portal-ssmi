@@ -368,7 +368,7 @@ function ApprovePageContent() {
         .join(" ") || loggedInUserUuid;
 
     // FIX #3: approvalIndex ເກົ່າ hardcode ເປັນ 0 ສະເໝີ
-    // ຖ້າ user ເປັນ approver ທີ່ 2 (index 1) ຈະເຂียນໄປ slot ຜິດ
+    // ຖ້າ user ເປັນ approver ທີ່ 2 (index 1) ຈະເຂຽນໄປ slot ຜິດ
     // ແກ້: ຊອກຫາ index ຂອງ slot ທີ່ກົງກັບ role ຂອງ user ປັດຈຸບັນ
     // ໝາຍເຫດ: findIndex ຄືນ -1 (ບໍ່ແມ່ນ undefined) ຕອນຫາບໍ່ພົບ — `?? 0` ຈຶ່ງບໍ່ເຄີຍ
     // ເຮັດວຽກ ແລະ index -1 ຖືກສົ່ງຕໍ່ໄປ ເຮັດໃຫ້ຂຽນທັບແບບບໍ່ປ່ຽນຫຍັງ ແຕ່ຍັງຂຶ້ນວ່າສຳເລັດ
@@ -468,7 +468,7 @@ function ApprovePageContent() {
           <DialogHeader>
             <DialogTitle>ຢືນຢັນການອະນຸມັດ</DialogTitle>
             <DialogDescription>
-              ອະນຸມັດຄໍາຮ້ອງຂໍຂອງ <strong>{pendingApproveItem?.name}</strong>
+              ອະນຸມັດຄຳຮ້ອງຂໍຂອງ <strong>{pendingApproveItem?.name}</strong>
             </DialogDescription>
           </DialogHeader>
           <label
@@ -514,7 +514,7 @@ function ApprovePageContent() {
                 : "ຢືນຢັນການປະຕິເສດ"}
             </DialogTitle>
             <DialogDescription>
-              {offsiteAction === "approve" ? "ອະນຸມັດ" : "ປະຕິເສດ"}ຄໍາຮ້ອງຂໍຂອງ{" "}
+              {offsiteAction === "approve" ? "ອະນຸມັດ" : "ປະຕິເສດ"}ຄຳຮ້ອງຂໍຂອງ{" "}
               {/* FIX #4: OffsiteTableItem ບໍ່ມີ field 'name' — ໃຊ້ requester.fullNameLo ແທນ */}
               <strong>
                 {pendingOffsiteItem?.requester?.fullNameLo ??

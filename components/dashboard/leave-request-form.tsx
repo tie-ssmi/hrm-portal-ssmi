@@ -590,7 +590,7 @@ export default function LeaveRequestForm() {
 
   useEffect(() => {
     if (myCurrentLeavesError) {
-      toast.error("ໂຫຼດຄໍາຮ້ອງຂໍລາພັກບໍ່ໄດ້");
+      toast.error("ໂຫຼດຄຳຮ້ອງຂໍລາພັກບໍ່ໄດ້");
       console.error(myCurrentLeavesError);
     }
   }, [myCurrentLeavesError]);
@@ -613,7 +613,7 @@ export default function LeaveRequestForm() {
           popover: {
             title: "ເລືອກປະເພດການລາ",
             description:
-              "ເລືອກປະເພດການລາທີ່ຕ້ອງການ ເຊັ່ນ: ລາພັກຜ່ອນ, ລາເຈັບ, ລາກິດສ່ວນຕົວ ໆລໆ",
+              "ເລືອກປະເພດການລາທີ່ຕ້ອງການ ເຊັ່ນ: ລາພັກຜ່ອນ, ລາເຈັບ, ລາກິດສ່ວນຕົວ ຯລຯ",
             side: "bottom" as const,
             align: "center" as const,
           },
@@ -641,7 +641,7 @@ export default function LeaveRequestForm() {
         {
           element: "#leave-submit-btn",
           popover: {
-            title: "ສົ່ງຄໍາຮ້ອງຂໍ",
+            title: "ສົ່ງຄຳຮ້ອງຂໍ",
             description: "ກວດສອບຂໍ້ມູນໃຫ້ຖືກຕ້ອງແລ້ວກົດສົ່ງ",
             side: "top" as const,
             align: "center" as const,
@@ -650,9 +650,9 @@ export default function LeaveRequestForm() {
         {
           element: "#leave-recent-requests",
           popover: {
-            title: "ຄໍາຮ້ອງຂໍລ່າສຸດ",
+            title: "ຄຳຮ້ອງຂໍລ່າສຸດ",
             description:
-              "ເບິ່ງສະຖານະຄໍາຮ້ອງຂໍທີ່ຜ່ານມາ — ກົດເພື່ອເບິ່ງລາຍລະອຽດ",
+              "ເບິ່ງສະຖານະຄຳຮ້ອງຂໍທີ່ຜ່ານມາ — ກົດເພື່ອເບິ່ງລາຍລະອຽດ",
             side: "top" as const,
             align: "center" as const,
           },
@@ -774,10 +774,10 @@ export default function LeaveRequestForm() {
         duration: newDuration ?? undefined,
       });
       await refetchMyCurrentLeaves();
-      toast.success("ສົ່ງຄໍາຮ້ອງຂໍລາຕອນບ່າຍສໍາເລັດ");
+      toast.success("ສົ່ງຄຳຮ້ອງຂໍລາຕອນບ່າຍສຳເລັດ");
       setSelectedLeave(null);
     } catch (err) {
-      toast.error("ບໍ່ສາມາດສົ່ງຄໍາຮ້ອງຂໍໄດ້");
+      toast.error("ບໍ່ສາມາດສົ່ງຄຳຮ້ອງຂໍໄດ້");
       console.error(err);
     } finally {
       setIsCopySending(false);
@@ -927,7 +927,7 @@ export default function LeaveRequestForm() {
         });
         queryClient.invalidateQueries({ queryKey: leaveKeys.all });
         await refetchMyCurrentLeaves();
-        toast.success("ແກ້ໄຂຄໍາຮ້ອງຂໍສໍາເລັດ");
+        toast.success("ແກ້ໄຂຄຳຮ້ອງຂໍສຳເລັດ");
         resetForm();
         return;
       }
@@ -1009,14 +1009,14 @@ export default function LeaveRequestForm() {
       resetForm();
     } catch (err) {
       if (err instanceof LeaveAlreadyReviewedError) {
-        toast.error("ຄໍາຮ້ອງຂໍນີ້ຖືກພິຈາລະນາແລ້ວ ບໍ່ສາມາດແກ້ໄຂໄດ້");
+        toast.error("ຄຳຮ້ອງຂໍນີ້ຖືກພິຈາລະນາແລ້ວ ບໍ່ສາມາດແກ້ໄຂໄດ້");
         await refetchMyCurrentLeaves();
         resetForm();
       } else {
         toast.error(
           err instanceof UploadTruncatedError
             ? UPLOAD_TRUNCATED_MESSAGE
-            : "ບໍ່ສາມາດສົ່ງຄໍາຮ້ອງຂໍໄດ້",
+            : "ບໍ່ສາມາດສົ່ງຄຳຮ້ອງຂໍໄດ້",
         );
       }
       console.error(err);
@@ -1030,7 +1030,7 @@ export default function LeaveRequestForm() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-lg">ແບບຟອມຂໍພັກຜ່ອນ</CardTitle>
-          <CardDescription>ຍື່ນຄໍາຮ້ອງຂໍລາພັກ</CardDescription>
+          <CardDescription>ຍື່ນຄຳຮ້ອງຂໍລາພັກ</CardDescription>
           <CardAction>
             <Button
               type="button"
@@ -1049,7 +1049,7 @@ export default function LeaveRequestForm() {
               <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
                 <Pencil className="w-4 h-4 shrink-0" />
                 <span className="flex-1">
-                  ກຳລັງແກ້ໄຂຄໍາຮ້ອງຂໍ{" "}
+                  ກຳລັງແກ້ໄຂຄຳຮ້ອງຂໍ{" "}
                   {format(new Date(editingLeave.startDate), "dd/MM/yyyy")}
                 </span>
                 <Button
@@ -1277,7 +1277,7 @@ export default function LeaveRequestForm() {
                   })),
                 ]}
                 placeholder="ບໍ່ລະບຸ"
-                searchPlaceholder="ຄົ້ນຫາຊື່ຫຼືຕໍາແໜ່ງ..."
+                searchPlaceholder="ຄົ້ນຫາຊື່ຫຼືຕຳແໜ່ງ..."
               />
               {selectedSuccessor && (
                 <div className="flex items-center gap-3 rounded-md bg-muted/60 px-3 py-2.5">
@@ -1445,7 +1445,7 @@ export default function LeaveRequestForm() {
                     <div>
                       <p className="font-medium">ອັບໂຫຼດພາຍຫຼັງ</p>
                       <p className="text-xs text-muted-foreground">
-                        ສົ່ງຄໍາຮ້ອງກ່ອນ ແລ້ວຄ່ອຍແນບໃຫ້ທີ່ຫຼັງ
+                        ສົ່ງຄຳຮ້ອງກ່ອນ ແລ້ວຄ່ອຍແນບໃຫ້ທີ່ຫຼັງ
                       </p>
                     </div>
                     {docUploadChoice === "later" && (
@@ -1472,7 +1472,7 @@ export default function LeaveRequestForm() {
                       <div>
                         <p className="font-medium">ບໍ່ຕ້ອງການເອກະສານ</p>
                         <p className="text-xs text-muted-foreground">
-                          ດໍາເນີນການໂດຍບໍ່ຕ້ອງແນບໄຟລ໌
+                          ດຳເນີນການໂດຍບໍ່ຕ້ອງແນບໄຟລ໌
                         </p>
                       </div>
                       {docUploadChoice === "skip" && (
@@ -1523,7 +1523,7 @@ export default function LeaveRequestForm() {
               ) : (
                 <Send className="w-4 h-4 mr-2" />
               )}
-              {editingLeave ? "ບັນທຶກການແກ້ໄຂ" : "ສົ່ງຄໍາຮ້ອງຂໍ"}
+              {editingLeave ? "ບັນທຶກການແກ້ໄຂ" : "ສົ່ງຄຳຮ້ອງຂໍ"}
             </Button>
           </form>
         </CardContent>
@@ -1532,7 +1532,7 @@ export default function LeaveRequestForm() {
       {/* Recent requests */}
       <Card id="leave-recent-requests" className="mt-4">
         <CardHeader className="flex justify-between pb-3">
-          <CardTitle className="text-base">ຄໍາຮ້ອງຂໍລ່າສຸດ</CardTitle>
+          <CardTitle className="text-base">ຄຳຮ້ອງຂໍລ່າສຸດ</CardTitle>
           {pendingDocLeaves.length > 0 && (
             <Button
               variant="link"
@@ -1550,7 +1550,7 @@ export default function LeaveRequestForm() {
           {myCurrentLeaveRequests.length === 0 ? (
             <div className="flex flex-col items-center py-6 text-muted-foreground gap-2">
               <FileText className="w-8 h-8 opacity-30" />
-              <p className="text-sm">ຍັງບໍ່ມີຄໍາຮ້ອງຂໍ</p>
+              <p className="text-sm">ຍັງບໍ່ມີຄຳຮ້ອງຂໍ</p>
             </div>
           ) : (
             <div className="space-y-2 ">
@@ -1760,7 +1760,7 @@ export default function LeaveRequestForm() {
                         <Separator />
                         <div>
                           <p className="text-xs text-muted-foreground mb-2">
-                            ການອານຸມັດ
+                            ການອະນຸມັດ
                           </p>
                           <div className="space-y-1.5">
                             {selectedLeave.approvals
@@ -1798,7 +1798,7 @@ export default function LeaveRequestForm() {
                         onClick={() => startEditLeave(selectedLeave)}
                       >
                         <Pencil className="w-4 h-4 mr-2" />
-                        ແກ້ໄຂຄໍາຮ້ອງຂໍ
+                        ແກ້ໄຂຄຳຮ້ອງຂໍ
                       </Button>
                     )}
 
@@ -1834,7 +1834,7 @@ export default function LeaveRequestForm() {
             <div className="flex items-center justify-center w-16 h-16 rounded-full bg-emerald-100">
               <CheckCircle className="w-9 h-9 text-emerald-600" />
             </div>
-            <DialogTitle>ສົ່ງຄໍາຮ້ອງຂໍສໍາເລັດ</DialogTitle>
+            <DialogTitle>ສົ່ງຄຳຮ້ອງຂໍສຳເລັດ</DialogTitle>
           </DialogHeader>
           <Button onClick={() => setShowSuccessDialog(false)}>
             ຕົກລົງ

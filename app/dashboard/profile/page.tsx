@@ -362,7 +362,7 @@ export default function ProfilePage() {
         icon: Layers,
       },
       {
-        label: "ສະຖານທີ່ທຳວຽກ",
+        label: "ສະຖານທີ່ເຮັດວຽກ",
         value: toStr(profileUser?.workLocation),
         icon: Building,
       },
@@ -376,7 +376,7 @@ export default function ProfilePage() {
         icon: IdCard,
       },
       {
-        label: "ອາຍຸການ",
+        label: "ອາຍຸການເຮັດວຽກ",
         value: tenureLabel ?? "-",
         icon: Clock,
       },
@@ -511,7 +511,7 @@ export default function ProfilePage() {
             ຂໍ້ມູນສ່ວນຕົວ
           </h1>
           <p className="text-muted-foreground break-words">
-            ເບິ່ງແລະຮ້ອງຂໍການອັບເດດຂໍ້ມູນສ່ວນຕົວຂອງທ່ານ
+            ເບິ່ງຂໍ້ມູນສວນຕົວ
           </p>
         </div>
         {selfEditEnabled && (
@@ -638,7 +638,7 @@ export default function ProfilePage() {
                 </Badge>
                 {profileUser.employeeType && (
                   <Badge variant="outline">
-                    {toStr(profileUser.employeeType)}
+                    {translateEmployeeType(toStr(profileUser.employeeType))}
                   </Badge>
                 )}
                 {tenureLabel && (
@@ -670,7 +670,7 @@ export default function ProfilePage() {
         <CardHeader>
           <CardTitle className="text-lg">ຂໍ້ມູນການຈ້າງງານ</CardTitle>
           <CardDescription>
-            ບາງຟິວລິດຈຳເປັນຕ້ອງຮັບການອະນຸມັດຈາກ HR ເພື່ອອັບເດດ
+           ຂໍ້ມູນພື້ນຖານຂອງພະນັກງານ
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -732,7 +732,7 @@ export default function ProfilePage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">ທີ່ຢູ່ປັດຈຸບັນ</CardTitle>
-          <CardDescription>ບ່ອນຢູ່ປະຈຸບັນ ແລະ ປະເພດທີ່ຢູ່ອາໄສ</CardDescription>
+          <CardDescription>ບ່ອນຢູ່ປັດຈຸບັນ ແລະ ປະເພດທີ່ຢູ່ອາໄສ</CardDescription>
         </CardHeader>
         <CardContent>
           <InfoGrid fields={currentAddressFields} />
@@ -742,9 +742,9 @@ export default function ProfilePage() {
       {/* Education */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">ການສຶກສາ & ວິຊາການ</CardTitle>
+          <CardTitle className="text-lg">ການສຶກສາ & ໃບຮັບຮອງວິຊາການ</CardTitle>
           <CardDescription>
-            ພາບພື້ນຖານການສຶກສາແລະໃບຮັບຮອງວິຊາການຂອງທ່ານ
+            ລາຍລະອຽດການສຶກສາແລະໃບຮັບຮອງວິຊາການຂອງທ່ານ
           </CardDescription>
         </CardHeader>
         <CardContent>
