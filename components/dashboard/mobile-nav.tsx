@@ -15,6 +15,7 @@ import {
   Menu,
   X,
   ClipboardCheck,
+  ClipboardList,
 } from "lucide-react";
 
 // ** shared components
@@ -74,6 +75,7 @@ const MOBILE_NAV_CONFIGS: NavConfig[] = [
   { href: "/dashboard/approv",     label: "ການອະນຸມັດ",    icon: ClipboardCheck,  inBottomBar: true  },
   { href: "/dashboard/profile",    label: "ຂໍ້ມູນສ່ວນຕົວ", icon: User,            inBottomBar: true  },
   { href: "/dashboard/request",    label: "ແບບຟອມ",        icon: FileText,        inBottomBar: false },
+  { href: "/dashboard/forms",      label: "ແບບສອບຖາມ",     icon: ClipboardList,   inBottomBar: false },
 ];
 
 export function MobileNav() {

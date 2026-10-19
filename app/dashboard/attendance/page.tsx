@@ -57,11 +57,20 @@ import {
   useCheckOut,
   useTodayLeaveStatus,
   useTodayTrip,
+  useTodaySpecialPolicy,
 } from "@/lib/use-attendance-queries";
 import { useOfficialHolidays } from "@/lib/use-official-holidays-query";
 import { useTodayOTRequest } from "@/lib/use-attendance-ot-queries";
 import { appliesToLocation } from "@/services/officialHolidays";
 import { getVientianeIsoDate, getVientianeHourMinute } from "@/lib/server-time";
+import {
+  isInCustomChoiceWindow,
+  minutesToHhmm,
+  resolveCheckOutCutoff,
+  type CheckInBaseCase,
+  type PolicyChoice,
+  type ResolvedPolicy,
+} from "@/lib/special-policy";
 import type { AttendanceRecord } from "@/lib/types";
 
 type LocationState = {
@@ -520,7 +529,7 @@ const OffsiteDetailDialog = memo(function OffsiteDetailDialog({
 // ຢູ່ນີ້ພຽງກັນບໍ່ໃຫ້ຜູ້ໃຊ້ສົ່ງໄປແລ້ວຖືກປະຕິເສດເສຍໆ.
 const EARLY_CHECKOUT_REASON_MIN_CHARS = 30;
 
-// ເວລາເລີກວຽກ (ນາທີຂອງມື້) — ຕ້ອງກົງກັບ earlyCheckOutCutoffMinutes ໃນ functions/src/index.ts.
+// ເວລາເລີກວຽກ (ນາທີຂອງມື້) — ຕ້ອງກົງກັບ EARLY_CHECKOUT_BEFORE_MINUTES ໃນ functions/src/index.ts.
 // ແມ່ບ້ານ (rolePermissions.housekeeper) ເລີກ 16:30, ຄົນອື່ນ 17:00
 const CHECKOUT_CUTOFF_MINUTES = 17 * 60;
 const HOUSEKEEPER_CHECKOUT_CUTOFF_MINUTES = 16 * 60 + 30;
@@ -612,6 +621,61 @@ const EarlyCheckOutDialog = memo(function EarlyCheckOutDialog({
   );
 });
 
+// ນະໂຍບາຍພິເສດແບບ custom: check-in ໃນຊ່ວງ 08:16..lateUntil ຕ້ອງເລືອກ 1 ຢ່າງສຳລັບມື້ນີ້.
+// server (recordCheckIn) ກວດຊ່ວງເວລາດ້ວຍໂມງຂອງມັນເອງ ແລະ ປະຕິເສດຖ້າບໍ່ມີທາງເລືອກ.
+const PolicyChoiceDialog = memo(function PolicyChoiceDialog({
+  open,
+  leaveFrom,
+  onChoose,
+  onCancel,
+}: {
+  open: boolean;
+  leaveFrom: string;
+  onChoose: (choice: PolicyChoice) => void;
+  onCancel: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>ເລືອກນະໂຍບາຍພິເສດມື້ນີ້</DialogTitle>
+        </DialogHeader>
+        <p className="text-muted-foreground text-sm">
+          ມື້ນີ້ໃຊ້ໄດ້ພຽງຢ່າງດຽວ — ເລືອກແລ້ວປ່ຽນບໍ່ໄດ້.
+        </p>
+        <div className="mt-2 flex flex-col gap-2">
+          <Button
+            className="h-auto py-3 whitespace-normal"
+            onClick={() => onChoose("morning")}
+          >
+            ໃຊ້ນະໂຍບາຍຕອນເຊົ້າ (ນັບຕົງເວລາ, ເລີກ 17:00)
+          </Button>
+          <Button
+            variant="outline"
+            className="h-auto py-3 whitespace-normal"
+            onClick={() => onChoose("evening")}
+          >
+            ນັບມາຊ້າ (ກັບໄດ້ຕັ້ງແຕ່ {leaveFrom})
+          </Button>
+          <Button variant="ghost" onClick={onCancel}>
+            ຍົກເລີກ
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+});
+
+// ຂໍ້ຄວາມ banner ນະໂຍບາຍພິເສດ, ເຊັ່ນ "ມາທັນຮອດ 09:30 · ອອກໄດ້ 15:30"
+function describePolicy(policy: ResolvedPolicy): string {
+  const parts: string[] = [];
+  if (policy.lateUntilMin != null)
+    parts.push(`ມາທັນຮອດ ${minutesToHhmm(policy.lateUntilMin)}`);
+  if (policy.leaveFromMin != null)
+    parts.push(`ອອກໄດ້ ${minutesToHhmm(policy.leaveFromMin)}`);
+  return parts.join(policy.isCustom ? " ຫຼື " : " · ");
+}
+
 // --- Main page ---
 
 export default function AttendancePage() {
@@ -634,6 +698,8 @@ export default function AttendancePage() {
   const { data: todayLeaveStatus = "none", isLoading: isLoadingLeaveStatus } =
     useTodayLeaveStatus(user?.uuid, todayIso);
   const { data: todayTrip = null, isLoading: isLoadingTrip } = useTodayTrip(user?.uuid, todayIso);
+  const { data: specialPolicy = null, isLoading: isLoadingPolicy } =
+    useTodaySpecialPolicy(user?.uuid, todayIso);
   const checkInMutation = useCheckIn();
   const checkOutMutation = useCheckOut();
   // Approved OT request covering today that lists this user as a teammate
@@ -647,6 +713,7 @@ export default function AttendancePage() {
   );
   const [showEarlyCheckOutConfirm, setShowEarlyCheckOutConfirm] =
     useState(false);
+  const [showPolicyChoice, setShowPolicyChoice] = useState(false);
 
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraType, setCameraType] = useState<"checkIn" | "checkOut">(
@@ -670,6 +737,43 @@ export default function AttendancePage() {
   checkInMutRef.current = checkInMutation;
   const checkOutMutRef = useRef(checkOutMutation);
   checkOutMutRef.current = checkOutMutation;
+
+  // ສຽງແຈ້ງເມື່ອ check in/out ສຳເລັດ (public/mp3)
+  const soundsRef = useRef<Record<"checkIn" | "checkOut", HTMLAudioElement> | null>(null);
+  useEffect(() => {
+    soundsRef.current = {
+      checkIn: new Audio("/mp3/check_in.mp3"),
+      checkOut: new Audio("/mp3/check_out.mp3"),
+    };
+    soundsRef.current.checkIn.preload = "auto";
+    soundsRef.current.checkOut.preload = "auto";
+  }, []);
+
+  // iOS Safari ອະນຸຍາດໃຫ້ຫຼິ້ນສຽງສະເພາະພາຍໃນ user gesture — ແຕ່ສຽງສຳເລັດຫຼິ້ນຫຼັງ
+  // await (ກ້ອງ/GPS/server) ດົນ. ຫຼິ້ນແບບ muted ທັນທີຕອນກົດເພື່ອ "unlock" element ໄວ້.
+  const unlockSound = useCallback((type: "checkIn" | "checkOut") => {
+    const audio = soundsRef.current?.[type];
+    if (!audio) return;
+    audio.muted = true;
+    audio
+      .play()
+      .then(() => {
+        audio.pause();
+        audio.currentTime = 0;
+        audio.muted = false;
+      })
+      .catch(() => {
+        audio.muted = false;
+      });
+  }, []);
+
+  const playSound = useCallback((type: "checkIn" | "checkOut") => {
+    const audio = soundsRef.current?.[type];
+    if (!audio) return;
+    audio.muted = false;
+    audio.currentTime = 0;
+    audio.play().catch(() => {});
+  }, []);
 
   const captureImage = useCallback(
     (type: "checkIn" | "checkOut"): Promise<File | null> => {
@@ -788,7 +892,11 @@ export default function AttendancePage() {
   }, [holidays, todayIso, todayLeaveStatus, todayTrip, workLocationUuid]);
 
   const handleAttendance = useCallback(
-    async (type: "checkIn" | "checkOut", earlyCheckOutReason?: string) => {
+    async (
+      type: "checkIn" | "checkOut",
+      earlyCheckOutReason?: string,
+      policyChoice?: PolicyChoice,
+    ) => {
       if (submittingRef.current) return;
       if (!user) {
         toast.error("ບໍ່ເຫັນຂໍ້ມູນຜູ້ໃຊ້. ກະລຸນາເຂົ້າລະບົບອີກຄັ້ງ.");
@@ -796,7 +904,10 @@ export default function AttendancePage() {
       }
       if (
         type === "checkIn" &&
-        (isLoadingLeaveStatus || isLoadingHolidays || isLoadingTrip)
+        (isLoadingLeaveStatus ||
+          isLoadingHolidays ||
+          isLoadingTrip ||
+          isLoadingPolicy)
       ) {
         toast.error("ກຳລັງກວດສອບຂໍ້ມູນ. ກະລຸນາລໍຖ້າ ແລ້ວລອງໃໝ່.");
         return;
@@ -808,6 +919,7 @@ export default function AttendancePage() {
 
       submittingRef.current = type;
       setSubmittingType(type);
+      unlockSound(type);
 
       const mutation =
         type === "checkIn" ? checkInMutRef.current : checkOutMutRef.current;
@@ -833,7 +945,7 @@ export default function AttendancePage() {
             accuracy: loc?.accuracy,
             imageFile,
             isOffsite: true,
-            ...(type === "checkOut" ? { earlyCheckOutReason } : {}),
+            ...(type === "checkOut" ? { earlyCheckOutReason } : { policyChoice }),
           });
         } else {
           const loc = await getValidatedLocation();
@@ -842,14 +954,25 @@ export default function AttendancePage() {
             user,
             location: { lat: loc.lat, lng: loc.lng },
             accuracy: loc.accuracy,
-            ...(type === "checkOut" ? { earlyCheckOutReason } : {}),
+            ...(type === "checkOut" ? { earlyCheckOutReason } : { policyChoice }),
           });
         }
         toast.success(successMsg);
+        playSound(type);
       } catch (error) {
         const code = (error as { code?: string }).code ?? "";
+        const detailsCode = (error as { details?: { code?: string } }).details
+          ?.code;
         let msg: string;
-        if (code === "functions/internal" || code === "functions/unknown") {
+        if (
+          type === "checkIn" &&
+          detailsCode === "policy-choice-required" &&
+          !policyChoice
+        ) {
+          // ໂມງ server ຢູ່ໃນຊ່ວງເລືອກ ແຕ່ໂມງເຄື່ອງບໍ່ — ເປີດ popup ໃຫ້ເລືອກ ແລ້ວສົ່ງໃໝ່
+          msg = "ກະລຸນາເລືອກວິທີໃຊ້ນະໂຍບາຍພິເສດມື້ນີ້";
+          setShowPolicyChoice(true);
+        } else if (code === "functions/internal"|| code === "functions/unknown") {
           msg = "ເກີດຂໍ້ຜິດພາດ. ກະລຸນາລອງໃໝ່.";
         } else if (code === "functions/unavailable") {
           msg = "ບໍ່ສາມາດເຊື່ອມຕໍ່ server. ກະລຸນາກວດ internet.";
@@ -887,30 +1010,67 @@ export default function AttendancePage() {
       isLoadingLeaveStatus,
       isLoadingHolidays,
       isLoadingTrip,
+      isLoadingPolicy,
+      unlockSound,
+      playSound,
       getLocation,
       getValidatedLocation,
       captureImage,
     ],
   );
 
+  // custom: ຖ້າຕອນນີ້ຢູ່ໃນຊ່ວງ 08:16..lateUntil ໃຫ້ເລືອກກ່ອນ check-in
+  const handleCheckInClick = useCallback(() => {
+    const { hour, minute } = getVientianeHourMinute();
+    const baseCase: CheckInBaseCase =
+      todayLeaveStatus === "morning_leave"
+        ? "morningLeave"
+        : isOffsite
+          ? "offsite"
+          : "normal";
+    if (isInCustomChoiceWindow(hour * 60 + minute, baseCase, specialPolicy)) {
+      setShowPolicyChoice(true);
+      return;
+    }
+    handleAttendance("checkIn");
+  }, [handleAttendance, todayLeaveStatus, isOffsite, specialPolicy]);
+
+  const handleChoosePolicy = useCallback(
+    (choice: PolicyChoice) => {
+      setShowPolicyChoice(false);
+      handleAttendance("checkIn", undefined, choice);
+    },
+    [handleAttendance],
+  );
+
   // ອອກກ່ອນເວລາເລີກຕ້ອງປ້ອນເຫດຜົນ; server ກວດຄືກັນ (recordCheckOut):
   //   ລາພັກຕອນບ່າຍ 12:30 · ແມ່ບ້ານ 16:30 · ຄົນອື່ນ 17:00 · CLive ອອກຕອນໃດກໍໄດ້
-  const noCheckOutCutoff = user?.rolePermissions?.CLive === true;
-  const checkOutCutoffMinutes =
-    todayLeaveStatus === "afternoon_leave"
-      ? AFTERNOON_LEAVE_CHECKOUT_CUTOFF_MINUTES
-      : user?.rolePermissions?.housekeeper === true
-        ? HOUSEKEEPER_CHECKOUT_CUTOFF_MINUTES
-        : CHECKOUT_CUTOFF_MINUTES;
+  //   ນະໂຍບາຍພິເສດ: ເອົາອັນທີ່ໄວກວ່າ ລະຫວ່າງເວລາເລີກ ກັບ leaveFrom (custom "morning" → ເວລາປົກກະຕິ)
+  const baseCheckOutCutoffMinutes =
+    user?.rolePermissions?.CLive === true
+      ? null
+      : todayLeaveStatus === "afternoon_leave"
+        ? AFTERNOON_LEAVE_CHECKOUT_CUTOFF_MINUTES
+        : user?.rolePermissions?.housekeeper === true
+          ? HOUSEKEEPER_CHECKOUT_CUTOFF_MINUTES
+          : CHECKOUT_CUTOFF_MINUTES;
+  const checkOutCutoffMinutes = resolveCheckOutCutoff(
+    baseCheckOutCutoffMinutes,
+    specialPolicy,
+    todayAttendance?.policyChoice,
+  );
 
   const handleCheckOutClick = useCallback(() => {
     const { hour, minute } = getVientianeHourMinute();
-    if (!noCheckOutCutoff && hour * 60 + minute < checkOutCutoffMinutes) {
+    if (
+      checkOutCutoffMinutes != null &&
+      hour * 60 + minute < checkOutCutoffMinutes
+    ) {
       setShowEarlyCheckOutConfirm(true);
       return;
     }
     handleAttendance("checkOut");
-  }, [handleAttendance, checkOutCutoffMinutes, noCheckOutCutoff]);
+  }, [handleAttendance, checkOutCutoffMinutes]);
 
   const handleConfirmEarlyCheckOut = useCallback(
     (reason: string) => {
@@ -991,6 +1151,31 @@ export default function AttendancePage() {
           </div>
         </div>
       )}
+      {specialPolicy && (
+        <div className="flex items-start gap-2 rounded-lg border border-sky-200 bg-sky-50 p-3 dark:border-sky-900 dark:bg-sky-950/20">
+          <Clock className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
+          <div>
+            <p className="text-sm font-medium text-sky-800 dark:text-sky-400">
+              ມື້ນີ້ມີນະໂຍບາຍພິເສດ: {describePolicy(specialPolicy)}
+            </p>
+            {specialPolicy.isCustom && (
+              <p className="mt-0.5 text-xs text-sky-700 dark:text-sky-500">
+                {todayAttendance?.policyChoice === "morning"
+                  ? "ທ່ານເລືອກ: ໃຊ້ນະໂຍບາຍຕອນເຊົ້າ (ນັບຕົງເວລາ, ເລີກ 17:00)"
+                  : todayAttendance?.policyChoice === "evening"
+                    ? `ທ່ານໃຊ້: ກັບໄດ້ຕັ້ງແຕ່ ${
+                        checkOutCutoffMinutes != null
+                          ? formatCutoff(checkOutCutoffMinutes)
+                          : "--:--"
+                      }`
+                    : todayAttendance?.checkIn
+                      ? "ມື້ນີ້ບໍ່ໄດ້ໃຊ້ນະໂຍບາຍ (Check-In ຫຼັງເວລາທີ່ກຳນົດ) — ເລີກຕາມເວລາປົກກະຕິ"
+                      : "ມື້ໜຶ່ງໃຊ້ໄດ້ພຽງຢ່າງດຽວ — ລະບົບຈະຖາມຕອນ Check-In ຖ້າຕ້ອງເລືອກ"}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
       {isBlockedDay.blocked && isBlockedDay.reason && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/20">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
@@ -1016,12 +1201,13 @@ export default function AttendancePage() {
             <Button
               size="lg"
               className="h-16 text-lg"
-              onClick={() => handleAttendance("checkIn")}
+              onClick={handleCheckInClick}
               disabled={
                 isBlockedDay.blocked ||
                 isLoadingLeaveStatus ||
                 isLoadingHolidays ||
                 isLoadingTrip ||
+                isLoadingPolicy ||
                 submittingType !== null ||
                 checkInMutation.isPending ||
                 !!todayAttendance?.checkIn ||
@@ -1032,7 +1218,8 @@ export default function AttendancePage() {
               submittingType === "checkIn" ||
               isLoadingLeaveStatus ||
               isLoadingHolidays ||
-              isLoadingTrip ? (
+              isLoadingTrip ||
+              isLoadingPolicy ? (
                 <Spinner className="mr-2" />
               ) : (
                 <LogIn className="mr-2 h-5 w-5" />
@@ -1096,9 +1283,22 @@ export default function AttendancePage() {
         isSubmitting={
           submittingType === "checkOut" || checkOutMutation.isPending
         }
-        cutoffLabel={formatCutoff(checkOutCutoffMinutes)}
+        cutoffLabel={formatCutoff(
+          checkOutCutoffMinutes ?? CHECKOUT_CUTOFF_MINUTES,
+        )}
         onConfirm={handleConfirmEarlyCheckOut}
         onCancel={() => setShowEarlyCheckOutConfirm(false)}
+      />
+
+      <PolicyChoiceDialog
+        open={showPolicyChoice}
+        leaveFrom={
+          specialPolicy?.leaveFromMin != null
+            ? minutesToHhmm(specialPolicy.leaveFromMin)
+            : "--:--"
+        }
+        onChoose={handleChoosePolicy}
+        onCancel={() => setShowPolicyChoice(false)}
       />
     </>
   );

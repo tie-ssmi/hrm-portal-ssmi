@@ -11,10 +11,15 @@ type ServerTimeResult = {
   timestamp: number
 }
 
-function computeStatus(hour: number, minute: number): CheckInStatus {
+// ສະແດງຜົນເທົ່ານັ້ນ — server (recordCheckIn) ຕັດສິນ status ຈິງ.
+// lateUntilMin: lateUntil ຂອງນະໂຍບາຍພິເສດ (lateMorning) — ທັນ <= X; X ຫຼັງ 10:00 →
+// "ບໍ່ check-in" ເລີ່ມ X+1. custom ບໍ່ຜ່ານທາງນີ້ (ຂຶ້ນກັບທາງເລືອກ) — ເບິ່ງ lib/special-policy.ts
+function computeStatus(hour: number, minute: number, lateUntilMin?: number): CheckInStatus {
   const nowMin = hour * 60 + minute
-  if (nowMin <= 8 * 60 + 15) return 'present'
-  if (nowMin < 10 * 60) return 'late'    // < not <=: exactly 10:00 is not_check_in
+  const presentUntil = Math.max(8 * 60 + 15, lateUntilMin ?? 0)
+  const notCheckInFrom = Math.max(10 * 60, (lateUntilMin ?? 0) + 1)
+  if (nowMin <= presentUntil) return 'present'
+  if (nowMin < notCheckInFrom) return 'late'    // < not <=: exactly 10:00 is not_check_in
   return 'not_check_in'
 }
 
@@ -39,7 +44,7 @@ export function getVientianeHourMinute(): { hour: number; minute: number } {
   return { hour: parseInt(get('hour'), 10), minute: parseInt(get('minute'), 10) }
 }
 
-export function fetchServerTime(_userUuid?: string): Promise<ServerTimeResult> {
+export function fetchServerTime(_userUuid?: string, lateUntilMin?: number): Promise<ServerTimeResult> {
   const now = new Date()
   const formatter = new Intl.DateTimeFormat('en-GB', {
     timeZone: TIMEZONE,
@@ -60,7 +65,7 @@ export function fetchServerTime(_userUuid?: string): Promise<ServerTimeResult> {
   const hour = get('hour')
   const minute = get('minute')
 
-  const status = computeStatus(parseInt(hour, 10), parseInt(minute, 10))
+  const status = computeStatus(parseInt(hour, 10), parseInt(minute, 10), lateUntilMin)
 
   return Promise.resolve({
     date: `${day}-${month}-${year}`,

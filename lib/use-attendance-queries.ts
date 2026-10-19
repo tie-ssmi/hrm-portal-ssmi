@@ -14,6 +14,8 @@ import {
 import { fetchServerTime, getVientianeIsoDate } from '@/lib/server-time'
 import { fetchTodayLeaveStatus, type DayLeaveStatus } from '@/services/leaves'
 import { fetchActiveTripForUser } from '@/services/trip'
+import { fetchTodaySpecialPolicy } from '@/services/special-policy'
+import type { PolicyChoice } from '@/lib/special-policy'
 import { getDeviceInfo } from '@/lib/device'
 
 export type { DayLeaveStatus }
@@ -132,6 +134,8 @@ type CheckInParams = {
   accuracy?: number
   imageFile?: File
   isOffsite?: boolean
+  // ນະໂຍບາຍ custom: ທາງເລືອກໃນຊ່ວງ 08:16..lateUntil — server ບໍ່ສົນຄ່ານີ້ນອກຊ່ວງນັ້ນ
+  policyChoice?: PolicyChoice
 }
 
 type CheckInServerStatus = 'present' | 'late' | 'not_check_in'
@@ -140,7 +144,7 @@ export function useCheckIn() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async ({ user, location, accuracy, imageFile, isOffsite }: CheckInParams) => {
+    mutationFn: async ({ user, location, accuracy, imageFile, isOffsite, policyChoice }: CheckInParams) => {
       if (!user.uuid) throw new Error('User uuid is missing. Unable to update attendance.')
 
       const serverTime = await fetchServerTime(user.uuid)
@@ -158,7 +162,7 @@ export function useCheckIn() {
         ? await uploadAttendanceImage(imageFile, user.uuid, 'checkIn')
         : undefined
 
-      await updateAttendanceCheckInTime({
+      const result = await updateAttendanceCheckInTime({
         // uid = userUuid = doc id ພະນັກງານ (auth-context ບັງຄັບ) — server ກວດກັບ auth uid ແລະ ບໍ່ໃຊ້ uid ນີ້
         userUuid: user.uuid,
         uid: user.uuid,
@@ -179,12 +183,15 @@ export function useCheckIn() {
         deviceLocalId: device.localId,
         deviceFingerprint: device.fingerprint,
         deviceModel: device.model,
+        policyChoice,
       })
 
+      // status / ທາງເລືອກນະໂຍບາຍ ຕາມທີ່ server ຕັດສິນ (ນະໂຍບາຍພິເສດອາດປ່ຽນ status)
       return {
         attendanceDate: serverTime.isoDate,
-        checkInTime: serverTime.checkTime,
-        status: status as AttendanceStatus,
+        checkInTime: result.checkTime ?? serverTime.checkTime,
+        status: (result.status ?? status) as AttendanceStatus,
+        policyChoice: result.policyChoice,
       }
     },
     onSuccess: (data, variables) => {
@@ -199,6 +206,7 @@ export function useCheckIn() {
             date: data.attendanceDate,
             checkIn: data.checkInTime,
             status: data.status,
+            ...(data.policyChoice ? { policyChoice: data.policyChoice } : {}),
             ...(variables.location ? { checkInLocation: variables.location } : {}),
           })
       )
@@ -304,6 +312,19 @@ export function useTodayTrip(userUuid: string | null | undefined, isoDate: strin
   return useQuery({
     queryKey: tripKeys.today(userUuid || '', isoDate),
     queryFn: () => fetchActiveTripForUser(userUuid!, isoDate),
+    enabled: !!userUuid,
+    staleTime: 1000 * 60 * 5,
+  })
+}
+
+export const specialPolicyKeys = {
+  today: (userUuid: string, isoDate: string) => ['special-policy', 'today', userUuid, isoDate] as const,
+}
+
+export function useTodaySpecialPolicy(userUuid: string | null | undefined, isoDate: string) {
+  return useQuery({
+    queryKey: specialPolicyKeys.today(userUuid || '', isoDate),
+    queryFn: () => fetchTodaySpecialPolicy(userUuid!, isoDate),
     enabled: !!userUuid,
     staleTime: 1000 * 60 * 5,
   })

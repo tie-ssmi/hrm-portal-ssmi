@@ -85,9 +85,17 @@ Status is computed **server-side** in `functions/src/index.ts` (`recordCheckIn` 
 |---|---|---|---|
 | Normal | ≤ 08:15 | 08:16–09:59 | ≥ 10:00 |
 | `isOffsite: true` | < 09:00 | 09:00–09:59 | ≥ 10:00 |
-| `morningLeaveDay` | ≤ 12:30 | 12:31–13:59 | ≥ 14:00 |
+| `morningLeaveDay` | ≤ 12:30 | 12:31–14:00 | > 14:00 |
+| Special policy `lateMorning` (X = `lateUntil`) | ≤ X | X+1 – 09:59 | ≥ 10:00 (or > X if X ≥ 10:00) |
+| Special policy `custom`, check-in ≤ 08:15 | present, `policyChoice: "evening"` (auto) | — | — |
+| Special policy `custom`, 08:16 – X | `"morning"` choice → present | `"evening"` choice → late | — |
+| Special policy `custom`, after X | — | late, policy not used (no `policyChoice`, cutoff 17:00) | ≥ 10:00, policy not used |
 
-Penalty minutes (for late ranking on dashboard) use the same thresholds but `checkInImageURL` present shifts the normal threshold to 09:00 instead of 08:15 (`services/attendance.ts`).
+**Special policy (`specialPolicy` collection, created in the admin repo).** Pure rules: `functions/src/special-policy.ts` (client mirror `lib/special-policy.ts`, keep in step). `lateMorning` combines with offsite / morning leave by taking the LATER cutoff. Overlapping policies merge to the latest `lateUntil` + earliest `leaveFrom`; any `custom` → one-per-day choice. In the custom 08:16–X window `recordCheckIn` requires `policyChoice` from the client and otherwise throws `failed-precondition` with `details.code = "policy-choice-required"`; outside it the client's value is ignored. `recordCheckIn` writes `specialPolicyId`, `policyLateUntil`, `policyLeaveFrom`, `policyChoice` to the attendance doc; old docs are never rewritten.
+
+**Early check-out cutoff** (`recordCheckOut`): 17:00 · housekeeper 16:30 · afternoon leave 12:30 · CLive none. A special policy's `leaveFrom` (Y) lowers it to the earlier of the two — for `custom` only when the stored `policyChoice` is `"evening"` (`"morning"` or no choice keeps the normal cutoff; a custom check-in after X writes no policy fields at all). The client copy (`checkOutCutoffMinutes` in `app/dashboard/attendance/page.tsx`) uses the same `resolveCheckOutCutoff`.
+
+Penalty minutes (for late ranking on dashboard) use the same thresholds but `checkInImageURL` present shifts the normal threshold to 09:00 instead of 08:15, and `policyLateUntil` (unless `policyChoice === "evening"`) shifts it to the later of that and X (`services/attendance.ts`). The 08:00 / 08:14 reminder crons skip users whose active policy gives `lateUntil` > 08:15.
 
 ### Approval Flow (Leave & Offsite)
 
@@ -144,10 +152,11 @@ NEXT_PUBLIC_APPCHECK_DEBUG_TOKEN # Optional, local/dev only — bypasses reCAPTC
 
 ### Cloud Functions
 
-`functions/` is a separate Node 20 package with its own `package.json` and TypeScript config. Functions are defined in `functions/src/index.ts` and handle:
+`functions/` is a separate Node 22 package with its own `package.json` and TypeScript config. Functions are defined in `functions/src/index.ts` and handle:
 - **`recordCheckIn`** — re-computes check-in status server-side (ignores client's `status` field) to prevent time spoofing
 - Sending web push notifications (triggered by Firestore writes)
 - Scheduled attendance reminder (Cloud Scheduler)
+- **Forms / surveys** (`forms` collection, built in the admin repo): `listMyForms`, `getMyForm`, `submitFormResponse`. Employees never read `forms` directly (rules deny it) — the audience check (`audienceKeys`, pure logic in `functions/src/forms.ts`, mirrored by `buildFormAudienceKeys` in the admin's `services/forms.ts`) and answer validation run server-side. Quiz: answer key in `forms/{id}/private/answerKey` (admin-only), graded in `submitFormResponse` by `gradeAnswers` (admin keeps a copy for its results page); quiz forms never allow editing a response. `notifyFormOpened` pushes to the audience once, the first time a form opens (`notifiedAt`). Pages: `app/dashboard/forms`.
 
 When modifying Cloud Function logic, edit both `functions/src/index.ts` (TypeScript source) and `functions/lib/index.js` (compiled output) so deployment works without a full recompile step.
 

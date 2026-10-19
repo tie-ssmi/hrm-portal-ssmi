@@ -12,6 +12,29 @@ import {
   type OTRequestLike,
 } from "./attendance-ot";
 import {
+  computeBaseCheckInStatus,
+  minutesToHhmm,
+  pickActivePolicies,
+  resolveCheckIn,
+  resolveCheckOutCutoff,
+  resolvePolicyTimes,
+  type PolicyChoice,
+  type ResolvedPolicy,
+  type SpecialPolicyLike,
+} from "./special-policy";
+import {
+  employeeAudienceKeys,
+  gradeAnswers,
+  isInAudience,
+  toShowResult,
+  validateAnswers,
+  type AnswerKey,
+  type AudienceEmployee,
+  type FormSection,
+  type QuizScore,
+  type ShowResult,
+} from "./forms";
+import {
   ADMIN_LEAVE_URL,
   APPROVER_ROLE_LABEL,
   PORTAL_APPROVAL_URL,
@@ -104,33 +127,19 @@ function toMinuteOfDay(hour: number, minute: number): number {
   return hour * 60 + minute;
 }
 
+// ເສັ້ນຕັດຢູ່ special-policy.ts (baseCheckInThresholds):
+//   ລາພັກເຄິ່ງເຊົ້າ: ທັນ <= 12:30 | ສາຍ 12:31–14:00 | ບໍ່ check-in > 14:00
+//   ອອກວຽກນອກ:    ທັນ < 09:00  | ສາຍ 09:00–09:59 | ບໍ່ check-in >= 10:00
+//   ປົກກະຕິ:       ທັນ <= 08:15 | ສາຍ 08:16–09:59 | ບໍ່ check-in >= 10:00
 function computeCheckInStatus(
   nowMinutes: number,
   hasMorningLeaveEndToday: boolean,
   isOffsite?: boolean,
 ): CheckInStatus {
-  if (hasMorningLeaveEndToday) {
-    const presentCutoff = 12 * 60 + 30; // 12:30 — ເວລາສຸດທ້າຍທີ່ຖືວ່າມາທັນ (ມີລາພັກເຄິ່ງເຊົ້າ)
-    const lateCutoff = 14 * 60; // 14:00 — ເວລາສຸດທ້າຍທີ່ຖືວ່າມາສາຍ
-
-    if (nowMinutes <= presentCutoff) return "present";
-    if (nowMinutes <= lateCutoff) return "late";
-    return "not_check_in";
-  }
-
-  if (isOffsite) {
-    // ອອກວຽກນອກ: ທັນ < 09:00 | ສາຍ 09:00–09:59 | ບໍ່ check-in >= 10:00
-    if (nowMinutes < 9 * 60) return "present";
-    if (nowMinutes < 10 * 60) return "late";
-    return "not_check_in";
-  }
-
-  const presentCutoff = 8 * 60 + 15; // 08:15 — ເວລາສຸດທ້າຍທີ່ຖືວ່າມາທັນ
-  const lateCutoff = 10 * 60; // 10:00 — ເວລາສຸດທ້າຍທີ່ຖືວ່າມາສາຍ
-
-  if (nowMinutes <= presentCutoff) return "present";
-  if (nowMinutes <= lateCutoff) return "late";
-  return "not_check_in";
+  return computeBaseCheckInStatus(
+    nowMinutes,
+    hasMorningLeaveEndToday ? "morningLeave" : isOffsite ? "offsite" : "normal",
+  );
 }
 
 type LeaveLike = {
@@ -207,6 +216,46 @@ async function hasMorningLeaveEndingToday(
   isoDate: string,
 ): Promise<boolean> {
   return (await getDayLeaveStatus(userUuid, isoDate)) === "morning_leave";
+}
+
+// ນະໂຍບາຍພິເສດ (specialPolicy) ທີ່ຄຸ້ມ uid ໃນວັນ isoDate, ລວມເປັນອັນດຽວແລ້ວ. query ດ້ວຍ
+// array-contains ຢ່າງດຽວ ແລ້ວກັ່ນ status/ວັນທີ ໃນໂຄ້ດ — ບໍ່ຕ້ອງມີ composite index
+// (ຄືກັບ findTodayOTRequest). ອ່ານບໍ່ໄດ້ → ຖືວ່າບໍ່ມີນະໂຍບາຍ (ເວລາປົກກະຕິ).
+async function getTodaySpecialPolicy(
+  uid: string,
+  isoDate: string,
+): Promise<ResolvedPolicy | null> {
+  try {
+    const snap = await admin
+      .firestore()
+      .collection("specialPolicy")
+      .where("staffUuids", "array-contains", uid)
+      .get();
+    const policies = snap.docs.map(
+      (d) => ({ id: d.id, ...(d.data() as Omit<SpecialPolicyLike, "id">) }),
+    );
+    return resolvePolicyTimes(pickActivePolicies(policies, uid, isoDate));
+  } catch (err) {
+    console.warn(`[specialPolicy] failed to resolve policy for ${uid}`, err);
+    return null;
+  }
+}
+
+// field ທີ່ບັນທຶກລົງ attendance ເມື່ອມີນະໂຍບາຍ — ໃຫ້ recordCheckOut / ລາຍງານ ອ່ານຄືນໄດ້
+// ໂດຍບໍ່ຕ້ອງອີງໃສ່ນະໂຍບາຍທີ່ອາດຖືກແກ້/ລຶບພາຍຫຼັງ
+function policyAttendanceFields(
+  policy: ResolvedPolicy | null,
+  policyChoice: PolicyChoice | undefined,
+): Record<string, string> {
+  // custom ທີ່ບໍ່ມີ choice (check-in ຫຼັງ lateUntil) = ບໍ່ໄດ້ໃຊ້ນະໂຍບາຍ — ບໍ່ບັນທຶກ ເພື່ອບໍ່ໃຫ້
+  // penalty / ເວລາເລີກ ອ່ານ policyLateUntil / policyLeaveFrom ໄປໃຊ້
+  if (!policy || (policy.isCustom && !policyChoice)) return {};
+  return {
+    specialPolicyId: policy.policyId,
+    ...(policy.lateUntilMin != null ? { policyLateUntil: minutesToHhmm(policy.lateUntilMin) } : {}),
+    ...(policy.leaveFromMin != null ? { policyLeaveFrom: minutesToHhmm(policy.leaveFromMin) } : {}),
+    ...(policyChoice ? { policyChoice } : {}),
+  };
 }
 
 // =========================================================================
@@ -509,10 +558,29 @@ async function sendAttendanceReminder(tag: string) {
   );
   const employeeDocs = await db.getAll(...employeeRefs);
 
+  // ຜູ້ທີ່ມີນະໂຍບາຍພິເສດມື້ນີ້ ໃຫ້ມາທັນຫຼັງ 08:15 — ບໍ່ແຈ້ງ "ໃກ້ຈະສາຍ" ຜິດໆ.
+  // ອ່ານ specialPolicy ທັງໝົດຄັ້ງດຽວ (ບໍ່ query ຕໍ່ຄົນ). ອ່ານບໍ່ໄດ້ → ແຈ້ງເຕືອນທຸກຄົນຄືເກົ່າ
+  const lateMorningUids = new Set<string>();
+  try {
+    const policySnap = await db.collection("specialPolicy").get();
+    const policies = policySnap.docs.map(
+      (d) => ({ id: d.id, ...(d.data() as Omit<SpecialPolicyLike, "id">) }),
+    );
+    for (const uid of userUids) {
+      const policy = resolvePolicyTimes(pickActivePolicies(policies, uid, isoDate));
+      if (policy?.lateUntilMin != null && policy.lateUntilMin > 8 * 60 + 15) {
+        lateMorningUids.add(uid);
+      }
+    }
+  } catch (err) {
+    console.warn(`[Cron ${tag}]: failed to read specialPolicy`, err);
+  }
+
   // ກັ່ນກອງ employee ທີ່ແຈ້ງເຕືອນແລ້ວໃນ tag ນີ້ (ກັນແຈ້ງເຕືອນຊ້ຳ)
   const notifiedField = `notified_${tag}`;
   const eligibleDocs = employeeDocs.filter((empDoc) => {
     if (!empDoc.exists) return false;
+    if (lateMorningUids.has(empDoc.id)) return false;
     const data = empDoc.data();
     if (data?.[notifiedField] === isoDate) return false;
     return true;
@@ -1286,6 +1354,9 @@ type CheckInPayload = {
   deviceModel?: string;
   department?: { name: string; uid: string };
   workLocation?: { code?: string; name: string; uid?: string };
+  // ນະໂຍບາຍ custom: ທາງເລືອກຂອງພະນັກງານ ເມື່ອ check-in ຢູ່ໃນຊ່ວງ 08:16..lateUntil.
+  // ນອກຊ່ວງນັ້ນ server ຕັດສິນເອງ ແລະ ບໍ່ສົນຄ່ານີ້
+  policyChoice?: PolicyChoice;
 };
 
 // ອອກວຽກກ່ອນ 17:00 ຕ້ອງປ້ອນເຫດຜົນຢ່າງໜ້ອຍ 30 ຕົວອັກສອນ.
@@ -1505,11 +1576,42 @@ export const recordCheckIn = onCall(
       "ອຸປະກອນນີ້ຖືກໃຊ້ Check-In ມື້ນີ້ແລ້ວດ້ວຍບັນຊີອື່ນ ❌",
     );
 
-    const status = computeCheckInStatus(
+    // ນະໂຍບາຍພິເສດ — ເວລາ server ເທົ່ານັ້ນ. custom ໃນຊ່ວງເລືອກ ແຕ່ບໍ່ມີ policyChoice →
+    // ປະຕິເສດ ໃຫ້ client ເປີດ popup ເລືອກແລ້ວສົ່ງໃໝ່ (ໂມງ client ອາດຕ່າງຈາກ server)
+    const specialPolicy = await getTodaySpecialPolicy(data.userUuid, isoDate);
+    const clientChoice =
+      data.policyChoice === "morning" || data.policyChoice === "evening"
+        ? data.policyChoice
+        : undefined;
+    const checkInResult = resolveCheckIn(
       toMinuteOfDay(parseInt(hourStr, 10), parseInt(minuteStr, 10)),
-      dayLeaveStatus === "morning_leave",
-      data.isOffsite,
+      dayLeaveStatus === "morning_leave"
+        ? "morningLeave"
+        : data.isOffsite
+          ? "offsite"
+          : "normal",
+      specialPolicy,
+      clientChoice,
     );
+    if (checkInResult.needsChoice) {
+      throw new HttpsError(
+        "failed-precondition",
+        "ກະລຸນາເລືອກວິທີໃຊ້ນະໂຍບາຍພິເສດມື້ນີ້",
+        {
+          code: "policy-choice-required",
+          lateUntil:
+            specialPolicy?.lateUntilMin != null
+              ? minutesToHhmm(specialPolicy.lateUntilMin)
+              : null,
+          leaveFrom:
+            specialPolicy?.leaveFromMin != null
+              ? minutesToHhmm(specialPolicy.leaveFromMin)
+              : null,
+        },
+      );
+    }
+    const status = checkInResult.status;
+    const policyChoice = checkInResult.policyChoice;
 
     // ກວດ Geofence — ດຶງ coordinates ຫ້ອງການຈາກ Firestore (client ປອມບໍ່ໄດ້)
     if (!data.isOffsite && data.location != null) {
@@ -1588,6 +1690,7 @@ export const recordCheckIn = onCall(
           ...(dayLeaveStatus === "morning_leave"
             ? { morningLeaveDay: true }
             : {}),
+          ...policyAttendanceFields(specialPolicy, policyChoice),
           ...(data.location
             ? {
                 checkInLocation: {
@@ -1643,7 +1746,14 @@ export const recordCheckIn = onCall(
       });
     }
 
-    return { attendanceId, date, isoDate, checkTime, status };
+    return {
+      attendanceId,
+      date,
+      isoDate,
+      checkTime,
+      status,
+      ...(policyChoice ? { policyChoice } : {}),
+    };
   },
 );
 
@@ -1671,22 +1781,45 @@ export const recordCheckOut = onCall(
 
     // ອອກກ່ອນ 17:00 ຕ້ອງມີເຫດຜົນ. ເວລາມາຈາກ server ບໍ່ແມ່ນໂມງໃນມືຖື.
     const [checkOutHour, checkOutMinute] = checkTime.split(":").map(Number);
-    // ອ່ານ role / ລາພັກ ສະເພາະເມື່ອກ່ອນ 17:00 — ຫຼັງນັ້ນທຸກຄົນອອກຕາມເວລາ ບໍ່ຕ້ອງເສຍ read
     const checkOutMinuteOfDay = checkOutHour * 60 + checkOutMinute;
+
+    // ອ່ານ attendance ມື້ນີ້ — policyChoice (ເວລາເລີກຂອງ custom) ແລະ checkInTime (workHours)
+    const attendanceRef = admin
+      .firestore()
+      .collection("attendance")
+      .doc(attendanceId);
+    const existingData = (await attendanceRef.get()).data();
+
+    // ອ່ານ role / ລາພັກ / ນະໂຍບາຍພິເສດ ສະເພາະເມື່ອກ່ອນ 17:00 — ຫຼັງນັ້ນທຸກຄົນອອກຕາມເວລາ
+    // (leaveFrom ຂອງນະໂຍບາຍກ່ອນ 17:00 ສະເໝີ ຈຶ່ງມີແຕ່ເລື່ອນເວລາເລີກໃຫ້ໄວຂຶ້ນ)
     let cutoffMinutes = EARLY_CHECKOUT_BEFORE_MINUTES;
     let isEarlyCheckOut = false;
     if (checkOutMinuteOfDay < EARLY_CHECKOUT_BEFORE_MINUTES) {
-      const [roleFlags, afternoonLeave] = await Promise.all([
+      const [roleFlags, afternoonLeave, specialPolicy] = await Promise.all([
         getCheckOutRoleFlags(data.userUuid),
         hasAfternoonLeaveOn(data.userUuid, isoDate),
+        getTodaySpecialPolicy(data.userUuid, isoDate),
       ]);
-      if (afternoonLeave) {
-        cutoffMinutes = AFTERNOON_LEAVE_EARLY_CHECKOUT_BEFORE_MINUTES;
-      } else if (roleFlags.housekeeper) {
-        cutoffMinutes = HOUSEKEEPER_EARLY_CHECKOUT_BEFORE_MINUTES;
+      // CLive ອອກຕອນໃດກໍໄດ້ — ບໍ່ເຄີຍຖືວ່າອອກກ່ອນເວລາ (null = ບໍ່ມີເວລາເລີກ)
+      const baseCutoff = roleFlags.cLive
+        ? null
+        : afternoonLeave
+          ? AFTERNOON_LEAVE_EARLY_CHECKOUT_BEFORE_MINUTES
+          : roleFlags.housekeeper
+            ? HOUSEKEEPER_EARLY_CHECKOUT_BEFORE_MINUTES
+            : EARLY_CHECKOUT_BEFORE_MINUTES;
+      const storedChoice = existingData?.policyChoice;
+      const cutoff = resolveCheckOutCutoff(
+        baseCutoff,
+        specialPolicy,
+        storedChoice === "morning" || storedChoice === "evening"
+          ? storedChoice
+          : undefined,
+      );
+      if (cutoff != null) {
+        cutoffMinutes = cutoff;
+        isEarlyCheckOut = checkOutMinuteOfDay < cutoff;
       }
-      // CLive ອອກຕອນໃດກໍໄດ້ — ບໍ່ເຄີຍຖືວ່າອອກກ່ອນເວລາ
-      isEarlyCheckOut = !roleFlags.cLive && checkOutMinuteOfDay < cutoffMinutes;
     }
     const earlyCheckOutReason = (data.earlyCheckOutReason ?? "").trim();
 
@@ -1719,13 +1852,7 @@ export const recordCheckOut = onCall(
       "ອຸປະກອນນີ້ຖືກໃຊ້ Check-Out ມື້ນີ້ແລ້ວດ້ວຍບັນຊີອື່ນ ❌",
     );
 
-    // ອ່ານ checkInTime ທີ່ມີຢູ່ເພື່ອຄຳນວນ workHours
-    const existing = await admin
-      .firestore()
-      .collection("attendance")
-      .doc(attendanceId)
-      .get();
-    const existingData = existing.data();
+    // checkInTime ທີ່ມີຢູ່ (ອ່ານໄວ້ຂ້າງເທິງ) ໃຊ້ຄຳນວນ workHours
     const checkInTime = existingData?.checkInTime as string | undefined;
     let workHours = 0;
     if (checkInTime) {
@@ -1765,11 +1892,7 @@ export const recordCheckOut = onCall(
       priorLocationPoint,
     );
 
-    await admin
-      .firestore()
-      .collection("attendance")
-      .doc(attendanceId)
-      .set(
+    await attendanceRef.set(
         {
           checkOutTime: checkTime,
           workHours,
@@ -2167,5 +2290,299 @@ export const logAuditEvent = onCall(
 
     const docRef = await admin.firestore().collection("auditLogs").add(entry);
     return { id: docRef.id };
+  },
+);
+
+// ==========================================================
+// ແບບຟອມ / ແບບສອບຖາມ (forms, ສ້າງຈາກ admin) — rules ບໍ່ໃຫ້ພະນັກງານອ່ານ/ຂຽນ forms ໂດຍກົງ
+// (Firestore rules ພິສູດ audienceKeys.hasAny ຂອງ list query ບໍ່ໄດ້), ທຸກຢ່າງຜ່ານ 3 callable ນີ້.
+// ສິດຕອບຄິດຈາກຂໍ້ມູນພະນັກງານປັດຈຸບັນ — ເບິ່ງ ./forms.ts
+// ==========================================================
+
+type FormDoc = {
+  title?: string;
+  description?: string;
+  status?: string;
+  sections?: FormSection[];
+  audienceKeys?: string[];
+  settings?: { allowEdit?: boolean; isQuiz?: boolean; showResult?: string };
+  createdAt?: string;
+  openedAt?: string;
+  notifiedAt?: string;
+};
+
+type FormCaller = AudienceEmployee & { data: admin.firestore.DocumentData };
+
+async function loadFormCaller(uid: string): Promise<FormCaller> {
+  const snap = await admin.firestore().collection("employees").doc(uid).get();
+  const data = snap.data();
+  if (!data || data.status === "delete" || data.status === "resigned") {
+    throw new HttpsError("permission-denied", "ບໍ່ພົບຂໍ້ມູນພະນັກງານ");
+  }
+  return {
+    uid,
+    workLocationUuid: data.workLocation?.uuid || undefined,
+    departmentUuid: data.department?.uuid || undefined,
+    employmentStatus: data.employmentStatus || undefined,
+    data,
+  };
+}
+
+function requireFormId(raw: unknown): string {
+  if (typeof raw !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(raw)) {
+    throw new HttpsError("invalid-argument", "formId ບໍ່ຖືກຕ້ອງ");
+  }
+  return raw;
+}
+
+const formSections = (form: FormDoc): FormSection[] =>
+  Array.isArray(form.sections) ? form.sections : [];
+
+const isPublishedForm = (form: FormDoc) => form.status === "open" || form.status === "closed";
+
+const isQuizForm = (form: FormDoc) => form.settings?.isQuiz === true;
+
+// Quiz ແກ້ຄຳຕອບບໍ່ໄດ້ສະເໝີ — ບໍ່ດັ່ງນັ້ນເບິ່ງເສີຍແລ້ວກັບໄປແກ້ໃຫ້ໄດ້ຄະແນນເຕັມ
+const canEditResponse = (form: FormDoc) => form.settings?.allowEdit === true && !isQuizForm(form);
+
+const formShowResult = (form: FormDoc): ShowResult =>
+  isQuizForm(form) ? toShowResult(form.settings?.showResult) : "none";
+
+const answerKeyRef = (formRef: admin.firestore.DocumentReference) =>
+  formRef.collection("private").doc("answerKey");
+
+const parseAnswerKey = (data: admin.firestore.DocumentData | undefined): AnswerKey =>
+  (data?.questions ?? {}) as AnswerKey;
+
+export const listMyForms = onCall(
+  { region: "asia-southeast1", cors: callableCorsOrigins, invoker: "public" },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Must be signed in");
+    }
+    const caller = await loadFormCaller(request.auth.uid);
+    const db = admin.firestore();
+
+    const snap = await db
+      .collection("forms")
+      .where("audienceKeys", "array-contains-any", employeeAudienceKeys(caller))
+      .get();
+    const published = snap.docs.filter((d) => isPublishedForm(d.data() as FormDoc));
+    const responses = published.length
+      ? await db.getAll(...published.map((d) => d.ref.collection("responses").doc(caller.uid)))
+      : [];
+
+    const forms = published
+      .map((d, i) => {
+        const form = d.data() as FormDoc;
+        const response = responses[i].data();
+        const score = response?.score as QuizScore | undefined;
+        return {
+          id: d.id,
+          title: form.title ?? "",
+          description: form.description ?? "",
+          status: form.status as "open" | "closed",
+          questionCount: formSections(form).reduce((n, s) => n + (s.questions?.length ?? 0), 0),
+          allowEdit: canEditResponse(form),
+          isQuiz: isQuizForm(form),
+          openedAt: form.openedAt ?? form.createdAt ?? "",
+          submittedAt: (response?.submittedAt as string | undefined) ?? null,
+          score:
+            score && formShowResult(form) !== "none"
+              ? { earned: score.earned, total: score.total }
+              : null,
+        };
+      })
+      // ຟອມທີ່ປິດແລ້ວ ສະແດງສະເພາະອັນທີ່ເຄີຍຕອບ (ເບິ່ງຄຳຕອບຍ້ອນຫຼັງ)
+      .filter((f) => f.status === "open" || f.submittedAt)
+      .sort((a, b) => b.openedAt.localeCompare(a.openedAt));
+
+    return { forms };
+  },
+);
+
+export const getMyForm = onCall(
+  { region: "asia-southeast1", cors: callableCorsOrigins, invoker: "public" },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Must be signed in");
+    }
+    const formId = requireFormId((request.data as { formId?: unknown })?.formId);
+    const caller = await loadFormCaller(request.auth.uid);
+    const formRef = admin.firestore().collection("forms").doc(formId);
+    const [formSnap, responseSnap] = await Promise.all([
+      formRef.get(),
+      formRef.collection("responses").doc(caller.uid).get(),
+    ]);
+    const form = formSnap.data() as FormDoc | undefined;
+    const response = responseSnap.data();
+
+    // ຍ້າຍພະແນກ/ສາຂາ ຫຼັງຕອບແລ້ວ ຍັງເບິ່ງຄຳຕອບຂອງຕົນໄດ້
+    if (!form || !isPublishedForm(form) || (!isInAudience(form.audienceKeys, caller) && !response)) {
+      throw new HttpsError("not-found", "ບໍ່ພົບແບບຟອມ ຫຼື ທ່ານບໍ່ມີສິດຕອບແບບຟອມນີ້");
+    }
+
+    const isQuiz = isQuizForm(form);
+    const showResult = formShowResult(form);
+    const key = isQuiz ? parseAnswerKey((await answerKeyRef(formRef).get()).data()) : {};
+    // ຄະແນນຕໍ່ຂໍ້ບໍ່ແມ່ນຄວາມລັບ (ສະແດງຕອນຕອບ); ເສີຍສົ່ງໃຫ້ສະເພາະຫຼັງຕອບແລ້ວ ແລະ ຕັ້ງ scoreAndAnswers
+    const questionPoints = Object.fromEntries(
+      Object.entries(key).map(([id, entry]) => [id, Math.max(0, Number(entry.points) || 0)]),
+    );
+    const score = response?.score as QuizScore | undefined;
+    const revealAnswers = !!response && showResult === "scoreAndAnswers";
+
+    return {
+      form: {
+        id: formSnap.id,
+        title: form.title ?? "",
+        description: form.description ?? "",
+        status: form.status,
+        allowEdit: canEditResponse(form),
+        isQuiz,
+        showResult,
+        questionPoints,
+        sections: formSections(form),
+      },
+      response: response
+        ? {
+            answers: response.answers ?? {},
+            submittedAt: response.submittedAt ?? null,
+            updatedAt: response.updatedAt ?? null,
+            score:
+              score && showResult !== "none"
+                ? {
+                    earned: score.earned,
+                    total: score.total,
+                    ...(revealAnswers ? { results: score.results } : {}),
+                  }
+                : null,
+            correctAnswers: revealAnswers
+              ? Object.fromEntries(Object.entries(key).map(([id, entry]) => [id, entry.correct ?? []]))
+              : null,
+          }
+        : null,
+    };
+  },
+);
+
+export const submitFormResponse = onCall(
+  { region: "asia-southeast1", cors: callableCorsOrigins, invoker: "public" },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Must be signed in");
+    }
+    const payload = request.data as { formId?: unknown; answers?: unknown };
+    const formId = requireFormId(payload?.formId);
+    const caller = await loadFormCaller(request.auth.uid);
+    const db = admin.firestore();
+    const formRef = db.collection("forms").doc(formId);
+    // doc id = uid → 1 ຄົນ 1 ຄຳຕອບ
+    const responseRef = formRef.collection("responses").doc(caller.uid);
+
+    return db.runTransaction(async (tx) => {
+      const [formSnap, responseSnap, keySnap] = await Promise.all([
+        tx.get(formRef),
+        tx.get(responseRef),
+        tx.get(answerKeyRef(formRef)),
+      ]);
+      const form = formSnap.data() as FormDoc | undefined;
+      if (!form || !isPublishedForm(form) || !isInAudience(form.audienceKeys, caller)) {
+        throw new HttpsError("not-found", "ບໍ່ພົບແບບຟອມ ຫຼື ທ່ານບໍ່ມີສິດຕອບແບບຟອມນີ້");
+      }
+      if (form.status !== "open") {
+        throw new HttpsError("failed-precondition", "ແບບຟອມນີ້ປິດຮັບຄຳຕອບແລ້ວ");
+      }
+      const existing = responseSnap.data();
+      if (existing && !canEditResponse(form)) {
+        throw new HttpsError("already-exists", "ທ່ານໄດ້ຕອບແບບຟອມນີ້ແລ້ວ");
+      }
+
+      const answers = validateAnswers(formSections(form), payload.answers);
+      const score = isQuizForm(form)
+        ? gradeAnswers(formSections(form), answers, parseAnswerKey(keySnap.data()))
+        : null;
+      const now = new Date().toISOString();
+      const emp = caller.data;
+      const submittedAt = (existing?.submittedAt as string | undefined) ?? now;
+
+      tx.set(responseRef, {
+        formId,
+        uid: caller.uid,
+        answers,
+        // snapshot ຕອນຕອບ — ໜ້າຜົນ (admin) ໃຊ້ສະແດງຊື່/ພະແນກ ໂດຍບໍ່ຕ້ອງ join
+        employee: {
+          name: `${emp.firstNameLo ?? ""} ${emp.lastNameLo ?? ""}`.trim(),
+          jobTitle: emp.jobTitleLo || emp.jobTitle || "",
+          departmentUuid: caller.departmentUuid ?? "",
+          departmentTitle: emp.department?.title ?? "",
+          workLocationUuid: caller.workLocationUuid ?? "",
+          workLocationName: emp.workLocation?.nameLo ?? "",
+          employmentStatus: caller.employmentStatus ?? "",
+        },
+        // ຄະແນນຕອນສົ່ງ (ສະແດງໃຫ້ພະນັກງານ) — admin ຄິດຄືນຈາກເສີຍປັດຈຸບັນໃນໜ້າຜົນ
+        ...(score ? { score } : {}),
+        submittedAt,
+        updatedAt: now,
+        editCount: existing ? ((existing.editCount as number | undefined) ?? 0) + 1 : 0,
+      });
+      if (!existing) {
+        tx.update(formRef, { responseCount: admin.firestore.FieldValue.increment(1) });
+      }
+
+      const showResult = formShowResult(form);
+      return {
+        submittedAt,
+        updatedAt: now,
+        score: score && showResult !== "none" ? { earned: score.earned, total: score.total } : null,
+      };
+    });
+  },
+);
+
+// ແຈ້ງເຕືອນ push ຫາຜູ້ມີສິດຕອບ ຄັ້ງທຳອິດທີ່ຟອມເປີດຮັບຄຳຕອບ (ສ້າງແລ້ວເປີດເລີຍ ຫຼື ສະບັບຮ່າງ → ເປີດ).
+// notifiedAt ກັນແຈ້ງຊ້ຳເມື່ອປິດແລ້ວເປີດຄືນ ຫຼື ເມື່ອ trigger ຖືກເອີ້ນຊ້ຳ.
+export const notifyFormOpened = onDocumentWritten(
+  { document: "forms/{formId}", region: "asia-southeast1" },
+  async (event) => {
+    const before = event.data?.before.data() as FormDoc | undefined;
+    const after = event.data?.after.data() as FormDoc | undefined;
+    if (!after || after.status !== "open" || before?.status === "open" || after.notifiedAt) return;
+
+    const db = admin.firestore();
+    const formRef = db.collection("forms").doc(event.params.formId);
+    // ຈອງ notifiedAt ກ່ອນສົ່ງ — trigger ເອີ້ນຊ້ຳ (at-least-once) ຈະບໍ່ສົ່ງຊ້ຳ
+    const claimed = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(formRef);
+      if (snap.data()?.notifiedAt) return false;
+      tx.update(formRef, { notifiedAt: new Date().toISOString() });
+      return true;
+    });
+    if (!claimed) return;
+
+    const employeesSnap = await db.collection("employees").get();
+    const audienceDocs = employeesSnap.docs.filter((d) => {
+      const emp = d.data();
+      if (emp.status === "delete" || emp.status === "resigned") return false;
+      return isInAudience(after.audienceKeys, {
+        uid: d.id,
+        workLocationUuid: emp.workLocation?.uuid || undefined,
+        departmentUuid: emp.department?.uuid || undefined,
+        employmentStatus: emp.employmentStatus || undefined,
+      });
+    });
+    if (audienceDocs.length === 0) return;
+
+    const payload = JSON.stringify({
+      title: isQuizForm(after) ? "📝 ມີແບບທົດສອບໃໝ່!" : "📋 ມີແບບສອບຖາມໃໝ່!",
+      body: after.title || "ກະລຸນາເຂົ້າໄປຕອບແບບຟອມ",
+      icon: "/apple-icon.png",
+      badge: "/SSMI.svg",
+      url: `/dashboard/forms/fill?id=${event.params.formId}`,
+    });
+    const notified = await sendPushToEmployeeDocs(audienceDocs, payload, "form-open");
+    console.log(
+      `[form-open]: notified ${notified}/${audienceDocs.length} employees for ${event.params.formId}`,
+    );
   },
 );

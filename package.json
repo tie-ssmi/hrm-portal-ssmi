@@ -1,7 +1,10 @@
 {
   "name": "my-project",
-  "version": "0.4.8",
+  "version": "0.4.9",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "node scripts/copy-pdfjs-assets.js && next dev",
     "build": "node scripts/copy-pdfjs-assets.js && next build",

@@ -41,6 +41,11 @@ rules_version = '2';
 //     The nested documents rule under employees/{docId} below covers the same path
 //     for self / isAdmin / isEmployeeManager — every admin-app user passes isAdmin
 //     (admin login requires role.loginAdmin), so the admin pages keep working.
+//
+// MERGED 2026-10-15 — second re-sync of the two repos (union again):
+//   - attendanceOT match block (read: signed-in, write: Cloud Function only)
+//   - isLeaveApprover() also accepts role.midManageLeave
+//
 // Keep BOTH repos' firestore.rules byte-identical: a deploy replaces the whole ruleset.
 //
 // NOTE (structure cleanup pass):
@@ -113,6 +118,7 @@ service cloud.firestore {
         && rolesUid != null
         && (
           get(/databases/$(database)/documents/roles/$(rolesUid)).data.role.manageLeave == true
+          || get(/databases/$(database)/documents/roles/$(rolesUid)).data.role.midManageLeave == true
           || get(/databases/$(database)/documents/roles/$(rolesUid)).data.role.highManageLeave == true
           || get(/databases/$(database)/documents/roles/$(rolesUid)).data.role.approveDepartment == true
         );
@@ -534,7 +540,8 @@ service cloud.firestore {
       // ສະແດງ 2 ອັນນີ້ໃຫ້ isLPB ນຳແລ້ວ) — doc ອື່ນໃນ collection ນີ້ (forceLogoutAdmin/
       // forceLogoutPortal, ສະແດງໃຫ້ isIT ຢ່າງດຽວ) ຍັງຈຳກັດ isIT ຄືເກົ່າ, ບໍ່ຢາກໃຫ້ isLPB
       // ໄດ້ສິດ force-logout ໄປນຳໂດຍບໍ່ຕັ້ງໃຈ.
-      allow write: if docId == 'registerAccess' || docId == 'employeeSelfEdit'
+      // attendanceTimes (ຕັ້ງເວລາ check in / out — system-setting/attendance-time.tsx) ຄືກັນ: isIT ຫຼື isLPB
+      allow write: if docId == 'registerAccess' || docId == 'employeeSelfEdit' || docId == 'attendanceTimes'
         ? (isIT() || isLPB())
         : isIT();
     }
@@ -560,6 +567,15 @@ service cloud.firestore {
       allow create: if isIT() || isAdmin() || isLPB();
       allow update: if isIT() || isAdmin() || isLPB();
       allow delete: if isIT() || isAdmin() || isLPB();
+    }
+
+    // ==========================================================
+    // specialPolicy — ນະໂຍບາຍພິເສດ (ຊ້າຕອນເຊົ້າ / ກັບກ່ອນຕອນແລງ), flow ຄືກັບ trip.
+    // ອ່ານ: ທຸກຄົນທີ່ login (portal ຈະອ່ານຕອນ check-in/out). ຂຽນ: IT, Admin, LPB.
+    // ==========================================================
+    match /specialPolicy/{docId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isIT() || isAdmin() || isLPB();
     }
 
     // function canEditTrip() {
@@ -602,6 +618,26 @@ service cloud.firestore {
       allow create: if isAdmin() || isEmployeeManager();
       allow update: if isAdmin() || isEmployeeManager();
       allow delete: if false;
+    }
+
+    // ==========================================================
+    // forms — ແບບຟອມ / ແບບສອບຖາມ. ສ້າງ/ເບິ່ງຜົນ: IT, LPB, HR (manageEmployee) ຈາກ admin.
+    // ພະນັກງານບໍ່ອ່ານ/ຂຽນໂດຍກົງ — portal ໃຊ້ callable listMyForms / getMyForm /
+    // submitFormResponse (hrm-portal-ssmi functions) ເພາະ rules ພິສູດ audienceKeys ຂອງ
+    // list query ບໍ່ໄດ້. responses/{uid}: ຂຽນໂດຍ submitFormResponse ເທົ່ານັ້ນ (ລວມຄະແນນ Quiz).
+    // ==========================================================
+    match /forms/{formId} {
+      allow read, write: if isIT() || isLPB() || isEmployeeManager();
+
+      match /responses/{uid} {
+        allow read: if isIT() || isLPB() || isEmployeeManager();
+        allow write: if false;
+      }
+
+      // private/answerKey — ເສີຍ Quiz. ພະນັກງານອ່ານບໍ່ໄດ້; submitFormResponse ອ່ານດ້ວຍ Admin SDK
+      match /private/{docId} {
+        allow read, write: if isIT() || isLPB() || isEmployeeManager();
+      }
     }
 
     // ==========================================================

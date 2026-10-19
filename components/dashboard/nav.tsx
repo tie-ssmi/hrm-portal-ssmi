@@ -13,6 +13,7 @@ import {
   History,
   LogOut,
   ClipboardCheck,
+  ClipboardList,
 } from "lucide-react";
 
 // ** shared components
@@ -51,6 +52,7 @@ const NAV_CONFIGS: NavConfig[] = [
   { href: "/dashboard/profile",    label: "ຂໍ້ມູນສ່ວນຕົວ", icon: User            },
   { href: "/dashboard/attendance", label: "Check-In/Out",   icon: Clock           },
   { href: "/dashboard/request",    label: "ແບບຟອມ",         icon: FileText        },
+  { href: "/dashboard/forms",      label: "ແບບສອບຖາມ",      icon: ClipboardList   },
   { href: "/dashboard/approv",     label: "ການອະນຸມັດ",     icon: ClipboardCheck  },
   { href: "/dashboard/history",    label: "ປະຫວັດ",         icon: History         },
 ];

@@ -183,6 +183,12 @@ export interface AttendanceRecord {
   earlyCheckOut?: boolean;
   earlyCheckOutReason?: string;
   earlyCheckOutMinutes?: number;
+  // ນະໂຍບາຍພິເສດ (specialPolicy) — ບັນທຶກໂດຍ recordCheckIn. policyChoice ມີສະເພາະ custom:
+  // "morning" = ນັບຕົງເວລາ ເລີກປົກກະຕິ, "evening" = ກັບໄດ້ຕັ້ງແຕ່ policyLeaveFrom
+  specialPolicyId?: string;
+  policyLateUntil?: string;
+  policyLeaveFrom?: string;
+  policyChoice?: "morning" | "evening";
   uid?: string;
   userUuid?: string;
   fullNameEn?: string;

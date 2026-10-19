@@ -3,6 +3,7 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import app, { db, storage } from '@/lib/firebase'
 import { getVientianeIsoDate } from '@/lib/server-time'
+import { hhmmToMinutes } from '@/lib/special-policy'
 import type { AttendanceRecord } from '@/lib/types'
 
 let _fns: ReturnType<typeof getFunctions> | null = null
@@ -50,6 +51,7 @@ type UpdateCheckInTimeParams = {
   deviceLocalId?: string
   deviceFingerprint?: string
   deviceModel?: string
+  policyChoice?: 'morning' | 'evening'
   department?: {
     name: string
     uid: string
@@ -59,6 +61,13 @@ type UpdateCheckInTimeParams = {
     name: string
     uid?: string
   }
+}
+
+type RecordCheckInResult = {
+  attendanceId: string
+  checkTime?: string
+  status?: 'present' | 'late' | 'not_check_in'
+  policyChoice?: 'morning' | 'evening'
 }
 
 type UpdateCheckOutTimeParams = {
@@ -106,6 +115,11 @@ type AttendanceDoc = {
   earlyCheckOutReason?: string
   earlyCheckOutMinutes?: number
   morningLeaveDay?: boolean
+  // ນະໂຍບາຍພິເສດ — ບັນທຶກໂດຍ recordCheckIn ຕອນມີນະໂຍບາຍຄຸ້ມມື້ນັ້ນ
+  specialPolicyId?: string
+  policyLateUntil?: string
+  policyLeaveFrom?: string
+  policyChoice?: 'morning' | 'evening'
   checkInImageURL?: string
   checkOutImageURL?: string
   workLocation?: { name: string; uid?: string; code?: string }
@@ -293,18 +307,26 @@ export async function fetchAttendanceByUserThisMonth(userUuid: string): Promise<
         : {}),
       ...(data.checkInImageURL ? { checkInImageURL: data.checkInImageURL } : {}),
       ...(data.checkOutImageURL ? { checkOutImageURL: data.checkOutImageURL } : {}),
+      ...(data.specialPolicyId
+        ? {
+            specialPolicyId: data.specialPolicyId,
+            policyLateUntil: data.policyLateUntil,
+            policyLeaveFrom: data.policyLeaveFrom,
+            policyChoice: data.policyChoice,
+          }
+        : {}),
     })
   }
 
   return rows.sort((left, right) => right.date.localeCompare(left.date))
 }
 
-export async function updateAttendanceCheckInTime(params: UpdateCheckInTimeParams): Promise<string> {
-  const recordCheckIn = httpsCallable<UpdateCheckInTimeParams, { attendanceId: string }>(
+export async function updateAttendanceCheckInTime(params: UpdateCheckInTimeParams): Promise<RecordCheckInResult> {
+  const recordCheckIn = httpsCallable<UpdateCheckInTimeParams, RecordCheckInResult>(
     fns(), 'recordCheckIn'
   )
   const result = await recordCheckIn(params)
-  return result.data.attendanceId
+  return result.data
 }
 
 export async function updateAttendanceCheckOutTime({
@@ -366,6 +388,14 @@ export async function fetchAttendanceByUser(userUuid: string): Promise<Attendanc
         : {}),
       ...(data.checkInImageURL ? { checkInImageURL: data.checkInImageURL } : {}),
       ...(data.checkOutImageURL ? { checkOutImageURL: data.checkOutImageURL } : {}),
+      ...(data.specialPolicyId
+        ? {
+            specialPolicyId: data.specialPolicyId,
+            policyLateUntil: data.policyLateUntil,
+            policyLeaveFrom: data.policyLeaveFrom,
+            policyChoice: data.policyChoice,
+          }
+        : {}),
     })
   }
 
@@ -451,6 +481,14 @@ export async function fetchTodayCheckInAttendance(isoDate?: string): Promise<Att
         : {}),
       ...(data.checkInImageURL ? { checkInImageURL: data.checkInImageURL } : {}),
       ...(data.checkOutImageURL ? { checkOutImageURL: data.checkOutImageURL } : {}),
+      ...(data.specialPolicyId
+        ? {
+            specialPolicyId: data.specialPolicyId,
+            policyLateUntil: data.policyLateUntil,
+            policyLeaveFrom: data.policyLeaveFrom,
+            policyChoice: data.policyChoice,
+          }
+        : {}),
     })
   }
 
@@ -477,15 +515,26 @@ const LATE_THRESHOLD_MINUTES = 8 * 60 + 15        // 08:15 — normal day
 const MORNING_LEAVE_THRESHOLD_MINUTES = 12 * 60 + 30 // 12:30 — half-day morning leave
 const IMAGE_THRESHOLD_MINUTES = 9 * 60             // 09:00 — check-in with photo
 
-function checkInPenaltyMinutes(checkInTime: string | null | undefined, morningLeaveDay?: boolean, hasImage?: boolean): number {
+function checkInPenaltyMinutes(
+  checkInTime: string | null | undefined,
+  morningLeaveDay?: boolean,
+  hasImage?: boolean,
+  policy?: { policyLateUntil?: string; policyChoice?: 'morning' | 'evening' },
+): number {
   if (!checkInTime) return 0
   const [hStr, mStr] = checkInTime.split(':')
   const total = parseInt(hStr, 10) * 60 + parseInt(mStr, 10)
-  const threshold = morningLeaveDay
+  let threshold = morningLeaveDay
     ? MORNING_LEAVE_THRESHOLD_MINUTES
     : hasImage
       ? IMAGE_THRESHOLD_MINUTES
       : LATE_THRESHOLD_MINUTES
+  // ນະໂຍບາຍພິເສດ: ນັບຈາກ policyLateUntil (ເອົາອັນທີ່ຊ້າກວ່າ). custom ທີ່ເລືອກ "evening"
+  // ຍອມນັບມາຊ້າແລ້ວ — ໃຊ້ເສັ້ນປົກກະຕິ. lateMorning ບໍ່ມີ policyChoice
+  const policyLateUntil = hhmmToMinutes(policy?.policyLateUntil)
+  if (policyLateUntil != null && policy?.policyChoice !== 'evening') {
+    threshold = Math.max(threshold, policyLateUntil)
+  }
   return Math.max(0, total - threshold)
 }
 
@@ -585,7 +634,7 @@ export async function fetchLateRankingForMonth(monthKey: string): Promise<LateRa
                  : uuidA || uuidB
     if (!mapKey) continue
 
-    const penalty = checkInPenaltyMinutes(data.checkInTime ?? null, data.morningLeaveDay, !!data.checkInImageURL)
+    const penalty = checkInPenaltyMinutes(data.checkInTime ?? null, data.morningLeaveDay, !!data.checkInImageURL, data)
     const recordDate = toIsoDateString(data)
     const existing = map.get(mapKey)
 
