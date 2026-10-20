@@ -23,13 +23,20 @@ import {
   type SpecialPolicyLike,
 } from "./special-policy";
 import {
+  drawQuestionIds,
+  drawSize,
+  effectiveFormStatus,
   employeeAudienceKeys,
+  filterSections,
   gradeAnswers,
   isInAudience,
+  shuffleSectionsFor,
+  toDrawSettings,
   toShowResult,
   validateAnswers,
   type AnswerKey,
   type AudienceEmployee,
+  type FormSchedule,
   type FormSection,
   type QuizScore,
   type ShowResult,
@@ -2305,7 +2312,15 @@ type FormDoc = {
   status?: string;
   sections?: FormSection[];
   audienceKeys?: string[];
-  settings?: { allowEdit?: boolean; isQuiz?: boolean; showResult?: string };
+  settings?: {
+    allowEdit?: boolean;
+    isQuiz?: boolean;
+    showResult?: string;
+    shuffleQuestions?: boolean;
+    shuffleOptions?: boolean;
+    draw?: unknown;
+  };
+  schedule?: FormSchedule;
   createdAt?: string;
   openedAt?: string;
   notifiedAt?: string;
@@ -2338,7 +2353,11 @@ function requireFormId(raw: unknown): string {
 const formSections = (form: FormDoc): FormSection[] =>
   Array.isArray(form.sections) ? form.sections : [];
 
-const isPublishedForm = (form: FormDoc) => form.status === "open" || form.status === "closed";
+// ສະຖານະຈິງ ຕາມເວລາປັດຈຸບັນ (ຕັ້ງເວລາເປີດ/ປິດ) — ບໍ່ລໍຖ້າ cron syncFormSchedules
+const formState = (form: FormDoc) => effectiveFormStatus(form.status, form.schedule, new Date());
+
+// ພະນັກງານເຫັນໃນລາຍການ: ລໍຖ້າເປີດ (ຕັ້ງເວລາ), ເປີດ, ປິດ — ສະບັບຮ່າງ/ລົບ ບໍ່ເຫັນ
+const isVisibleForm = (form: FormDoc) => formState(form) !== "draft";
 
 const isQuizForm = (form: FormDoc) => form.settings?.isQuiz === true;
 
@@ -2354,6 +2373,58 @@ const answerKeyRef = (formRef: admin.firestore.DocumentReference) =>
 const parseAnswerKey = (data: admin.firestore.DocumentData | undefined): AnswerKey =>
   (data?.questions ?? {}) as AnswerKey;
 
+const formDraw = (form: FormDoc) => toDrawSettings(form.settings?.draw);
+
+// ຊຸດຄຳຖາມທີ່ສຸ່ມໃຫ້ແຕ່ລະຄົນ (ສຸ່ມແຍກແຕ່ລະຄົນ) — ພະນັກງານອ່ານ/ຂຽນເອງບໍ່ໄດ້ (rules catch-all)
+const assignmentRef = (formRef: admin.firestore.DocumentReference, uid: string) =>
+  formRef.collection("assignments").doc(uid);
+
+// usage = ແຕ່ລະຂໍ້ຖືກແຈກໄປແລ້ວຈັກຄົນ (ເລືອກຂໍ້ທີ່ໃຊ້ໜ້ອຍສຸດກ່ອນ)
+const drawStateRef = (formRef: admin.firestore.DocumentReference) =>
+  formRef.collection("private").doc("drawState");
+
+// ສຸ່ມໃຫ້ຄັ້ງທຳອິດທີ່ເປີດຟອມ ແລ້ວເກັບໄວ້ — ເປີດຄືນໄດ້ຊຸດເດີມ. ທຸກຄົນອັບເດດ drawState ດຽວກັນ:
+// ຖ້າ transaction ລົ້ມ (ຄົນເປີດພ້ອມກັນຫຼາຍເກີນ) → ສຸ່ມດ້ວຍ seed ໂດຍບໍ່ນັບ usage ແທນທີ່ຈະ error
+async function getOrCreateAssignment(
+  formRef: admin.firestore.DocumentReference,
+  form: FormDoc,
+  uid: string,
+): Promise<string[]> {
+  const ref = assignmentRef(formRef, uid);
+  const existing = await ref.get();
+  if (existing.exists) return (existing.data()?.questionIds as string[]) ?? [];
+
+  const db = admin.firestore();
+  const sections = formSections(form);
+  const draw = formDraw(form);
+  const seed = `${formRef.id}:${uid}`;
+  try {
+    return await db.runTransaction(async (tx) => {
+      const [assignmentSnap, stateSnap] = await Promise.all([tx.get(ref), tx.get(drawStateRef(formRef))]);
+      if (assignmentSnap.exists) return (assignmentSnap.data()?.questionIds as string[]) ?? [];
+      const usage = (stateSnap.data()?.usage ?? {}) as Record<string, number>;
+      const ids = drawQuestionIds(sections, draw, usage, seed);
+      tx.set(ref, { questionIds: ids, assignedAt: new Date().toISOString() });
+      tx.set(
+        drawStateRef(formRef),
+        { usage: Object.fromEntries(ids.map((id) => [id, admin.firestore.FieldValue.increment(1)])) },
+        { merge: true },
+      );
+      return ids;
+    });
+  } catch (err) {
+    console.warn(`[form-draw]: transaction failed for ${formRef.id}/${uid}, seeded fallback`, err);
+    const ids = drawQuestionIds(sections, draw, {}, seed);
+    try {
+      await ref.create({ questionIds: ids, assignedAt: new Date().toISOString(), fallback: true });
+      return ids;
+    } catch {
+      // ອີກ request ສ້າງໄປກ່ອນແລ້ວ — ໃຊ້ອັນນັ້ນ
+      return ((await ref.get()).data()?.questionIds as string[]) ?? ids;
+    }
+  }
+}
+
 export const listMyForms = onCall(
   { region: "asia-southeast1", cors: callableCorsOrigins, invoker: "public" },
   async (request) => {
@@ -2367,7 +2438,7 @@ export const listMyForms = onCall(
       .collection("forms")
       .where("audienceKeys", "array-contains-any", employeeAudienceKeys(caller))
       .get();
-    const published = snap.docs.filter((d) => isPublishedForm(d.data() as FormDoc));
+    const published = snap.docs.filter((d) => isVisibleForm(d.data() as FormDoc));
     const responses = published.length
       ? await db.getAll(...published.map((d) => d.ref.collection("responses").doc(caller.uid)))
       : [];
@@ -2381,11 +2452,15 @@ export const listMyForms = onCall(
           id: d.id,
           title: form.title ?? "",
           description: form.description ?? "",
-          status: form.status as "open" | "closed",
-          questionCount: formSections(form).reduce((n, s) => n + (s.questions?.length ?? 0), 0),
+          status: formState(form) as "scheduled" | "open" | "closed",
+          openAt: form.schedule?.openAt ?? null,
+          closeAt: form.schedule?.closeAt ?? null,
+          questionCount: formDraw(form).enabled
+            ? drawSize(formSections(form), formDraw(form))
+            : formSections(form).reduce((n, s) => n + (s.questions?.length ?? 0), 0),
           allowEdit: canEditResponse(form),
           isQuiz: isQuizForm(form),
-          openedAt: form.openedAt ?? form.createdAt ?? "",
+          openedAt: form.openedAt ?? form.schedule?.openAt ?? form.createdAt ?? "",
           submittedAt: (response?.submittedAt as string | undefined) ?? null,
           score:
             score && formShowResult(form) !== "none"
@@ -2394,7 +2469,7 @@ export const listMyForms = onCall(
         };
       })
       // ຟອມທີ່ປິດແລ້ວ ສະແດງສະເພາະອັນທີ່ເຄີຍຕອບ (ເບິ່ງຄຳຕອບຍ້ອນຫຼັງ)
-      .filter((f) => f.status === "open" || f.submittedAt)
+      .filter((f) => f.status !== "closed" || f.submittedAt)
       .sort((a, b) => b.openedAt.localeCompare(a.openedAt));
 
     return { forms };
@@ -2418,13 +2493,30 @@ export const getMyForm = onCall(
     const response = responseSnap.data();
 
     // ຍ້າຍພະແນກ/ສາຂາ ຫຼັງຕອບແລ້ວ ຍັງເບິ່ງຄຳຕອບຂອງຕົນໄດ້
-    if (!form || !isPublishedForm(form) || (!isInAudience(form.audienceKeys, caller) && !response)) {
+    if (!form || !isVisibleForm(form) || (!isInAudience(form.audienceKeys, caller) && !response)) {
       throw new HttpsError("not-found", "ບໍ່ພົບແບບຟອມ ຫຼື ທ່ານບໍ່ມີສິດຕອບແບບຟອມນີ້");
     }
+    const state = formState(form);
+    if (state === "scheduled") {
+      throw new HttpsError("failed-precondition", "ແບບຟອມນີ້ຍັງບໍ່ເປີດຮັບຄຳຕອບ");
+    }
+
+    // ສຸ່ມແຍກແຕ່ລະຄົນ: ສະແດງສະເພາະຊຸດຂອງຄົນນີ້ (ຕອບແລ້ວ → ຊຸດທີ່ເກັບໄວ້ໃນຄຳຕອບ)
+    let sections = formSections(form);
+    if (formDraw(form).enabled) {
+      const ids =
+        (response?.assignedQuestionIds as string[] | undefined) ??
+        (state === "open" && isInAudience(form.audienceKeys, caller)
+          ? await getOrCreateAssignment(formRef, form, caller.uid)
+          : []);
+      sections = filterSections(sections, ids);
+    }
+    const visibleIds = new Set(sections.flatMap((s) => (s.questions ?? []).map((q) => q.id)));
 
     const isQuiz = isQuizForm(form);
     const showResult = formShowResult(form);
-    const key = isQuiz ? parseAnswerKey((await answerKeyRef(formRef).get()).data()) : {};
+    const fullKey = isQuiz ? parseAnswerKey((await answerKeyRef(formRef).get()).data()) : {};
+    const key = Object.fromEntries(Object.entries(fullKey).filter(([id]) => visibleIds.has(id)));
     // ຄະແນນຕໍ່ຂໍ້ບໍ່ແມ່ນຄວາມລັບ (ສະແດງຕອນຕອບ); ເສີຍສົ່ງໃຫ້ສະເພາະຫຼັງຕອບແລ້ວ ແລະ ຕັ້ງ scoreAndAnswers
     const questionPoints = Object.fromEntries(
       Object.entries(key).map(([id, entry]) => [id, Math.max(0, Number(entry.points) || 0)]),
@@ -2437,12 +2529,17 @@ export const getMyForm = onCall(
         id: formSnap.id,
         title: form.title ?? "",
         description: form.description ?? "",
-        status: form.status,
+        status: state,
+        closeAt: form.schedule?.closeAt ?? null,
         allowEdit: canEditResponse(form),
         isQuiz,
         showResult,
         questionPoints,
-        sections: formSections(form),
+        // ລຳດັບສຸ່ມຕໍ່ຄົນ (ຄົງທີ່) — ໜ້າຜົນຂອງ admin ໃຊ້ລຳດັບເດີມ
+        sections: shuffleSectionsFor(sections, `${formSnap.id}:${caller.uid}`, {
+          questions: form.settings?.shuffleQuestions === true,
+          choices: form.settings?.shuffleOptions === true,
+        }),
       },
       response: response
         ? {
@@ -2481,26 +2578,41 @@ export const submitFormResponse = onCall(
     const responseRef = formRef.collection("responses").doc(caller.uid);
 
     return db.runTransaction(async (tx) => {
-      const [formSnap, responseSnap, keySnap] = await Promise.all([
+      const [formSnap, responseSnap, keySnap, assignmentSnap] = await Promise.all([
         tx.get(formRef),
         tx.get(responseRef),
         tx.get(answerKeyRef(formRef)),
+        tx.get(assignmentRef(formRef, caller.uid)),
       ]);
       const form = formSnap.data() as FormDoc | undefined;
-      if (!form || !isPublishedForm(form) || !isInAudience(form.audienceKeys, caller)) {
+      if (!form || !isVisibleForm(form) || !isInAudience(form.audienceKeys, caller)) {
         throw new HttpsError("not-found", "ບໍ່ພົບແບບຟອມ ຫຼື ທ່ານບໍ່ມີສິດຕອບແບບຟອມນີ້");
       }
-      if (form.status !== "open") {
-        throw new HttpsError("failed-precondition", "ແບບຟອມນີ້ປິດຮັບຄຳຕອບແລ້ວ");
+      const state = formState(form);
+      if (state !== "open") {
+        throw new HttpsError(
+          "failed-precondition",
+          state === "scheduled" ? "ແບບຟອມນີ້ຍັງບໍ່ເປີດຮັບຄຳຕອບ" : "ແບບຟອມນີ້ປິດຮັບຄຳຕອບແລ້ວ",
+        );
       }
       const existing = responseSnap.data();
       if (existing && !canEditResponse(form)) {
         throw new HttpsError("already-exists", "ທ່ານໄດ້ຕອບແບບຟອມນີ້ແລ້ວ");
       }
 
-      const answers = validateAnswers(formSections(form), payload.answers);
+      // ສຸ່ມແຍກແຕ່ລະຄົນ: ກວດ ແລະ ຄິດຄະແນນສະເພາະຊຸດທີ່ໄດ້ຮັບ (ສ້າງຕອນ getMyForm)
+      const draw = formDraw(form);
+      const assignedIds = draw.enabled
+        ? ((existing?.assignedQuestionIds ?? assignmentSnap.data()?.questionIds) as string[] | undefined)
+        : undefined;
+      if (draw.enabled && !assignedIds) {
+        throw new HttpsError("failed-precondition", "ກະລຸນາເປີດແບບຟອມໃໝ່ອີກຄັ້ງ");
+      }
+      const sections = assignedIds ? filterSections(formSections(form), assignedIds) : formSections(form);
+
+      const answers = validateAnswers(sections, payload.answers);
       const score = isQuizForm(form)
-        ? gradeAnswers(formSections(form), answers, parseAnswerKey(keySnap.data()))
+        ? gradeAnswers(sections, answers, parseAnswerKey(keySnap.data()))
         : null;
       const now = new Date().toISOString();
       const emp = caller.data;
@@ -2522,6 +2634,7 @@ export const submitFormResponse = onCall(
         },
         // ຄະແນນຕອນສົ່ງ (ສະແດງໃຫ້ພະນັກງານ) — admin ຄິດຄືນຈາກເສີຍປັດຈຸບັນໃນໜ້າຜົນ
         ...(score ? { score } : {}),
+        ...(assignedIds ? { assignedQuestionIds: assignedIds } : {}),
         submittedAt,
         updatedAt: now,
         editCount: existing ? ((existing.editCount as number | undefined) ?? 0) + 1 : 0,
@@ -2584,5 +2697,32 @@ export const notifyFormOpened = onDocumentWritten(
     console.log(
       `[form-open]: notified ${notified}/${audienceDocs.length} employees for ${event.params.formId}`,
     );
+  },
+);
+
+// ອັບເດດ status ທີ່ເກັບໃຫ້ກົງກັບເວລາເປີດ/ປິດທີ່ຕັ້ງໄວ້ — callable ກວດເວລາເອງຢູ່ແລ້ວ (ແມ່ນຍຳ),
+// cron ນີ້ມີໄວ້ໃຫ້: scheduled → open ຍິງ notifyFormOpened (push), ແລະ ໜ້າ admin ເຫັນສະຖານະຖືກ
+export const syncFormSchedules = onSchedule(
+  { schedule: "every 5 minutes", timeZone: TIMEZONE, region: "asia-southeast1" },
+  async () => {
+    const db = admin.firestore();
+    const now = new Date();
+    const snap = await db.collection("forms").where("status", "in", ["scheduled", "open"]).get();
+    let changed = 0;
+    for (const d of snap.docs) {
+      const form = d.data() as FormDoc;
+      const state = effectiveFormStatus(form.status, form.schedule, now);
+      if (state === form.status) continue;
+      const at = now.toISOString();
+      await d.ref.update({
+        status: state,
+        ...(state === "open" && !form.openedAt ? { openedAt: at } : {}),
+        ...(state === "closed" ? { closedAt: at } : {}),
+        updatedAt: at,
+        updatedBy: "ລະບົບ (ຕັ້ງເວລາ)",
+      });
+      changed += 1;
+    }
+    if (changed) console.log(`[form-schedule]: updated ${changed}/${snap.size} forms`);
   },
 );

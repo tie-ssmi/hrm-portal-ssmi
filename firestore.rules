@@ -641,6 +641,14 @@ service cloud.firestore {
     }
 
     // ==========================================================
+    // questionBanks — ຄັງຄຳຖາມ (ມີເສີຍ) ສຳລັບສ້າງແບບຟອມ. ສະເພາະ IT, LPB, HR ຄືກັບ forms —
+    // ພະນັກງານບໍ່ເຄີຍອ່ານ (ຄຳຖາມຖືກສຳເນົາເຂົ້າຟອມ, ເສີຍໄປຢູ່ forms/{id}/private/answerKey)
+    // ==========================================================
+    match /questionBanks/{bankId} {
+      allow read, write: if isIT() || isLPB() || isEmployeeManager();
+    }
+
+    // ==========================================================
     // Deny everything not explicitly matched above
     // (must stay LAST — see NOTE at top of file)
     // ==========================================================

@@ -32,6 +32,7 @@ import {
 // ** shared components
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { TimeInput24 } from "@/components/time-input-24";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -1393,10 +1394,9 @@ export default function OffsiteRequestForm({
                   <FieldLabel>
                     ເວລາເລີ່ມ <RuleMark rule={rules.times} />
                   </FieldLabel>
-                  <Input
-                    type="time"
+                  <TimeInput24
                     value={typeValues.startTime}
-                    onChange={(e) => setTime("startTime", e.target.value)}
+                    onChange={(v) => setTime("startTime", v)}
                   />
                   {errors.startTime && <FieldError>{errors.startTime}</FieldError>}
                 </Field>
@@ -1404,10 +1404,9 @@ export default function OffsiteRequestForm({
                   <FieldLabel>
                     ເວລາສິ້ນສຸດ <RuleMark rule={rules.times} />
                   </FieldLabel>
-                  <Input
-                    type="time"
+                  <TimeInput24
                     value={typeValues.endTime}
-                    onChange={(e) => setTime("endTime", e.target.value)}
+                    onChange={(v) => setTime("endTime", v)}
                   />
                   {errors.endTime && <FieldError>{errors.endTime}</FieldError>}
                 </Field>

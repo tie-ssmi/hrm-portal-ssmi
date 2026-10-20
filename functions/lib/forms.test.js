@@ -140,4 +140,98 @@ const answerKey = {
     strict_1.default.equal((0, forms_1.toShowResult)("all"), "none");
     strict_1.default.equal((0, forms_1.toShowResult)(undefined), "none");
 });
+(0, node_test_1.test)("seededShuffle: seed ດຽວກັນ → ລຳດັບດຽວກັນ, ບໍ່ຕົກຫຼົ່ນ", () => {
+    const items = Array.from({ length: 20 }, (_, i) => i);
+    const a = (0, forms_1.seededShuffle)(items, "F1:U1");
+    strict_1.default.deepEqual(a, (0, forms_1.seededShuffle)(items, "F1:U1"));
+    strict_1.default.deepEqual([...a].sort((x, y) => x - y), items);
+    strict_1.default.notDeepEqual(a, (0, forms_1.seededShuffle)(items, "F1:U2"));
+    strict_1.default.notDeepEqual(a, items);
+});
+(0, node_test_1.test)("shuffleSectionsFor: ສຸ່ມຄຳຖາມ / ຕົວເລືອກ ຕາມຕັ້ງຄ່າ, ບໍ່ສຸ່ມ = ຄືເກົ່າ", () => {
+    const many = [
+        {
+            id: "s",
+            title: "",
+            questions: Array.from({ length: 10 }, (_, i) => ({
+                id: `q${i}`,
+                type: "radio",
+                title: `Q${i}`,
+                required: false,
+                options: Array.from({ length: 6 }, (_, j) => ({ id: `o${j}`, label: `O${j}` })),
+            })),
+        },
+    ];
+    strict_1.default.equal((0, forms_1.shuffleSectionsFor)(many, "x", { questions: false, choices: false }), many);
+    const onlyChoices = (0, forms_1.shuffleSectionsFor)(many, "x", { questions: false, choices: true });
+    strict_1.default.deepEqual(onlyChoices[0].questions.map((q) => q.id), many[0].questions.map((q) => q.id));
+    strict_1.default.ok(onlyChoices[0].questions.some((q, i) => q.options[0].id !== many[0].questions[i].options[0].id));
+    const both = (0, forms_1.shuffleSectionsFor)(many, "x", { questions: true, choices: true });
+    strict_1.default.notDeepEqual(both[0].questions.map((q) => q.id), many[0].questions.map((q) => q.id));
+    strict_1.default.equal(both[0].questions.length, 10);
+});
+const pool = (bankId, count, prefix) => Array.from({ length: count }, (_, i) => (Object.assign({ id: `${prefix}${i}`, type: "radio", title: `${prefix}${i}`, required: true, options: [{ id: "a", label: "A" }] }, (bankId ? { source: { bankId, questionId: `${prefix}${i}` } } : {}))));
+const drawSections = [
+    { id: "s", title: "", questions: [...pool("B1", 20, "x"), ...pool("B2", 10, "y"), ...pool(null, 3, "own")] },
+];
+(0, node_test_1.test)("toDrawSettings: ຕັດຄ່າ 0/ຕິດລົບ/ແປກ, ບໍ່ມີກຸ່ມ = ປິດ", () => {
+    strict_1.default.deepEqual((0, forms_1.toDrawSettings)({ enabled: true, perGroup: { B1: 5, B2: 0, B3: -1, B4: "2" } }), {
+        enabled: true,
+        perGroup: { B1: 5, B4: 2 },
+    });
+    strict_1.default.equal((0, forms_1.toDrawSettings)({ enabled: true, perGroup: {} }).enabled, false);
+    strict_1.default.equal((0, forms_1.toDrawSettings)(undefined).enabled, false);
+});
+(0, node_test_1.test)("drawSize: ບໍ່ເກີນຂະໜາດກຸ່ມ", () => {
+    strict_1.default.equal((0, forms_1.drawSize)(drawSections, (0, forms_1.toDrawSettings)({ enabled: true, perGroup: { B1: 5, B2: 50, _form: 1 } })), 16);
+});
+(0, node_test_1.test)("drawQuestionIds: ຈຳນວນຕາມກຸ່ມ ແລະ seed ດຽວກັນ → ຊຸດດຽວກັນ", () => {
+    const draw = (0, forms_1.toDrawSettings)({ enabled: true, perGroup: { B1: 5, B2: 2 } });
+    const ids = (0, forms_1.drawQuestionIds)(drawSections, draw, {}, "F:U1");
+    strict_1.default.equal(ids.filter((id) => id.startsWith("x")).length, 5);
+    strict_1.default.equal(ids.filter((id) => id.startsWith("y")).length, 2);
+    strict_1.default.deepEqual(ids, (0, forms_1.drawQuestionIds)(drawSections, draw, {}, "F:U1"));
+});
+(0, node_test_1.test)("drawQuestionIds: ຂໍ້ທີ່ໃຊ້ໜ້ອຍສຸດກ່ອນ → 4 ຄົນທຳອິດ (20/5) ບໍ່ຊ້ຳກັນເລີຍ, ແລ້ວວົນສະເໝີ", () => {
+    var _a;
+    const draw = (0, forms_1.toDrawSettings)({ enabled: true, perGroup: { B1: 5 } });
+    const usage = {};
+    const seen = new Set();
+    for (let person = 0; person < 4; person++) {
+        const ids = (0, forms_1.drawQuestionIds)(drawSections, draw, usage, `F:U${person}`);
+        for (const id of ids) {
+            strict_1.default.ok(!seen.has(id), `${id} ຊ້ຳ`);
+            seen.add(id);
+            usage[id] = ((_a = usage[id]) !== null && _a !== void 0 ? _a : 0) + 1;
+        }
+    }
+    strict_1.default.equal(seen.size, 20);
+    // ຄົນທີ 5–8 ກໍຄືກັນ: ທຸກຂໍ້ຖືກໃຊ້ 2 ເທື່ອພໍດີ
+    for (let person = 4; person < 8; person++) {
+        for (const id of (0, forms_1.drawQuestionIds)(drawSections, draw, usage, `F:U${person}`))
+            usage[id] += 1;
+    }
+    strict_1.default.ok(Object.values(usage).every((n) => n === 2));
+});
+(0, node_test_1.test)("filterSections: ເກັບສະເພາະຂໍ້ທີ່ໄດ້ຮັບ ຕາມລຳດັບຟອມ", () => {
+    const filtered = (0, forms_1.filterSections)(drawSections, ["y1", "x3", "own0"]);
+    strict_1.default.deepEqual(filtered[0].questions.map((q) => q.id), ["x3", "y1", "own0"]);
+});
+(0, node_test_1.test)("effectiveFormStatus: ຕັ້ງເວລາເປີດ/ປິດ", () => {
+    const at = (iso) => new Date(iso);
+    const schedule = { openAt: "2026-11-01T01:00:00.000Z", closeAt: "2026-11-05T10:00:00.000Z" };
+    strict_1.default.equal((0, forms_1.effectiveFormStatus)("scheduled", schedule, at("2026-11-01T00:59:59.000Z")), "scheduled");
+    strict_1.default.equal((0, forms_1.effectiveFormStatus)("scheduled", schedule, at("2026-11-01T01:00:00.000Z")), "open");
+    strict_1.default.equal((0, forms_1.effectiveFormStatus)("scheduled", schedule, at("2026-11-05T10:00:00.000Z")), "closed");
+    // ເປີດດຽວນີ້ + ຕັ້ງເວລາປິດ
+    strict_1.default.equal((0, forms_1.effectiveFormStatus)("open", { closeAt: schedule.closeAt }, at("2026-11-05T09:59:00.000Z")), "open");
+    strict_1.default.equal((0, forms_1.effectiveFormStatus)("open", { closeAt: schedule.closeAt }, at("2026-11-05T10:00:01.000Z")), "closed");
+    // ເປີດ/ປິດເອງ (ບໍ່ມີເວລາ)
+    strict_1.default.equal((0, forms_1.effectiveFormStatus)("open", undefined, at("2030-01-01T00:00:00.000Z")), "open");
+    strict_1.default.equal((0, forms_1.effectiveFormStatus)("closed", { closeAt: "2099-01-01T00:00:00.000Z" }, at("2026-01-01T00:00:00.000Z")), "closed");
+    strict_1.default.equal((0, forms_1.effectiveFormStatus)("draft", schedule, at("2026-11-03T00:00:00.000Z")), "draft");
+    strict_1.default.equal((0, forms_1.effectiveFormStatus)("delete", undefined, at("2026-11-03T00:00:00.000Z")), "draft");
+    // scheduled ທີ່ບໍ່ມີ openAt = ເປີດ
+    strict_1.default.equal((0, forms_1.effectiveFormStatus)("scheduled", {}, at("2026-11-03T00:00:00.000Z")), "open");
+});
 //# sourceMappingURL=forms.test.js.map

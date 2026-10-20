@@ -36,7 +36,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.notifyFormOpened = exports.submitFormResponse = exports.getMyForm = exports.listMyForms = exports.logAuditEvent = exports.recordOTCheckOut = exports.recordOTCheckIn = exports.recordCheckOut = exports.recordCheckIn = exports.notifyOffsiteDecisionEmail = exports.notifyNewOffsiteRequest = exports.notifyLeaveDecisionEmail = exports.notifyNewLeaveRequest = exports.checkAttendanceAt814 = exports.checkAttendanceAt800 = exports.backfillUserRoleMirrors = exports.syncEmployeeMirrors = exports.getServerTime = void 0;
+exports.syncFormSchedules = exports.notifyFormOpened = exports.submitFormResponse = exports.getMyForm = exports.listMyForms = exports.logAuditEvent = exports.recordOTCheckOut = exports.recordOTCheckIn = exports.recordCheckOut = exports.recordCheckIn = exports.notifyOffsiteDecisionEmail = exports.notifyNewOffsiteRequest = exports.notifyLeaveDecisionEmail = exports.notifyNewLeaveRequest = exports.checkAttendanceAt814 = exports.checkAttendanceAt800 = exports.backfillUserRoleMirrors = exports.syncEmployeeMirrors = exports.getServerTime = void 0;
 const admin = __importStar(require("firebase-admin"));
 const https_1 = require("firebase-functions/v2/https");
 const scheduler_1 = require("firebase-functions/v2/scheduler");
@@ -1493,13 +1493,59 @@ function requireFormId(raw) {
     return raw;
 }
 const formSections = (form) => Array.isArray(form.sections) ? form.sections : [];
-const isPublishedForm = (form) => form.status === "open" || form.status === "closed";
+// ສະຖານະຈິງ ຕາມເວລາປັດຈຸບັນ (ຕັ້ງເວລາເປີດ/ປິດ) — ບໍ່ລໍຖ້າ cron syncFormSchedules
+const formState = (form) => (0, forms_1.effectiveFormStatus)(form.status, form.schedule, new Date());
+// ພະນັກງານເຫັນໃນລາຍການ: ລໍຖ້າເປີດ (ຕັ້ງເວລາ), ເປີດ, ປິດ — ສະບັບຮ່າງ/ລົບ ບໍ່ເຫັນ
+const isVisibleForm = (form) => formState(form) !== "draft";
 const isQuizForm = (form) => { var _a; return ((_a = form.settings) === null || _a === void 0 ? void 0 : _a.isQuiz) === true; };
 // Quiz ແກ້ຄຳຕອບບໍ່ໄດ້ສະເໝີ — ບໍ່ດັ່ງນັ້ນເບິ່ງເສີຍແລ້ວກັບໄປແກ້ໃຫ້ໄດ້ຄະແນນເຕັມ
 const canEditResponse = (form) => { var _a; return ((_a = form.settings) === null || _a === void 0 ? void 0 : _a.allowEdit) === true && !isQuizForm(form); };
 const formShowResult = (form) => { var _a; return isQuizForm(form) ? (0, forms_1.toShowResult)((_a = form.settings) === null || _a === void 0 ? void 0 : _a.showResult) : "none"; };
 const answerKeyRef = (formRef) => formRef.collection("private").doc("answerKey");
 const parseAnswerKey = (data) => { var _a; return ((_a = data === null || data === void 0 ? void 0 : data.questions) !== null && _a !== void 0 ? _a : {}); };
+const formDraw = (form) => { var _a; return (0, forms_1.toDrawSettings)((_a = form.settings) === null || _a === void 0 ? void 0 : _a.draw); };
+// ຊຸດຄຳຖາມທີ່ສຸ່ມໃຫ້ແຕ່ລະຄົນ (ສຸ່ມແຍກແຕ່ລະຄົນ) — ພະນັກງານອ່ານ/ຂຽນເອງບໍ່ໄດ້ (rules catch-all)
+const assignmentRef = (formRef, uid) => formRef.collection("assignments").doc(uid);
+// usage = ແຕ່ລະຂໍ້ຖືກແຈກໄປແລ້ວຈັກຄົນ (ເລືອກຂໍ້ທີ່ໃຊ້ໜ້ອຍສຸດກ່ອນ)
+const drawStateRef = (formRef) => formRef.collection("private").doc("drawState");
+// ສຸ່ມໃຫ້ຄັ້ງທຳອິດທີ່ເປີດຟອມ ແລ້ວເກັບໄວ້ — ເປີດຄືນໄດ້ຊຸດເດີມ. ທຸກຄົນອັບເດດ drawState ດຽວກັນ:
+// ຖ້າ transaction ລົ້ມ (ຄົນເປີດພ້ອມກັນຫຼາຍເກີນ) → ສຸ່ມດ້ວຍ seed ໂດຍບໍ່ນັບ usage ແທນທີ່ຈະ error
+async function getOrCreateAssignment(formRef, form, uid) {
+    var _a, _b, _c, _d;
+    const ref = assignmentRef(formRef, uid);
+    const existing = await ref.get();
+    if (existing.exists)
+        return (_b = (_a = existing.data()) === null || _a === void 0 ? void 0 : _a.questionIds) !== null && _b !== void 0 ? _b : [];
+    const db = admin.firestore();
+    const sections = formSections(form);
+    const draw = formDraw(form);
+    const seed = `${formRef.id}:${uid}`;
+    try {
+        return await db.runTransaction(async (tx) => {
+            var _a, _b, _c, _d;
+            const [assignmentSnap, stateSnap] = await Promise.all([tx.get(ref), tx.get(drawStateRef(formRef))]);
+            if (assignmentSnap.exists)
+                return (_b = (_a = assignmentSnap.data()) === null || _a === void 0 ? void 0 : _a.questionIds) !== null && _b !== void 0 ? _b : [];
+            const usage = ((_d = (_c = stateSnap.data()) === null || _c === void 0 ? void 0 : _c.usage) !== null && _d !== void 0 ? _d : {});
+            const ids = (0, forms_1.drawQuestionIds)(sections, draw, usage, seed);
+            tx.set(ref, { questionIds: ids, assignedAt: new Date().toISOString() });
+            tx.set(drawStateRef(formRef), { usage: Object.fromEntries(ids.map((id) => [id, admin.firestore.FieldValue.increment(1)])) }, { merge: true });
+            return ids;
+        });
+    }
+    catch (err) {
+        console.warn(`[form-draw]: transaction failed for ${formRef.id}/${uid}, seeded fallback`, err);
+        const ids = (0, forms_1.drawQuestionIds)(sections, draw, {}, seed);
+        try {
+            await ref.create({ questionIds: ids, assignedAt: new Date().toISOString(), fallback: true });
+            return ids;
+        }
+        catch (_e) {
+            // ອີກ request ສ້າງໄປກ່ອນແລ້ວ — ໃຊ້ອັນນັ້ນ
+            return (_d = (_c = (await ref.get()).data()) === null || _c === void 0 ? void 0 : _c.questionIds) !== null && _d !== void 0 ? _d : ids;
+        }
+    }
+}
 exports.listMyForms = (0, https_1.onCall)({ region: "asia-southeast1", cors: callableCorsOrigins, invoker: "public" }, async (request) => {
     if (!request.auth) {
         throw new https_1.HttpsError("unauthenticated", "Must be signed in");
@@ -1510,13 +1556,13 @@ exports.listMyForms = (0, https_1.onCall)({ region: "asia-southeast1", cors: cal
         .collection("forms")
         .where("audienceKeys", "array-contains-any", (0, forms_1.employeeAudienceKeys)(caller))
         .get();
-    const published = snap.docs.filter((d) => isPublishedForm(d.data()));
+    const published = snap.docs.filter((d) => isVisibleForm(d.data()));
     const responses = published.length
         ? await db.getAll(...published.map((d) => d.ref.collection("responses").doc(caller.uid)))
         : [];
     const forms = published
         .map((d, i) => {
-        var _a, _b, _c, _d, _e;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
         const form = d.data();
         const response = responses[i].data();
         const score = response === null || response === void 0 ? void 0 : response.score;
@@ -1524,24 +1570,28 @@ exports.listMyForms = (0, https_1.onCall)({ region: "asia-southeast1", cors: cal
             id: d.id,
             title: (_a = form.title) !== null && _a !== void 0 ? _a : "",
             description: (_b = form.description) !== null && _b !== void 0 ? _b : "",
-            status: form.status,
-            questionCount: formSections(form).reduce((n, s) => { var _a, _b; return n + ((_b = (_a = s.questions) === null || _a === void 0 ? void 0 : _a.length) !== null && _b !== void 0 ? _b : 0); }, 0),
+            status: formState(form),
+            openAt: (_d = (_c = form.schedule) === null || _c === void 0 ? void 0 : _c.openAt) !== null && _d !== void 0 ? _d : null,
+            closeAt: (_f = (_e = form.schedule) === null || _e === void 0 ? void 0 : _e.closeAt) !== null && _f !== void 0 ? _f : null,
+            questionCount: formDraw(form).enabled
+                ? (0, forms_1.drawSize)(formSections(form), formDraw(form))
+                : formSections(form).reduce((n, s) => { var _a, _b; return n + ((_b = (_a = s.questions) === null || _a === void 0 ? void 0 : _a.length) !== null && _b !== void 0 ? _b : 0); }, 0),
             allowEdit: canEditResponse(form),
             isQuiz: isQuizForm(form),
-            openedAt: (_d = (_c = form.openedAt) !== null && _c !== void 0 ? _c : form.createdAt) !== null && _d !== void 0 ? _d : "",
-            submittedAt: (_e = response === null || response === void 0 ? void 0 : response.submittedAt) !== null && _e !== void 0 ? _e : null,
+            openedAt: (_k = (_j = (_g = form.openedAt) !== null && _g !== void 0 ? _g : (_h = form.schedule) === null || _h === void 0 ? void 0 : _h.openAt) !== null && _j !== void 0 ? _j : form.createdAt) !== null && _k !== void 0 ? _k : "",
+            submittedAt: (_l = response === null || response === void 0 ? void 0 : response.submittedAt) !== null && _l !== void 0 ? _l : null,
             score: score && formShowResult(form) !== "none"
                 ? { earned: score.earned, total: score.total }
                 : null,
         };
     })
         // ຟອມທີ່ປິດແລ້ວ ສະແດງສະເພາະອັນທີ່ເຄີຍຕອບ (ເບິ່ງຄຳຕອບຍ້ອນຫຼັງ)
-        .filter((f) => f.status === "open" || f.submittedAt)
+        .filter((f) => f.status !== "closed" || f.submittedAt)
         .sort((a, b) => b.openedAt.localeCompare(a.openedAt));
     return { forms };
 });
 exports.getMyForm = (0, https_1.onCall)({ region: "asia-southeast1", cors: callableCorsOrigins, invoker: "public" }, async (request) => {
-    var _a, _b, _c, _d, _e, _f;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
     if (!request.auth) {
         throw new https_1.HttpsError("unauthenticated", "Must be signed in");
     }
@@ -1555,12 +1605,26 @@ exports.getMyForm = (0, https_1.onCall)({ region: "asia-southeast1", cors: calla
     const form = formSnap.data();
     const response = responseSnap.data();
     // ຍ້າຍພະແນກ/ສາຂາ ຫຼັງຕອບແລ້ວ ຍັງເບິ່ງຄຳຕອບຂອງຕົນໄດ້
-    if (!form || !isPublishedForm(form) || (!(0, forms_1.isInAudience)(form.audienceKeys, caller) && !response)) {
+    if (!form || !isVisibleForm(form) || (!(0, forms_1.isInAudience)(form.audienceKeys, caller) && !response)) {
         throw new https_1.HttpsError("not-found", "ບໍ່ພົບແບບຟອມ ຫຼື ທ່ານບໍ່ມີສິດຕອບແບບຟອມນີ້");
     }
+    const state = formState(form);
+    if (state === "scheduled") {
+        throw new https_1.HttpsError("failed-precondition", "ແບບຟອມນີ້ຍັງບໍ່ເປີດຮັບຄຳຕອບ");
+    }
+    // ສຸ່ມແຍກແຕ່ລະຄົນ: ສະແດງສະເພາະຊຸດຂອງຄົນນີ້ (ຕອບແລ້ວ → ຊຸດທີ່ເກັບໄວ້ໃນຄຳຕອບ)
+    let sections = formSections(form);
+    if (formDraw(form).enabled) {
+        const ids = (_b = response === null || response === void 0 ? void 0 : response.assignedQuestionIds) !== null && _b !== void 0 ? _b : (state === "open" && (0, forms_1.isInAudience)(form.audienceKeys, caller)
+            ? await getOrCreateAssignment(formRef, form, caller.uid)
+            : []);
+        sections = (0, forms_1.filterSections)(sections, ids);
+    }
+    const visibleIds = new Set(sections.flatMap((s) => { var _a; return ((_a = s.questions) !== null && _a !== void 0 ? _a : []).map((q) => q.id); }));
     const isQuiz = isQuizForm(form);
     const showResult = formShowResult(form);
-    const key = isQuiz ? parseAnswerKey((await answerKeyRef(formRef).get()).data()) : {};
+    const fullKey = isQuiz ? parseAnswerKey((await answerKeyRef(formRef).get()).data()) : {};
+    const key = Object.fromEntries(Object.entries(fullKey).filter(([id]) => visibleIds.has(id)));
     // ຄະແນນຕໍ່ຂໍ້ບໍ່ແມ່ນຄວາມລັບ (ສະແດງຕອນຕອບ); ເສີຍສົ່ງໃຫ້ສະເພາະຫຼັງຕອບແລ້ວ ແລະ ຕັ້ງ scoreAndAnswers
     const questionPoints = Object.fromEntries(Object.entries(key).map(([id, entry]) => [id, Math.max(0, Number(entry.points) || 0)]));
     const score = response === null || response === void 0 ? void 0 : response.score;
@@ -1568,20 +1632,25 @@ exports.getMyForm = (0, https_1.onCall)({ region: "asia-southeast1", cors: calla
     return {
         form: {
             id: formSnap.id,
-            title: (_b = form.title) !== null && _b !== void 0 ? _b : "",
-            description: (_c = form.description) !== null && _c !== void 0 ? _c : "",
-            status: form.status,
+            title: (_c = form.title) !== null && _c !== void 0 ? _c : "",
+            description: (_d = form.description) !== null && _d !== void 0 ? _d : "",
+            status: state,
+            closeAt: (_f = (_e = form.schedule) === null || _e === void 0 ? void 0 : _e.closeAt) !== null && _f !== void 0 ? _f : null,
             allowEdit: canEditResponse(form),
             isQuiz,
             showResult,
             questionPoints,
-            sections: formSections(form),
+            // ລຳດັບສຸ່ມຕໍ່ຄົນ (ຄົງທີ່) — ໜ້າຜົນຂອງ admin ໃຊ້ລຳດັບເດີມ
+            sections: (0, forms_1.shuffleSectionsFor)(sections, `${formSnap.id}:${caller.uid}`, {
+                questions: ((_g = form.settings) === null || _g === void 0 ? void 0 : _g.shuffleQuestions) === true,
+                choices: ((_h = form.settings) === null || _h === void 0 ? void 0 : _h.shuffleOptions) === true,
+            }),
         },
         response: response
             ? {
-                answers: (_d = response.answers) !== null && _d !== void 0 ? _d : {},
-                submittedAt: (_e = response.submittedAt) !== null && _e !== void 0 ? _e : null,
-                updatedAt: (_f = response.updatedAt) !== null && _f !== void 0 ? _f : null,
+                answers: (_j = response.answers) !== null && _j !== void 0 ? _j : {},
+                submittedAt: (_k = response.submittedAt) !== null && _k !== void 0 ? _k : null,
+                updatedAt: (_l = response.updatedAt) !== null && _l !== void 0 ? _l : null,
                 score: score && showResult !== "none"
                     ? Object.assign({ earned: score.earned, total: score.total }, (revealAnswers ? { results: score.results } : {})) : null,
                 correctAnswers: revealAnswers
@@ -1603,41 +1672,52 @@ exports.submitFormResponse = (0, https_1.onCall)({ region: "asia-southeast1", co
     // doc id = uid → 1 ຄົນ 1 ຄຳຕອບ
     const responseRef = formRef.collection("responses").doc(caller.uid);
     return db.runTransaction(async (tx) => {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
-        const [formSnap, responseSnap, keySnap] = await Promise.all([
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
+        const [formSnap, responseSnap, keySnap, assignmentSnap] = await Promise.all([
             tx.get(formRef),
             tx.get(responseRef),
             tx.get(answerKeyRef(formRef)),
+            tx.get(assignmentRef(formRef, caller.uid)),
         ]);
         const form = formSnap.data();
-        if (!form || !isPublishedForm(form) || !(0, forms_1.isInAudience)(form.audienceKeys, caller)) {
+        if (!form || !isVisibleForm(form) || !(0, forms_1.isInAudience)(form.audienceKeys, caller)) {
             throw new https_1.HttpsError("not-found", "ບໍ່ພົບແບບຟອມ ຫຼື ທ່ານບໍ່ມີສິດຕອບແບບຟອມນີ້");
         }
-        if (form.status !== "open") {
-            throw new https_1.HttpsError("failed-precondition", "ແບບຟອມນີ້ປິດຮັບຄຳຕອບແລ້ວ");
+        const state = formState(form);
+        if (state !== "open") {
+            throw new https_1.HttpsError("failed-precondition", state === "scheduled" ? "ແບບຟອມນີ້ຍັງບໍ່ເປີດຮັບຄຳຕອບ" : "ແບບຟອມນີ້ປິດຮັບຄຳຕອບແລ້ວ");
         }
         const existing = responseSnap.data();
         if (existing && !canEditResponse(form)) {
             throw new https_1.HttpsError("already-exists", "ທ່ານໄດ້ຕອບແບບຟອມນີ້ແລ້ວ");
         }
-        const answers = (0, forms_1.validateAnswers)(formSections(form), payload.answers);
+        // ສຸ່ມແຍກແຕ່ລະຄົນ: ກວດ ແລະ ຄິດຄະແນນສະເພາະຊຸດທີ່ໄດ້ຮັບ (ສ້າງຕອນ getMyForm)
+        const draw = formDraw(form);
+        const assignedIds = draw.enabled
+            ? ((_a = existing === null || existing === void 0 ? void 0 : existing.assignedQuestionIds) !== null && _a !== void 0 ? _a : (_b = assignmentSnap.data()) === null || _b === void 0 ? void 0 : _b.questionIds)
+            : undefined;
+        if (draw.enabled && !assignedIds) {
+            throw new https_1.HttpsError("failed-precondition", "ກະລຸນາເປີດແບບຟອມໃໝ່ອີກຄັ້ງ");
+        }
+        const sections = assignedIds ? (0, forms_1.filterSections)(formSections(form), assignedIds) : formSections(form);
+        const answers = (0, forms_1.validateAnswers)(sections, payload.answers);
         const score = isQuizForm(form)
-            ? (0, forms_1.gradeAnswers)(formSections(form), answers, parseAnswerKey(keySnap.data()))
+            ? (0, forms_1.gradeAnswers)(sections, answers, parseAnswerKey(keySnap.data()))
             : null;
         const now = new Date().toISOString();
         const emp = caller.data;
-        const submittedAt = (_a = existing === null || existing === void 0 ? void 0 : existing.submittedAt) !== null && _a !== void 0 ? _a : now;
-        tx.set(responseRef, Object.assign(Object.assign({ formId, uid: caller.uid, answers, 
+        const submittedAt = (_c = existing === null || existing === void 0 ? void 0 : existing.submittedAt) !== null && _c !== void 0 ? _c : now;
+        tx.set(responseRef, Object.assign(Object.assign(Object.assign({ formId, uid: caller.uid, answers, 
             // snapshot ຕອນຕອບ — ໜ້າຜົນ (admin) ໃຊ້ສະແດງຊື່/ພະແນກ ໂດຍບໍ່ຕ້ອງ join
             employee: {
-                name: `${(_b = emp.firstNameLo) !== null && _b !== void 0 ? _b : ""} ${(_c = emp.lastNameLo) !== null && _c !== void 0 ? _c : ""}`.trim(),
+                name: `${(_d = emp.firstNameLo) !== null && _d !== void 0 ? _d : ""} ${(_e = emp.lastNameLo) !== null && _e !== void 0 ? _e : ""}`.trim(),
                 jobTitle: emp.jobTitleLo || emp.jobTitle || "",
-                departmentUuid: (_d = caller.departmentUuid) !== null && _d !== void 0 ? _d : "",
-                departmentTitle: (_f = (_e = emp.department) === null || _e === void 0 ? void 0 : _e.title) !== null && _f !== void 0 ? _f : "",
-                workLocationUuid: (_g = caller.workLocationUuid) !== null && _g !== void 0 ? _g : "",
-                workLocationName: (_j = (_h = emp.workLocation) === null || _h === void 0 ? void 0 : _h.nameLo) !== null && _j !== void 0 ? _j : "",
-                employmentStatus: (_k = caller.employmentStatus) !== null && _k !== void 0 ? _k : "",
-            } }, (score ? { score } : {})), { submittedAt, updatedAt: now, editCount: existing ? ((_l = existing.editCount) !== null && _l !== void 0 ? _l : 0) + 1 : 0 }));
+                departmentUuid: (_f = caller.departmentUuid) !== null && _f !== void 0 ? _f : "",
+                departmentTitle: (_h = (_g = emp.department) === null || _g === void 0 ? void 0 : _g.title) !== null && _h !== void 0 ? _h : "",
+                workLocationUuid: (_j = caller.workLocationUuid) !== null && _j !== void 0 ? _j : "",
+                workLocationName: (_l = (_k = emp.workLocation) === null || _k === void 0 ? void 0 : _k.nameLo) !== null && _l !== void 0 ? _l : "",
+                employmentStatus: (_m = caller.employmentStatus) !== null && _m !== void 0 ? _m : "",
+            } }, (score ? { score } : {})), (assignedIds ? { assignedQuestionIds: assignedIds } : {})), { submittedAt, updatedAt: now, editCount: existing ? ((_o = existing.editCount) !== null && _o !== void 0 ? _o : 0) + 1 : 0 }));
         if (!existing) {
             tx.update(formRef, { responseCount: admin.firestore.FieldValue.increment(1) });
         }
@@ -1694,5 +1774,24 @@ exports.notifyFormOpened = (0, firestore_1.onDocumentWritten)({ document: "forms
     });
     const notified = await sendPushToEmployeeDocs(audienceDocs, payload, "form-open");
     console.log(`[form-open]: notified ${notified}/${audienceDocs.length} employees for ${event.params.formId}`);
+});
+// ອັບເດດ status ທີ່ເກັບໃຫ້ກົງກັບເວລາເປີດ/ປິດທີ່ຕັ້ງໄວ້ — callable ກວດເວລາເອງຢູ່ແລ້ວ (ແມ່ນຍຳ),
+// cron ນີ້ມີໄວ້ໃຫ້: scheduled → open ຍິງ notifyFormOpened (push), ແລະ ໜ້າ admin ເຫັນສະຖານະຖືກ
+exports.syncFormSchedules = (0, scheduler_1.onSchedule)({ schedule: "every 5 minutes", timeZone: TIMEZONE, region: "asia-southeast1" }, async () => {
+    const db = admin.firestore();
+    const now = new Date();
+    const snap = await db.collection("forms").where("status", "in", ["scheduled", "open"]).get();
+    let changed = 0;
+    for (const d of snap.docs) {
+        const form = d.data();
+        const state = (0, forms_1.effectiveFormStatus)(form.status, form.schedule, now);
+        if (state === form.status)
+            continue;
+        const at = now.toISOString();
+        await d.ref.update(Object.assign(Object.assign(Object.assign({ status: state }, (state === "open" && !form.openedAt ? { openedAt: at } : {})), (state === "closed" ? { closedAt: at } : {})), { updatedAt: at, updatedBy: "ລະບົບ (ຕັ້ງເວລາ)" }));
+        changed += 1;
+    }
+    if (changed)
+        console.log(`[form-schedule]: updated ${changed}/${snap.size} forms`);
 });
 //# sourceMappingURL=index.js.map

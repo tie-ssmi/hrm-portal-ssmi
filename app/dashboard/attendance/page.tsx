@@ -127,6 +127,14 @@ const GPS_ACCURACY_WARNING_METERS = 100;
 // bar, so the two must move together.
 const OFFICE_RADIUS_METERS = 125;
 
+const SOUND_FILES = {
+  checkIn: "/mp3/check_in.mp3",
+  checkOut: "/mp3/check_out.mp3",
+  outOfOffice: "/mp3/out_of_office.mp3",
+  noGps: "/mp3/can_not_get_GPS.mp3",
+} as const;
+type SoundKey = keyof typeof SOUND_FILES;
+
 const LocationCard = memo(function LocationCard({
   location,
   isLoadingLocation,
@@ -738,38 +746,43 @@ export default function AttendancePage() {
   const checkOutMutRef = useRef(checkOutMutation);
   checkOutMutRef.current = checkOutMutation;
 
-  // ສຽງແຈ້ງເມື່ອ check in/out ສຳເລັດ (public/mp3)
-  const soundsRef = useRef<Record<"checkIn" | "checkOut", HTMLAudioElement> | null>(null);
+  // ສຽງແຈ້ງຜົນ check in/out (public/mp3)
+  const soundsRef = useRef<Record<SoundKey, HTMLAudioElement> | null>(null);
+  // ລໍຖ້າ unlock ແລ້ວຈຶ່ງຫຼິ້ນ — ບໍ່ດັ່ງນັ້ນ pause() ຂອງ unlock ຈະຢຸດສຽງແທ້ທີ່ຫາກໍ່ເລີ່ມ
+  const unlockPromisesRef = useRef<Partial<Record<SoundKey, Promise<void>>>>({});
   useEffect(() => {
-    soundsRef.current = {
-      checkIn: new Audio("/mp3/check_in.mp3"),
-      checkOut: new Audio("/mp3/check_out.mp3"),
-    };
-    soundsRef.current.checkIn.preload = "auto";
-    soundsRef.current.checkOut.preload = "auto";
+    const sounds = {} as Record<SoundKey, HTMLAudioElement>;
+    for (const key of Object.keys(SOUND_FILES) as SoundKey[]) {
+      sounds[key] = new Audio(SOUND_FILES[key]);
+      sounds[key].preload = "auto";
+    }
+    soundsRef.current = sounds;
   }, []);
 
-  // iOS Safari ອະນຸຍາດໃຫ້ຫຼິ້ນສຽງສະເພາະພາຍໃນ user gesture — ແຕ່ສຽງສຳເລັດຫຼິ້ນຫຼັງ
+  // iOS Safari ອະນຸຍາດໃຫ້ຫຼິ້ນສຽງສະເພາະພາຍໃນ user gesture — ແຕ່ສຽງຜົນຫຼິ້ນຫຼັງ
   // await (ກ້ອງ/GPS/server) ດົນ. ຫຼິ້ນແບບ muted ທັນທີຕອນກົດເພື່ອ "unlock" element ໄວ້.
-  const unlockSound = useCallback((type: "checkIn" | "checkOut") => {
-    const audio = soundsRef.current?.[type];
-    if (!audio) return;
-    audio.muted = true;
-    audio
-      .play()
-      .then(() => {
-        audio.pause();
-        audio.currentTime = 0;
-        audio.muted = false;
-      })
-      .catch(() => {
-        audio.muted = false;
-      });
+  const unlockSounds = useCallback((keys: SoundKey[]) => {
+    for (const key of keys) {
+      const audio = soundsRef.current?.[key];
+      if (!audio) continue;
+      audio.muted = true;
+      unlockPromisesRef.current[key] = audio
+        .play()
+        .then(() => {
+          audio.pause();
+          audio.currentTime = 0;
+        })
+        .catch(() => {})
+        .finally(() => {
+          audio.muted = false;
+        });
+    }
   }, []);
 
-  const playSound = useCallback((type: "checkIn" | "checkOut") => {
-    const audio = soundsRef.current?.[type];
+  const playSound = useCallback(async (key: SoundKey) => {
+    const audio = soundsRef.current?.[key];
     if (!audio) return;
+    await unlockPromisesRef.current[key];
     audio.muted = false;
     audio.currentTime = 0;
     audio.play().catch(() => {});
@@ -836,6 +849,7 @@ export default function AttendancePage() {
         toast.error(
           'ບໍ່ສາມາດຮັບຂໍ້ມູນສະຖານທີ່. ກະລຸນາກົດ "ດຶງຂໍ້ມູນຕຳແໜ່ງໃໝ່" ກ່ອນ.',
         );
+        playSound("noGps");
         return null;
       }
       if (geoFenceStatus === "no_coordinates") return loc;
@@ -848,10 +862,11 @@ export default function AttendancePage() {
         toast.error(
           `ທ່ານຢູ່ຫ່າງຈາກຫ້ອງການ ${dist} ແມັດ. ຕ້ອງຢູ່ພາຍໃນ ${OFFICE_RADIUS_METERS} ແມັດ.`,
         );
+        playSound("outOfOffice");
         return null;
       }
       return loc;
-    }, [location, getLocation, distanceToOffice, geoFenceStatus]);
+    }, [location, getLocation, distanceToOffice, geoFenceStatus, playSound]);
 
   const isBlockedDay = useMemo(() => {
     const day = isoDateToLocalDate(todayIso).getDay();
@@ -919,7 +934,9 @@ export default function AttendancePage() {
 
       submittingRef.current = type;
       setSubmittingType(type);
-      unlockSound(type);
+      unlockSounds(
+        isOffsite ? [type] : [type, "outOfOffice", "noGps"],
+      );
 
       const mutation =
         type === "checkIn" ? checkInMutRef.current : checkOutMutRef.current;
@@ -998,6 +1015,8 @@ export default function AttendancePage() {
               : "ເກີດຂໍ້ຜິດພາດ. ກະລຸນາລອງໃໝ່.";
         }
         toast.error(msg);
+        // server ກວດ geofence ດ້ວຍຕົວເອງ (recordCheckIn/Out) — ຂໍ້ຄວາມດຽວກັບ client
+        if (msg.startsWith("ທ່ານຢູ່ຫ່າງຈາກຫ້ອງການ")) playSound("outOfOffice");
       } finally {
         submittingRef.current = null;
         setSubmittingType(null);
@@ -1011,7 +1030,7 @@ export default function AttendancePage() {
       isLoadingHolidays,
       isLoadingTrip,
       isLoadingPolicy,
-      unlockSound,
+      unlockSounds,
       playSound,
       getLocation,
       getValidatedLocation,

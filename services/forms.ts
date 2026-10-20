@@ -47,7 +47,10 @@ export type MyFormSummary = {
   id: string
   title: string
   description: string
-  status: 'open' | 'closed'
+  // scheduled = ຕັ້ງເວລາເປີດໄວ້ ຍັງບໍ່ຮອດ (ສະແດງໃຫ້ຮູ້ລ່ວງໜ້າ, ເປີດຕອບບໍ່ໄດ້)
+  status: 'scheduled' | 'open' | 'closed'
+  openAt: string | null
+  closeAt: string | null
   questionCount: number
   allowEdit: boolean
   isQuiz: boolean
@@ -62,6 +65,8 @@ export type MyForm = {
     title: string
     description: string
     status: 'open' | 'closed'
+    // ປິດຮັບອັດຕະໂນມັດ (ISO) — null = admin ປິດເອງ
+    closeAt: string | null
     allowEdit: boolean
     isQuiz: boolean
     showResult: ShowResult
@@ -82,6 +87,27 @@ export type MyForm = {
 // ຄວາມຍາວສູງສຸດ — ກົງກັບ SHORT_TEXT_MAX / LONG_TEXT_MAX ໃນ functions/src/forms.ts
 export const SHORT_TEXT_MAX = 500
 export const LONG_TEXT_MAX = 5000
+
+// ວັນທີ/ເວລາ ຕາມເວລາລາວ "dd/mm/yyyy HH:mm" — ບໍ່ຂຶ້ນກັບ timezone ຂອງເຄື່ອງ
+const vientianeFormatter = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Asia/Vientiane',
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+})
+
+export function formatFormDateTime(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? '' : vientianeFormatter.format(d).replace(',', '')
+}
+
+// ເຫຼືອເວລາໜ້ອຍກວ່າ 24 ຊົ່ວໂມງກ່ອນປິດ — ໃຊ້ເນັ້ນສີເຕືອນ
+export const closesSoon = (closeAt: string | null | undefined) =>
+  !!closeAt && new Date(closeAt).getTime() - Date.now() < 24 * 60 * 60 * 1000
 
 export const formQuestions = (sections: FormSection[]): FormQuestion[] =>
   sections.flatMap((s) => s.questions ?? [])

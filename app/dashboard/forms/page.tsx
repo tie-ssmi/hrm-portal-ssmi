@@ -4,7 +4,7 @@
 import { useRouter } from "next/navigation";
 
 // ** assets / icons
-import { CheckCircle2, ChevronRight, ClipboardList, Clock, Lock } from "lucide-react";
+import { CalendarClock, CheckCircle2, ChevronRight, ClipboardList, Clock, Lock } from "lucide-react";
 
 // ** shared components
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,7 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/lib/auth-context";
 import { useMyForms } from "@/lib/use-form-queries";
 import { cn } from "@/lib/utils";
-import type { MyFormSummary } from "@/services/forms";
+import { closesSoon, formatFormDateTime, type MyFormSummary } from "@/services/forms";
 
 function formatDate(iso: string | null): string {
   if (!iso) return "";
@@ -25,6 +25,14 @@ function formatDate(iso: string | null): string {
 }
 
 function FormStateBadge({ form }: { form: MyFormSummary }) {
+  if (form.status === "scheduled") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+        <CalendarClock className="h-3 w-3" />
+        ເປີດ {formatFormDateTime(form.openAt)}
+      </span>
+    );
+  }
   if (form.status === "closed") {
     return (
       <span className="bg-muted text-muted-foreground inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium">
@@ -92,7 +100,9 @@ export default function FormsPage() {
             <button
               key={form.id}
               type="button"
-              className="block w-full text-left"
+              // ຍັງບໍ່ຮອດເວລາເປີດ — ສະແດງໃຫ້ຮູ້ລ່ວງໜ້າ ແຕ່ເຂົ້າຕອບບໍ່ໄດ້
+              disabled={form.status === "scheduled"}
+              className="block w-full text-left disabled:cursor-default disabled:opacity-75"
               onClick={() => router.push(`/dashboard/forms/fill?id=${form.id}`)}
             >
               <Card
@@ -124,10 +134,26 @@ export default function FormsPage() {
                         </span>
                       )}
                     </p>
+                    {form.status !== "closed" && form.closeAt && (
+                      <p
+                        className={cn(
+                          "text-xs",
+                          closesSoon(form.closeAt) && !form.submittedAt
+                            ? "text-destructive font-medium"
+                            : "text-muted-foreground",
+                        )}
+                      >
+                        ປິດຮັບຄຳຕອບ {formatFormDateTime(form.closeAt)}
+                      </p>
+                    )}
                   </div>
                   <div className="text-primary flex shrink-0 items-center gap-1 text-sm font-medium">
-                    <span className="hidden sm:inline">{actionLabel(form)}</span>
-                    <ChevronRight className="h-4 w-4" />
+                    {form.status !== "scheduled" && (
+                      <>
+                        <span className="hidden sm:inline">{actionLabel(form)}</span>
+                        <ChevronRight className="h-4 w-4" />
+                      </>
+                    )}
                   </div>
                 </CardContent>
               </Card>

@@ -28,6 +28,8 @@ export type FormQuestion = {
   required: boolean;
   options?: FormOption[];
   ratingMax?: number;
+  // ສຳເນົາມາຈາກຄັງຄຳຖາມ (admin) — ໃຊ້ຈັດກຸ່ມຕອນສຸ່ມແຍກແຕ່ລະຄົນ
+  source?: { bankId: string; questionId: string };
 };
 
 export type FormSection = {
@@ -46,6 +48,33 @@ export type AudienceEmployee = {
   departmentUuid?: string;
   employmentStatus?: string;
 };
+
+// ---------- ເວລາເປີດ/ປິດ ----------
+// status ທີ່ເກັບ: draft | scheduled | open | closed (+ delete). schedule.openAt/closeAt (ISO, UTC) —
+// ສະຖານະຈິງຄິດຈາກເວລາປັດຈຸບັນທຸກຄັ້ງ (ແມ່ນຍຳເຖິງວິນາທີ); cron syncFormSchedules ອັບເດດ status ທີ່ເກັບ
+// ໃຫ້ກົງ (ທຸກ 5 ນາທີ) ເພື່ອໃຫ້ push ຕອນເປີດ ແລະ ໜ້າ admin ເຫັນສະຖານະຖືກ.
+// admin ມີສຳເນົາ effectiveFormStatus (services/forms.ts) — ແກ້ໃຫ້ກົງກັນ.
+
+export type FormSchedule = { openAt?: string | null; closeAt?: string | null };
+export type EffectiveStatus = "draft" | "scheduled" | "open" | "closed";
+
+const reached = (iso: string | null | undefined, now: Date) => {
+  if (!iso) return false;
+  const t = new Date(iso).getTime();
+  return !Number.isNaN(t) && now.getTime() >= t;
+};
+
+export function effectiveFormStatus(
+  status: unknown,
+  schedule: FormSchedule | undefined,
+  now: Date,
+): EffectiveStatus {
+  if (status === "closed") return "closed";
+  if (status !== "open" && status !== "scheduled") return "draft";
+  if (status === "scheduled" && schedule?.openAt && !reached(schedule.openAt, now)) return "scheduled";
+  if (reached(schedule?.closeAt, now)) return "closed";
+  return "open";
+}
 
 export const SHORT_TEXT_MAX = 500;
 export const LONG_TEXT_MAX = 5000;
@@ -128,6 +157,124 @@ export function gradeAnswers(
     total += points;
   }
   return { earned, total, results };
+}
+
+// ---------- ສຸ່ມລຳດັບ ----------
+// seed ຈາກ formId + uid → ຄົນດຽວກັນໄດ້ລຳດັບເດີມທຸກຄັ້ງ (reload ບໍ່ປ່ຽນ) ໂດຍບໍ່ຕ້ອງເກັບໄວ້ໃສ.
+// ຄຳຕອບອ້າງ id ຈຶ່ງບໍ່ກະທົບການກວດ/ຄິດຄະແນນ.
+
+// FNV-1a 32-bit
+function hashSeed(text: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
+// mulberry32
+function seededRandom(seed: number): () => number {
+  let a = seed;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+export function seededShuffle<T>(items: readonly T[], seedText: string): T[] {
+  const random = seededRandom(hashSeed(seedText));
+  const result = [...items];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
+export function shuffleSectionsFor(
+  sections: FormSection[],
+  seedText: string,
+  options: { questions: boolean; choices: boolean },
+): FormSection[] {
+  if (!options.questions && !options.choices) return sections;
+  return sections.map((s) => {
+    const questions = options.questions
+      ? seededShuffle(s.questions ?? [], `${seedText}:${s.id}`)
+      : (s.questions ?? []);
+    return {
+      ...s,
+      questions: questions.map((q) =>
+        options.choices && isChoiceType(q.type) && q.options
+          ? { ...q, options: seededShuffle(q.options, `${seedText}:${q.id}`) }
+          : q,
+      ),
+    };
+  });
+}
+
+// ---------- ສຸ່ມຄຳຖາມແຍກແຕ່ລະຄົນ ----------
+// ຟອມເກັບຄຳຖາມທັງໝົດເປັນ pool; settings.draw.perGroup ບອກວ່າແຕ່ລະຄົນໄດ້ຈັກຂໍ້ຈາກແຕ່ລະກຸ່ມ
+// (ກຸ່ມ = ຄັງທີ່ສຳເນົາມາ, ຄຳຖາມທີ່ສ້າງໃນຟອມເອງ = OWN_GROUP). ຂໍ້ທີ່ຖືກແຈກໜ້ອຍສຸດໄດ້ກ່ອນ →
+// pool N ຂໍ້ ແຈກຄົນລະ n: floor(N/n) ຄົນທຳອິດໄດ້ຄຳຖາມບໍ່ຊ້ຳກັນເລີຍ, ຫຼັງຈາກນັ້ນວົນແບບສະເໝີກັນ.
+// admin ມີສຳເນົາ drawGroupKey (services/forms.ts) — ແກ້ໃຫ້ກົງກັນ.
+
+export const OWN_GROUP = "_form";
+
+export type DrawSettings = { enabled: boolean; perGroup: Record<string, number> };
+
+export const drawGroupKey = (q: FormQuestion) => q.source?.bankId ?? OWN_GROUP;
+
+export function toDrawSettings(raw: unknown): DrawSettings {
+  const d = (raw ?? {}) as { enabled?: unknown; perGroup?: unknown };
+  const perGroup: Record<string, number> = {};
+  if (d.perGroup && typeof d.perGroup === "object") {
+    for (const [key, value] of Object.entries(d.perGroup as Record<string, unknown>)) {
+      const n = Math.floor(Number(value));
+      if (n > 0) perGroup[key] = n;
+    }
+  }
+  return { enabled: d.enabled === true && Object.keys(perGroup).length > 0, perGroup };
+}
+
+// ຈຳນວນຂໍ້ທີ່ແຕ່ລະຄົນໄດ້ຈິງ (ບໍ່ເກີນຂະໜາດກຸ່ມ)
+export function drawSize(sections: FormSection[], draw: DrawSettings): number {
+  const sizes = new Map<string, number>();
+  for (const q of questionsOf(sections)) sizes.set(drawGroupKey(q), (sizes.get(drawGroupKey(q)) ?? 0) + 1);
+  return Object.entries(draw.perGroup).reduce((sum, [key, n]) => sum + Math.min(n, sizes.get(key) ?? 0), 0);
+}
+
+// ເລືອກຂໍ້ທີ່ usage ໜ້ອຍສຸດກ່ອນ; usage ເທົ່າກັນ → ສຸ່ມດ້ວຍ seed (ຄົນຕ່າງກັນໄດ້ຂໍ້ຕ່າງກັນ)
+export function drawQuestionIds(
+  sections: FormSection[],
+  draw: DrawSettings,
+  usage: Record<string, number>,
+  seedText: string,
+): string[] {
+  const byGroup = new Map<string, FormQuestion[]>();
+  for (const q of questionsOf(sections)) {
+    const key = drawGroupKey(q);
+    byGroup.set(key, [...(byGroup.get(key) ?? []), q]);
+  }
+  const picked: string[] = [];
+  for (const [key, n] of Object.entries(draw.perGroup)) {
+    const pool = byGroup.get(key) ?? [];
+    const rank = new Map(seededShuffle(pool, `${seedText}:${key}`).map((q, i) => [q.id, i]));
+    const ordered = [...pool].sort(
+      (a, b) => (usage[a.id] ?? 0) - (usage[b.id] ?? 0) || rank.get(a.id)! - rank.get(b.id)!,
+    );
+    picked.push(...ordered.slice(0, n).map((q) => q.id));
+  }
+  return picked;
+}
+
+// ເກັບສະເພາະຂໍ້ທີ່ຢູ່ໃນ ids (ລຳດັບຕາມຟອມ) — ໃຊ້ທັງຕອນສະແດງ, ກວດຄຳຕອບ ແລະ ຄິດຄະແນນ
+export function filterSections(sections: FormSection[], ids: readonly string[]): FormSection[] {
+  const keep = new Set(ids);
+  return sections.map((s) => ({ ...s, questions: (s.questions ?? []).filter((q) => keep.has(q.id)) }));
 }
 
 // ຄືນຄຳຕອບທີ່ສະອາດແລ້ວ (ຕັດ id ທີ່ບໍ່ມີໃນຟອມ ແລະ ຄຳຕອບຫວ່າງອອກ) ຫຼື throw invalid-argument

@@ -63,6 +63,8 @@ import { useAuth } from "@/lib/auth-context";
 import { useMyForm, useSubmitFormResponse } from "@/lib/use-form-queries";
 import { cn } from "@/lib/utils";
 import {
+  closesSoon,
+  formatFormDateTime,
   formQuestions,
   LONG_TEXT_MAX,
   missingRequired,
@@ -278,7 +280,7 @@ export default function FillFormPage() {
             {form.showResult === "scoreAndAnswers" && (
               // data ຖືກ refetch ແລ້ວ (invalidate ໃນ useSubmitFormResponse) — ໄດ້ເສີຍ ແລະ ຜົນຕໍ່ຂໍ້
               <Button variant="outline" onClick={() => setSubmitted(null)}>
-                ເບິ່ງຄຳຕອບ ແລະ ເສີຍ
+                ເບິ່ງຄຳຕອບ ແລະ ສະເລີຍ
               </Button>
             )}
             <Button onClick={leave}>ກັບໄປໜ້າແບບສອບຖາມ</Button>
@@ -354,6 +356,11 @@ export default function FillFormPage() {
             {form.isQuiz && (
               <p className="text-foreground text-sm">
                 📝 ແບບທົດສອບ · ຄະແນນເຕັມ {totalPoints} · ສົ່ງແລ້ວແກ້ໄຂຄຳຕອບບໍ່ໄດ້
+              </p>
+            )}
+            {form.closeAt && (
+              <p className={cn("text-sm", closesSoon(form.closeAt) ? "text-destructive font-medium" : "text-muted-foreground")}>
+                ⏰ ປິດຮັບຄຳຕອບ {formatFormDateTime(form.closeAt)}
               </p>
             )}
             <p className="text-destructive text-xs">* ຈຳເປັນຕ້ອງຕອບ</p>
@@ -543,7 +550,7 @@ function ReadOnlyAnswer({
               )}
               <span className={cn("text-foreground", isPicked && "font-medium")}>{o.label}</span>
               {isPicked && <span className="text-muted-foreground text-xs">(ທ່ານເລືອກ)</span>}
-              {isCorrect && <span className="text-xs text-green-700 dark:text-green-400">ເສີຍ</span>}
+              {isCorrect && <span className="text-xs text-green-700 dark:text-green-400">ຖືກຕ້ອງ</span>}
             </li>
           );
         })}
