@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 
 import { useRouter } from "next/navigation";
 
 // ** assets / icons
-import { ArrowLeft, CheckCircle2, FileQuestion, Lock, Star, X } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, FileQuestion, Lock, Star, X } from "lucide-react";
 
 // ** shared components
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -65,9 +65,12 @@ import { cn } from "@/lib/utils";
 import {
   closesSoon,
   formatFormDateTime,
+  formHasBranching,
   formQuestions,
   LONG_TEXT_MAX,
   missingRequired,
+  nextSectionIndex,
+  visitedSections,
   SHORT_TEXT_MAX,
   type FormAnswer,
   type FormAnswers,
@@ -183,6 +186,9 @@ export default function FillFormPage() {
   const [submitted, setSubmitted] = useState<"new" | "edit" | null>(null);
   // Quiz: ຄະແນນທີ່ server ຄືນມາຕອນສົ່ງ (null = ບໍ່ແມ່ນ quiz ຫຼື admin ຕັ້ງບໍ່ໃຫ້ເຫັນ)
   const [submittedScore, setSubmittedScore] = useState<QuizScore | null>(null);
+  // ໜ້າປັດຈຸບັນ (1 section = 1 ໜ້າ) — ໃຊ້ສະເພາະຕອນຕອບຟອມທີ່ມີຫຼາຍ section
+  // ເສັ້ນທາງທີ່ຜ່ານມາ (index ຂອງ section) — ປຸ່ມ ກັບຄືນ ກັບໄປໜ້າກ່ອນໜ້າແທ້ (ຂ້າມ section ຕາມຄຳຕອບ)
+  const [path, setPath] = useState<number[]>([0]);
 
   const editable =
     !!data && data.form.status === "open" && (!data.response || data.form.allowEdit);
@@ -291,8 +297,57 @@ export default function FillFormPage() {
   }
 
   const questions = formQuestions(form.sections);
-  const answeredCount = questions.filter((q) => hasAnswer(answers[q.id])).length;
   const totalPoints = Object.values(form.questionPoints ?? {}).reduce((a, b) => a + b, 0);
+
+  // ຫຼາຍ section → ຕອບເທື່ອລະໜ້າ (ຖັດໄປ/ກັບຄືນ); ອ່ານຢ່າງດຽວ → ສະແດງທຸກ section ຕໍ່ກັນ
+  const pages = form.sections.filter((s) => (s.questions ?? []).length > 0);
+  const paged = editable && pages.length > 1;
+  const branching = formHasBranching(pages);
+  const pageIndex = Math.min(path[path.length - 1] ?? 0, Math.max(0, pages.length - 1));
+  // section ຕໍ່ໄປຕາມຄຳຕອບປັດຈຸບັນ — ໄປ "ສົ່ງ" ແລ້ວ ປຸ່ມ ຖັດໄປ ກາຍເປັນ ສົ່ງຄຳຕອບ
+  const nextIndex = paged ? nextSectionIndex(pages, pageIndex, answers) : pages.length;
+  const isLastPage = !paged || nextIndex >= pages.length;
+  // section ທີ່ຜ່ານແທ້ຕາມຄຳຕອບ — ກວດຂໍ້ບັງຄັບ, ຄວາມຄືບໜ້າ ແລະ ໂໝດອ່ານຢ່າງດຽວ ໃຊ້ອັນນີ້
+  const visited = visitedSections(pages, answers);
+  const scopeQuestions = branching ? formQuestions(visited) : questions;
+  const scopeAnswered = scopeQuestions.filter((q) => hasAnswer(answers[q.id])).length;
+
+  const scrollTop = () => window.scrollTo({ top: 0, behavior: "smooth" });
+  const goNextPage = (index: number) => {
+    setPath((prev) => [...prev, index]);
+    scrollTop();
+  };
+  const goPrevPage = () => {
+    setPath((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev));
+    scrollTop();
+  };
+
+  // ໝາຍຂໍ້ທີ່ຍັງບໍ່ໄດ້ຕອບ, ກັບໄປໜ້າທີ່ມີຂໍ້ທຳອິດ (ຕາມເສັ້ນທາງ) ແລ້ວເລື່ອນໄປຫາ
+  const flagMissing = (missing: FormQuestion[]) => {
+    setInvalidIds(new Set(missing.map((q) => q.id)));
+    const target = pages.findIndex((s) => (s.questions ?? []).some((q) => q.id === missing[0].id));
+    if (paged && target >= 0 && target !== pageIndex) {
+      const route = visited.map((s) => pages.indexOf(s));
+      const position = route.indexOf(target);
+      setPath(position >= 0 ? route.slice(0, position + 1) : [target]);
+    }
+    // ລໍຖ້າໜ້າໃໝ່ render ກ່ອນເລື່ອນ
+    setTimeout(() => {
+      const first = document.getElementById(`question-${missing[0].id}`);
+      first?.scrollIntoView({ behavior: "smooth", block: "center" });
+      first?.querySelector<HTMLElement>("input, textarea, button, [role='radio']")?.focus({ preventScroll: true });
+    }, 0);
+    toast.error(`ກະລຸນາຕອບຄຳຖາມທີ່ຈຳເປັນ (${missing.length} ຂໍ້)`);
+  };
+
+  const handleNext = () => {
+    const missing = missingRequired([pages[pageIndex]], answers);
+    if (missing.length > 0) {
+      flagMissing(missing);
+      return;
+    }
+    goNextPage(nextIndex);
+  };
 
   const clearInvalid = (questionId: string) =>
     setInvalidIds((prev) => {
@@ -314,13 +369,10 @@ export default function FillFormPage() {
   };
 
   const handleSubmit = () => {
-    const missing = missingRequired(form.sections, answers);
+    // ບັງຄັບຕອບ ສະເພາະ section ທີ່ຜ່ານ (server ຄິດເສັ້ນທາງ ແລະ ຕັດຄຳຕອບຂອງ section ອື່ນເອງ)
+    const missing = missingRequired(visited, answers);
     if (missing.length > 0) {
-      setInvalidIds(new Set(missing.map((q) => q.id)));
-      const first = document.getElementById(`question-${missing[0].id}`);
-      first?.scrollIntoView({ behavior: "smooth", block: "center" });
-      first?.querySelector<HTMLElement>("input, textarea, button, [role='radio']")?.focus({ preventScroll: true });
-      toast.error(`ກະລຸນາຕອບຄຳຖາມທີ່ຈຳເປັນ (${missing.length} ຂໍ້)`);
+      flagMissing(missing);
       return;
     }
     submit.mutate(answers, {
@@ -398,22 +450,23 @@ export default function FillFormPage() {
       {editable && questions.length > 0 && (
         <div className="bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky top-0 z-10 -mx-1 px-1 py-2 backdrop-blur">
           <div className="text-muted-foreground mb-1.5 flex justify-between text-xs">
-            <span>ຄວາມຄືບໜ້າ</span>
+            {/* ມີການຂ້າມ → ບໍ່ຮູ້ຈຳນວນໜ້າທັງໝົດລ່ວງໜ້າ */}
+            <span>{paged ? (branching ? `ໜ້າ ${path.length}` : `ໜ້າ ${path.length}/${pages.length}`) : "ຄວາມຄືບໜ້າ"}</span>
             <span className="tabular-nums">
-              ຕອບແລ້ວ {answeredCount}/{questions.length}
+              ຕອບແລ້ວ {scopeAnswered}/{scopeQuestions.length}
             </span>
           </div>
-          <Progress value={(answeredCount / questions.length) * 100} className="h-1.5" />
+          <Progress value={(scopeAnswered / Math.max(1, scopeQuestions.length)) * 100} className="h-1.5" />
         </div>
       )}
 
-      {form.sections.map((section) => (
+      {(paged ? [pages[pageIndex]] : editable ? pages : visited).map((section) => (
         <section
           key={section.id}
           className="space-y-4 pt-2"
           aria-labelledby={section.title ? `section-${section.id}` : undefined}
         >
-          {(section.title || section.description) && form.sections.length > 1 && (
+          {(section.title || section.description) && pages.length > 1 && (
             <Card className="bg-primary/5 border-primary/20 gap-1 py-4 shadow-none">
               <CardHeader>
                 {section.title && (
@@ -487,11 +540,26 @@ export default function FillFormPage() {
       ))}
 
       {editable && (
-        <div className="flex justify-end pt-2">
-          <Button onClick={handleSubmit} disabled={submit.isPending} size="lg" className="w-full sm:w-auto sm:min-w-40">
-            {submit.isPending && <Spinner className="mr-2" />}
-            {response ? "ບັນທຶກການແກ້ໄຂ" : "ສົ່ງຄຳຕອບ"}
-          </Button>
+        <div className="flex items-center justify-between gap-2 pt-2">
+          {paged && path.length > 1 ? (
+            <Button variant="outline" size="lg" onClick={goPrevPage} className="gap-1">
+              <ChevronLeft className="h-4 w-4" />
+              ກັບຄືນ
+            </Button>
+          ) : (
+            <span />
+          )}
+          {isLastPage ? (
+            <Button onClick={handleSubmit} disabled={submit.isPending} size="lg" className="sm:min-w-40">
+              {submit.isPending && <Spinner className="mr-2" />}
+              {response ? "ບັນທຶກການແກ້ໄຂ" : "ສົ່ງຄຳຕອບ"}
+            </Button>
+          ) : (
+            <Button onClick={handleNext} size="lg" className="gap-1 sm:min-w-40">
+              ຖັດໄປ
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          )}
         </div>
       )}
 

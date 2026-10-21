@@ -234,4 +234,52 @@ const drawSections = [
     // scheduled ທີ່ບໍ່ມີ openAt = ເປີດ
     strict_1.default.equal((0, forms_1.effectiveFormStatus)("scheduled", {}, at("2026-11-03T00:00:00.000Z")), "open");
 });
+const branchSections = [
+    {
+        id: "s1",
+        title: "ທົ່ວໄປ",
+        questions: [
+            {
+                id: "trained",
+                type: "radio",
+                title: "ເຄີຍຝຶກບໍ?",
+                required: true,
+                branching: true,
+                options: [
+                    { id: "yes", label: "ເຄີຍ", goTo: "s2" },
+                    { id: "no", label: "ບໍ່ເຄີຍ", goTo: "s3" },
+                    { id: "skip", label: "ບໍ່ແນ່ໃຈ", goTo: forms_1.SUBMIT_TARGET },
+                    { id: "default", label: "ອື່ນ" },
+                ],
+            },
+        ],
+    },
+    { id: "s2", title: "ປະເມີນ", next: forms_1.SUBMIT_TARGET, questions: [{ id: "rate", type: "rating", title: "ໃຫ້ຄະແນນ", required: true }] },
+    { id: "s3", title: "ຢາກຝຶກ", questions: [{ id: "topic", type: "shortText", title: "ຫົວຂໍ້", required: true }] },
+    { id: "s4", title: "ສະເໜີແນະ", questions: [{ id: "note", type: "longText", title: "ໝາຍເຫດ", required: false }] },
+];
+(0, node_test_1.test)("visitedSections: ໄປຕາມຄຳຕອບ / section.next / ສົ່ງເລີຍ", () => {
+    const ids = (answers) => (0, forms_1.visitedSections)(branchSections, answers).map((s) => s.id);
+    strict_1.default.deepEqual(ids({ trained: "yes" }), ["s1", "s2"]);
+    strict_1.default.deepEqual(ids({ trained: "no" }), ["s1", "s3", "s4"]);
+    strict_1.default.deepEqual(ids({ trained: "skip" }), ["s1"]);
+    // ຕົວເລືອກບໍ່ມີ goTo / ຍັງບໍ່ຕອບ → section ຖັດໄປ (ແລ້ວ s2.next = ສົ່ງ)
+    strict_1.default.deepEqual(ids({ trained: "default" }), ["s1", "s2"]);
+    strict_1.default.deepEqual(ids({}), ["s1", "s2"]);
+});
+(0, node_test_1.test)("nextSectionIndex: ຂ້າມກັບຫຼັງ / ເປົ້າໝາຍບໍ່ມີ → section ຖັດໄປ (ບໍ່ວົນ)", () => {
+    const loop = [
+        { id: "a", title: "", questions: [] },
+        { id: "b", title: "", next: "a", questions: [] },
+        { id: "c", title: "", next: "missing", questions: [] },
+    ];
+    strict_1.default.equal((0, forms_1.nextSectionIndex)(loop, 1, {}), 2);
+    strict_1.default.equal((0, forms_1.nextSectionIndex)(loop, 2, {}), 3);
+    strict_1.default.deepEqual((0, forms_1.visitedSections)(loop, {}).map((s) => s.id), ["a", "b", "c"]);
+});
+(0, node_test_1.test)("validateAnswers ກັບ visitedSections: ຂໍ້ບັງຄັບຂອງ section ທີ່ບໍ່ໄດ້ຜ່ານ ບໍ່ບັງຄັບ, ຄຳຕອບຂອງມັນຖືກຕັດ", () => {
+    const answers = { trained: "yes", rate: 4, topic: "ບໍ່ຄວນສົ່ງມາ" };
+    const clean = (0, forms_1.validateAnswers)((0, forms_1.visitedSections)(branchSections, answers), answers);
+    strict_1.default.deepEqual(clean, { trained: "yes", rate: 4 });
+});
 //# sourceMappingURL=forms.test.js.map

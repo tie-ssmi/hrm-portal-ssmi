@@ -18,7 +18,8 @@ export type FormQuestionType =
   | "dropdown"
   | "rating";
 
-export type FormOption = { id: string; label: string };
+// goTo: ຕອບຕົວເລືອກນີ້ → ໄປ section ໃດ (ໃຊ້ເມື່ອ question.branching) — ເບິ່ງ nextSectionIndex
+export type FormOption = { id: string; label: string; goTo?: string };
 
 export type FormQuestion = {
   id: string;
@@ -30,6 +31,8 @@ export type FormQuestion = {
   ratingMax?: number;
   // ສຳເນົາມາຈາກຄັງຄຳຖາມ (admin) — ໃຊ້ຈັດກຸ່ມຕອນສຸ່ມແຍກແຕ່ລະຄົນ
   source?: { bankId: string; questionId: string };
+  // ໄປ section ຕາມຄຳຕອບ (ເລືອກຕອບ/Dropdown ເທົ່ານັ້ນ, ໄດ້ 1 ຂໍ້ຕໍ່ section)
+  branching?: boolean;
 };
 
 export type FormSection = {
@@ -37,6 +40,8 @@ export type FormSection = {
   title: string;
   description?: string;
   questions: FormQuestion[];
+  // ຫຼັງຈາກ section ນີ້: ບໍ່ຕັ້ງ = section ຖັດໄປ, SUBMIT_TARGET = ສົ່ງຟອມ, ຫຼື id ຂອງ section ທາງໜ້າ
+  next?: string;
 };
 
 export type FormAnswer = string | string[] | number;
@@ -275,6 +280,39 @@ export function drawQuestionIds(
 export function filterSections(sections: FormSection[], ids: readonly string[]): FormSection[] {
   const keep = new Set(ids);
   return sections.map((s) => ({ ...s, questions: (s.questions ?? []).filter((q) => keep.has(q.id)) }));
+}
+
+// ---------- ຂ້າມ section ຕາມຄຳຕອບ ----------
+// ຂ້າມໄປທາງໜ້າເທົ່ານັ້ນ (ເປົ້າໝາຍທີ່ຢູ່ກ່ອນ ຫຼື ບໍ່ມີແລ້ວ → section ຖັດໄປ) ຈຶ່ງບໍ່ມີທາງວົນ.
+// ຄຳຕອບຂອງຄຳຖາມຂ້າມ (goTo ຂອງຕົວເລືອກ) ສຳຄັນກວ່າ section.next.
+// admin (services/forms.ts) ແລະ portal (services/forms.ts) ມີສຳເນົາ — ແກ້ໃຫ້ກົງກັນ.
+
+export const SUBMIT_TARGET = "__submit";
+
+export const branchingQuestionOf = (section: FormSection) =>
+  (section.questions ?? []).find((q) => q.branching && (q.type === "radio" || q.type === "dropdown"));
+
+// index ຂອງ section ຕໍ່ໄປ; sections.length = ສົ່ງຟອມ
+export function nextSectionIndex(sections: FormSection[], index: number, answers: FormAnswers): number {
+  const section = sections[index];
+  const branching = branchingQuestionOf(section);
+  const answer = branching ? answers[branching.id] : undefined;
+  const target =
+    (typeof answer === "string" ? branching?.options?.find((o) => o.id === answer)?.goTo : undefined) ||
+    section.next;
+  if (!target) return index + 1;
+  if (target === SUBMIT_TARGET) return sections.length;
+  const targetIndex = sections.findIndex((s) => s.id === target);
+  return targetIndex > index ? targetIndex : index + 1;
+}
+
+// section ທີ່ພະນັກງານຜ່ານແທ້ ຕາມຄຳຕອບ (ເລີ່ມ section ທຳອິດ)
+export function visitedSections(sections: FormSection[], answers: FormAnswers): FormSection[] {
+  const visited: FormSection[] = [];
+  for (let i = 0; i < sections.length; i = nextSectionIndex(sections, i, answers)) {
+    visited.push(sections[i]);
+  }
+  return visited;
 }
 
 // ຄືນຄຳຕອບທີ່ສະອາດແລ້ວ (ຕັດ id ທີ່ບໍ່ມີໃນຟອມ ແລະ ຄຳຕອບຫວ່າງອອກ) ຫຼື throw invalid-argument

@@ -1618,7 +1618,8 @@ exports.getMyForm = (0, https_1.onCall)({ region: "asia-southeast1", cors: calla
         const ids = (_b = response === null || response === void 0 ? void 0 : response.assignedQuestionIds) !== null && _b !== void 0 ? _b : (state === "open" && (0, forms_1.isInAudience)(form.audienceKeys, caller)
             ? await getOrCreateAssignment(formRef, form, caller.uid)
             : []);
-        sections = (0, forms_1.filterSections)(sections, ids);
+        // section ທີ່ບໍ່ມີຂໍ້ໃດຖືກສຸ່ມໃຫ້ຄົນນີ້ — ບໍ່ສະແດງ (ບໍ່ໃຫ້ມີໜ້າເປົ່າ)
+        sections = (0, forms_1.filterSections)(sections, ids).filter((s) => { var _a; return ((_a = s.questions) !== null && _a !== void 0 ? _a : []).length > 0; });
     }
     const visibleIds = new Set(sections.flatMap((s) => { var _a; return ((_a = s.questions) !== null && _a !== void 0 ? _a : []).map((q) => q.id); }));
     const isQuiz = isQuizForm(form);
@@ -1700,14 +1701,21 @@ exports.submitFormResponse = (0, https_1.onCall)({ region: "asia-southeast1", co
             throw new https_1.HttpsError("failed-precondition", "ກະລຸນາເປີດແບບຟອມໃໝ່ອີກຄັ້ງ");
         }
         const sections = assignedIds ? (0, forms_1.filterSections)(formSections(form), assignedIds) : formSections(form);
-        const answers = (0, forms_1.validateAnswers)(sections, payload.answers);
+        // ຂ້າມ section ຕາມຄຳຕອບ: ຄິດເສັ້ນທາງຄືນເອງຈາກຄຳຕອບ (ບໍ່ເຊື່ອ client) ແລ້ວກວດ/ຄິດຄະແນນສະເພາະ
+        // section ທີ່ຜ່ານ — ຄຳຕອບຂອງ section ທີ່ບໍ່ໄດ້ຜ່ານຖືກຕັດອອກ. ສຸ່ມແຍກແຕ່ລະຄົນ ບໍ່ໃຊ້ການຂ້າມ
+        const rawAnswers = payload.answers && typeof payload.answers === "object" && !Array.isArray(payload.answers)
+            ? payload.answers
+            : {};
+        const visited = draw.enabled ? null : (0, forms_1.visitedSections)(sections, rawAnswers);
+        const scope = visited !== null && visited !== void 0 ? visited : sections;
+        const answers = (0, forms_1.validateAnswers)(scope, payload.answers);
         const score = isQuizForm(form)
-            ? (0, forms_1.gradeAnswers)(sections, answers, parseAnswerKey(keySnap.data()))
+            ? (0, forms_1.gradeAnswers)(scope, answers, parseAnswerKey(keySnap.data()))
             : null;
         const now = new Date().toISOString();
         const emp = caller.data;
         const submittedAt = (_c = existing === null || existing === void 0 ? void 0 : existing.submittedAt) !== null && _c !== void 0 ? _c : now;
-        tx.set(responseRef, Object.assign(Object.assign(Object.assign({ formId, uid: caller.uid, answers, 
+        tx.set(responseRef, Object.assign(Object.assign(Object.assign(Object.assign({ formId, uid: caller.uid, answers, 
             // snapshot ຕອນຕອບ — ໜ້າຜົນ (admin) ໃຊ້ສະແດງຊື່/ພະແນກ ໂດຍບໍ່ຕ້ອງ join
             employee: {
                 name: `${(_d = emp.firstNameLo) !== null && _d !== void 0 ? _d : ""} ${(_e = emp.lastNameLo) !== null && _e !== void 0 ? _e : ""}`.trim(),
@@ -1717,7 +1725,7 @@ exports.submitFormResponse = (0, https_1.onCall)({ region: "asia-southeast1", co
                 workLocationUuid: (_j = caller.workLocationUuid) !== null && _j !== void 0 ? _j : "",
                 workLocationName: (_l = (_k = emp.workLocation) === null || _k === void 0 ? void 0 : _k.nameLo) !== null && _l !== void 0 ? _l : "",
                 employmentStatus: (_m = caller.employmentStatus) !== null && _m !== void 0 ? _m : "",
-            } }, (score ? { score } : {})), (assignedIds ? { assignedQuestionIds: assignedIds } : {})), { submittedAt, updatedAt: now, editCount: existing ? ((_o = existing.editCount) !== null && _o !== void 0 ? _o : 0) + 1 : 0 }));
+            } }, (score ? { score } : {})), (assignedIds ? { assignedQuestionIds: assignedIds } : {})), (visited ? { visitedSectionIds: visited.map((section) => section.id) } : {})), { submittedAt, updatedAt: now, editCount: existing ? ((_o = existing.editCount) !== null && _o !== void 0 ? _o : 0) + 1 : 0 }));
         if (!existing) {
             tx.update(formRef, { responseCount: admin.firestore.FieldValue.increment(1) });
         }

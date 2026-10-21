@@ -9,7 +9,7 @@
 //   "emp:{uid}"      — ລາຍບຸກຄົນ
 // ພະນັກງານມີສິດຕອບ ຖ້າ key ຂອງຕົນ (employeeAudienceKeys, ຄິດຈາກຂໍ້ມູນປັດຈຸບັນ) ກົງກັບ key ໃດໜຶ່ງ.
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.drawGroupKey = exports.OWN_GROUP = exports.isChoiceType = exports.DEFAULT_RATING_MAX = exports.LONG_TEXT_MAX = exports.SHORT_TEXT_MAX = void 0;
+exports.branchingQuestionOf = exports.SUBMIT_TARGET = exports.drawGroupKey = exports.OWN_GROUP = exports.isChoiceType = exports.DEFAULT_RATING_MAX = exports.LONG_TEXT_MAX = exports.SHORT_TEXT_MAX = void 0;
 exports.effectiveFormStatus = effectiveFormStatus;
 exports.employeeAudienceKeys = employeeAudienceKeys;
 exports.isInAudience = isInAudience;
@@ -22,6 +22,8 @@ exports.toDrawSettings = toDrawSettings;
 exports.drawSize = drawSize;
 exports.drawQuestionIds = drawQuestionIds;
 exports.filterSections = filterSections;
+exports.nextSectionIndex = nextSectionIndex;
+exports.visitedSections = visitedSections;
 exports.validateAnswers = validateAnswers;
 const https_1 = require("firebase-functions/v2/https");
 const reached = (iso, now) => {
@@ -193,6 +195,36 @@ function drawQuestionIds(sections, draw, usage, seedText) {
 function filterSections(sections, ids) {
     const keep = new Set(ids);
     return sections.map((s) => { var _a; return (Object.assign(Object.assign({}, s), { questions: ((_a = s.questions) !== null && _a !== void 0 ? _a : []).filter((q) => keep.has(q.id)) })); });
+}
+// ---------- ຂ້າມ section ຕາມຄຳຕອບ ----------
+// ຂ້າມໄປທາງໜ້າເທົ່ານັ້ນ (ເປົ້າໝາຍທີ່ຢູ່ກ່ອນ ຫຼື ບໍ່ມີແລ້ວ → section ຖັດໄປ) ຈຶ່ງບໍ່ມີທາງວົນ.
+// ຄຳຕອບຂອງຄຳຖາມຂ້າມ (goTo ຂອງຕົວເລືອກ) ສຳຄັນກວ່າ section.next.
+// admin (services/forms.ts) ແລະ portal (services/forms.ts) ມີສຳເນົາ — ແກ້ໃຫ້ກົງກັນ.
+exports.SUBMIT_TARGET = "__submit";
+const branchingQuestionOf = (section) => { var _a; return ((_a = section.questions) !== null && _a !== void 0 ? _a : []).find((q) => q.branching && (q.type === "radio" || q.type === "dropdown")); };
+exports.branchingQuestionOf = branchingQuestionOf;
+// index ຂອງ section ຕໍ່ໄປ; sections.length = ສົ່ງຟອມ
+function nextSectionIndex(sections, index, answers) {
+    var _a, _b;
+    const section = sections[index];
+    const branching = (0, exports.branchingQuestionOf)(section);
+    const answer = branching ? answers[branching.id] : undefined;
+    const target = (typeof answer === "string" ? (_b = (_a = branching === null || branching === void 0 ? void 0 : branching.options) === null || _a === void 0 ? void 0 : _a.find((o) => o.id === answer)) === null || _b === void 0 ? void 0 : _b.goTo : undefined) ||
+        section.next;
+    if (!target)
+        return index + 1;
+    if (target === exports.SUBMIT_TARGET)
+        return sections.length;
+    const targetIndex = sections.findIndex((s) => s.id === target);
+    return targetIndex > index ? targetIndex : index + 1;
+}
+// section ທີ່ພະນັກງານຜ່ານແທ້ ຕາມຄຳຕອບ (ເລີ່ມ section ທຳອິດ)
+function visitedSections(sections, answers) {
+    const visited = [];
+    for (let i = 0; i < sections.length; i = nextSectionIndex(sections, i, answers)) {
+        visited.push(sections[i]);
+    }
+    return visited;
 }
 // ຄືນຄຳຕອບທີ່ສະອາດແລ້ວ (ຕັດ id ທີ່ບໍ່ມີໃນຟອມ ແລະ ຄຳຕອບຫວ່າງອອກ) ຫຼື throw invalid-argument
 function validateAnswers(sections, raw) {

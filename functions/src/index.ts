@@ -34,8 +34,10 @@ import {
   toDrawSettings,
   toShowResult,
   validateAnswers,
+  visitedSections,
   type AnswerKey,
   type AudienceEmployee,
+  type FormAnswers,
   type FormSchedule,
   type FormSection,
   type QuizScore,
@@ -2509,7 +2511,8 @@ export const getMyForm = onCall(
         (state === "open" && isInAudience(form.audienceKeys, caller)
           ? await getOrCreateAssignment(formRef, form, caller.uid)
           : []);
-      sections = filterSections(sections, ids);
+      // section ທີ່ບໍ່ມີຂໍ້ໃດຖືກສຸ່ມໃຫ້ຄົນນີ້ — ບໍ່ສະແດງ (ບໍ່ໃຫ້ມີໜ້າເປົ່າ)
+      sections = filterSections(sections, ids).filter((s) => (s.questions ?? []).length > 0);
     }
     const visibleIds = new Set(sections.flatMap((s) => (s.questions ?? []).map((q) => q.id)));
 
@@ -2610,9 +2613,18 @@ export const submitFormResponse = onCall(
       }
       const sections = assignedIds ? filterSections(formSections(form), assignedIds) : formSections(form);
 
-      const answers = validateAnswers(sections, payload.answers);
+      // ຂ້າມ section ຕາມຄຳຕອບ: ຄິດເສັ້ນທາງຄືນເອງຈາກຄຳຕອບ (ບໍ່ເຊື່ອ client) ແລ້ວກວດ/ຄິດຄະແນນສະເພາະ
+      // section ທີ່ຜ່ານ — ຄຳຕອບຂອງ section ທີ່ບໍ່ໄດ້ຜ່ານຖືກຕັດອອກ. ສຸ່ມແຍກແຕ່ລະຄົນ ບໍ່ໃຊ້ການຂ້າມ
+      const rawAnswers =
+        payload.answers && typeof payload.answers === "object" && !Array.isArray(payload.answers)
+          ? (payload.answers as FormAnswers)
+          : {};
+      const visited = draw.enabled ? null : visitedSections(sections, rawAnswers);
+      const scope = visited ?? sections;
+
+      const answers = validateAnswers(scope, payload.answers);
       const score = isQuizForm(form)
-        ? gradeAnswers(sections, answers, parseAnswerKey(keySnap.data()))
+        ? gradeAnswers(scope, answers, parseAnswerKey(keySnap.data()))
         : null;
       const now = new Date().toISOString();
       const emp = caller.data;
@@ -2635,6 +2647,7 @@ export const submitFormResponse = onCall(
         // ຄະແນນຕອນສົ່ງ (ສະແດງໃຫ້ພະນັກງານ) — admin ຄິດຄືນຈາກເສີຍປັດຈຸບັນໃນໜ້າຜົນ
         ...(score ? { score } : {}),
         ...(assignedIds ? { assignedQuestionIds: assignedIds } : {}),
+        ...(visited ? { visitedSectionIds: visited.map((section) => section.id) } : {}),
         submittedAt,
         updatedAt: now,
         editCount: existing ? ((existing.editCount as number | undefined) ?? 0) + 1 : 0,

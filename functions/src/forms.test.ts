@@ -10,6 +10,9 @@ import {
   toDrawSettings,
   gradeAnswers,
   isInAudience,
+  nextSectionIndex,
+  SUBMIT_TARGET,
+  visitedSections,
   seededShuffle,
   shuffleSectionsFor,
   toShowResult,
@@ -276,4 +279,56 @@ test("effectiveFormStatus: ຕັ້ງເວລາເປີດ/ປິດ", () =
   assert.equal(effectiveFormStatus("delete", undefined, at("2026-11-03T00:00:00.000Z")), "draft");
   // scheduled ທີ່ບໍ່ມີ openAt = ເປີດ
   assert.equal(effectiveFormStatus("scheduled", {}, at("2026-11-03T00:00:00.000Z")), "open");
+});
+
+const branchSections: FormSection[] = [
+  {
+    id: "s1",
+    title: "ທົ່ວໄປ",
+    questions: [
+      {
+        id: "trained",
+        type: "radio",
+        title: "ເຄີຍຝຶກບໍ?",
+        required: true,
+        branching: true,
+        options: [
+          { id: "yes", label: "ເຄີຍ", goTo: "s2" },
+          { id: "no", label: "ບໍ່ເຄີຍ", goTo: "s3" },
+          { id: "skip", label: "ບໍ່ແນ່ໃຈ", goTo: SUBMIT_TARGET },
+          { id: "default", label: "ອື່ນ" },
+        ],
+      },
+    ],
+  },
+  { id: "s2", title: "ປະເມີນ", next: SUBMIT_TARGET, questions: [{ id: "rate", type: "rating", title: "ໃຫ້ຄະແນນ", required: true }] },
+  { id: "s3", title: "ຢາກຝຶກ", questions: [{ id: "topic", type: "shortText", title: "ຫົວຂໍ້", required: true }] },
+  { id: "s4", title: "ສະເໜີແນະ", questions: [{ id: "note", type: "longText", title: "ໝາຍເຫດ", required: false }] },
+];
+
+test("visitedSections: ໄປຕາມຄຳຕອບ / section.next / ສົ່ງເລີຍ", () => {
+  const ids = (answers: Record<string, string>) => visitedSections(branchSections, answers).map((s) => s.id);
+  assert.deepEqual(ids({ trained: "yes" }), ["s1", "s2"]);
+  assert.deepEqual(ids({ trained: "no" }), ["s1", "s3", "s4"]);
+  assert.deepEqual(ids({ trained: "skip" }), ["s1"]);
+  // ຕົວເລືອກບໍ່ມີ goTo / ຍັງບໍ່ຕອບ → section ຖັດໄປ (ແລ້ວ s2.next = ສົ່ງ)
+  assert.deepEqual(ids({ trained: "default" }), ["s1", "s2"]);
+  assert.deepEqual(ids({}), ["s1", "s2"]);
+});
+
+test("nextSectionIndex: ຂ້າມກັບຫຼັງ / ເປົ້າໝາຍບໍ່ມີ → section ຖັດໄປ (ບໍ່ວົນ)", () => {
+  const loop: FormSection[] = [
+    { id: "a", title: "", questions: [] },
+    { id: "b", title: "", next: "a", questions: [] },
+    { id: "c", title: "", next: "missing", questions: [] },
+  ];
+  assert.equal(nextSectionIndex(loop, 1, {}), 2);
+  assert.equal(nextSectionIndex(loop, 2, {}), 3);
+  assert.deepEqual(visitedSections(loop, {}).map((s) => s.id), ["a", "b", "c"]);
+});
+
+test("validateAnswers ກັບ visitedSections: ຂໍ້ບັງຄັບຂອງ section ທີ່ບໍ່ໄດ້ຜ່ານ ບໍ່ບັງຄັບ, ຄຳຕອບຂອງມັນຖືກຕັດ", () => {
+  const answers = { trained: "yes", rate: 4, topic: "ບໍ່ຄວນສົ່ງມາ" };
+  const clean = validateAnswers(visitedSections(branchSections, answers), answers);
+  assert.deepEqual(clean, { trained: "yes", rate: 4 });
 });
