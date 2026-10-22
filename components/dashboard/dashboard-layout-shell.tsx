@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
+import { BirthdayDialog } from '@/components/dashboard/birthday-dialog'
 import { MobileNav } from '@/components/dashboard/mobile-nav'
 import { DashboardNav } from '@/components/dashboard/nav'
 import { TanstackQueryProvider } from '@/components/query-provider-tanstack'
@@ -56,6 +57,8 @@ function ShellContent({ children }: { children: React.ReactNode }) {
       </main>
 
       <MobileNav />
+
+      {isAuthenticated && <BirthdayDialog />}
     </div>
   )
 }

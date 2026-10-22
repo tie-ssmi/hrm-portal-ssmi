@@ -12,11 +12,11 @@ import { addDays, format, isWeekend, parseISO } from 'date-fns'
 // auto-generates one. Birthday leave is an internal company policy, so it
 // DOES auto-shift to the nearest working day, entirely client-side.
 
-function isLeapYear(year: number): boolean {
+export function isLeapYear(year: number): boolean {
   return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0
 }
 
-function isWorkingDayKey(dateKey: string, holidayDateKeys: ReadonlySet<string>): boolean {
+export function isWorkingDayKey(dateKey: string, holidayDateKeys: ReadonlySet<string>): boolean {
   return !isWeekend(parseISO(dateKey)) && !holidayDateKeys.has(dateKey)
 }
 
