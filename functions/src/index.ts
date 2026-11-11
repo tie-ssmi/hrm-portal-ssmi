@@ -13,16 +13,21 @@ import {
 } from "./attendance-ot";
 import {
   computeBaseCheckInStatus,
+  DEFAULT_ATTENDANCE_TIMES,
   minutesToHhmm,
+  parseAttendanceTimes,
   pickActivePolicies,
   resolveCheckIn,
   resolveCheckOutCutoff,
   resolvePolicyTimes,
+  type AttendanceTimes,
+  type CheckInBaseCase,
   type PolicyChoice,
   type ResolvedPolicy,
   type SpecialPolicyLike,
 } from "./special-policy";
 import {
+  attemptDeadline,
   drawQuestionIds,
   drawSize,
   effectiveFormStatus,
@@ -30,9 +35,13 @@ import {
   filterSections,
   gradeAnswers,
   isInAudience,
+  salvageAnswers,
   shuffleSectionsFor,
   toDrawSettings,
   toShowResult,
+  toTimeLimitMinutes,
+  TIMER_GRACE_MS,
+  TIMER_PARTIAL_WINDOW_MS,
   validateAnswers,
   visitedSections,
   type AnswerKey,
@@ -89,7 +98,7 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
 
 const TIMEZONE = "Asia/Vientiane";
 
-// ໃຊ້ 'not_check_in' ໃຫ້ສອດຄ່ອງກັນກັບຄ່າທີ່ computeCheckInStatus ສົ່ງກັບ
+// ໃຊ້ 'not_check_in' ໃຫ້ສອດຄ່ອງກັນກັບຄ່າທີ່ computeBaseCheckInStatus ສົ່ງກັບ
 type CheckInStatus = "present" | "late" | "not_check_in";
 
 type ServerTimeResult = {
@@ -136,19 +145,42 @@ function toMinuteOfDay(hour: number, minute: number): number {
   return hour * 60 + minute;
 }
 
-// ເສັ້ນຕັດຢູ່ special-policy.ts (baseCheckInThresholds):
-//   ລາພັກເຄິ່ງເຊົ້າ: ທັນ <= 12:30 | ສາຍ 12:31–14:00 | ບໍ່ check-in > 14:00
-//   ອອກວຽກນອກ:    ທັນ < 09:00  | ສາຍ 09:00–09:59 | ບໍ່ check-in >= 10:00
-//   ປົກກະຕິ:       ທັນ <= 08:15 | ສາຍ 08:16–09:59 | ບໍ່ check-in >= 10:00
-function computeCheckInStatus(
-  nowMinutes: number,
-  hasMorningLeaveEndToday: boolean,
+// ເວລາ check in / out ຕັ້ງຈາກ admin (adminSettings/attendanceTimes). cache 60 ວິ ຕໍ່ instance —
+// ແກ້ໃນ admin ແລ້ວມີຜົນພາຍໃນ 1 ນາທີ. ອ່ານບໍ່ໄດ້ → ຄ່າທີ່ cache ໄວ້ ຫຼື default (ເວລາເດີມ)
+const ATTENDANCE_TIMES_CACHE_MS = 60 * 1000;
+let attendanceTimesCache: { value: AttendanceTimes; fetchedAt: number } | null = null;
+
+async function getAttendanceTimes(): Promise<AttendanceTimes> {
+  if (
+    attendanceTimesCache &&
+    Date.now() - attendanceTimesCache.fetchedAt < ATTENDANCE_TIMES_CACHE_MS
+  ) {
+    return attendanceTimesCache.value;
+  }
+  try {
+    const snap = await admin
+      .firestore()
+      .collection("adminSettings")
+      .doc("attendanceTimes")
+      .get();
+    const value = parseAttendanceTimes(snap.data());
+    attendanceTimesCache = { value, fetchedAt: Date.now() };
+    return value;
+  } catch (err) {
+    console.warn("[attendanceTimes] failed to read adminSettings/attendanceTimes", err);
+    return attendanceTimesCache?.value ?? DEFAULT_ATTENDANCE_TIMES;
+  }
+}
+
+// ກໍລະນີຂອງມື້ສຳລັບ check-in: ລາເຄິ່ງເຊົ້າ > ອອກວຽກນອກ > ລາເຄິ່ງບ່າຍ > ປົກກະຕິ
+function checkInBaseCase(
+  dayLeaveStatus: DayLeaveStatus,
   isOffsite?: boolean,
-): CheckInStatus {
-  return computeBaseCheckInStatus(
-    nowMinutes,
-    hasMorningLeaveEndToday ? "morningLeave" : isOffsite ? "offsite" : "normal",
-  );
+): CheckInBaseCase {
+  if (dayLeaveStatus === "morning_leave") return "morningLeave";
+  if (isOffsite) return "offsite";
+  if (dayLeaveStatus === "afternoon_leave") return "afternoonLeave";
+  return "normal";
 }
 
 type LeaveLike = {
@@ -169,14 +201,18 @@ const callableCorsOrigins: Array<string | RegExp> = [
 ];
 
 // ຄຳນວນ leave status ສຳລັບວັນ isoDate ໜຶ່ງ:
-//   'blocked'      — ລາພັກທັງໝົດ, ຫ້າມ Check-In
-//   'morning_leave'— ລາພັກເຄິ່ງເຊົ້າ, Check-In ໄດ້ ແຕ່ threshold ຊ້ານານຂຶ້ນ (ທັນ ≤12:30)
-//   'none'         — ວັນທຳມະດາ
+//   'blocked'        — ລາພັກທັງໝົດ, ຫ້າມ Check-In
+//   'morning_leave'  — ລາພັກເຄິ່ງເຊົ້າ, Check-In ໄດ້ ແຕ່ໃຊ້ເວລາຂອງແຖວ morningLeave
+//   'afternoon_leave'— ລາພັກເຄິ່ງບ່າຍ, ໃຊ້ເວລາຂອງແຖວ afternoonLeave
+//   'none'           — ວັນທຳມະດາ
+type DayLeaveStatus = "blocked" | "morning_leave" | "afternoon_leave" | "none";
+
 async function getDayLeaveStatus(
   userUuid: string | undefined,
   isoDate: string,
-): Promise<"blocked" | "morning_leave" | "none"> {
+): Promise<DayLeaveStatus> {
   if (!userUuid) return "none";
+  let afternoonLeave = false;
 
   const snapshot = await admin
     .firestore()
@@ -204,27 +240,21 @@ async function getDayLeaveStatus(
       if (startPeriod === "morning" && endPeriod === "afternoon")
         return "blocked";
       if (endPeriod === "morning") return "morning_leave";
-      continue; // ລາພັກບ່າຍ — Check-In ປົກກະຕິ
+      afternoonLeave = true; // ລາພັກບ່າຍ — Check-In ໄດ້
+      continue;
     }
 
     if (isoDate === startDate) {
       if (startPeriod === "morning") return "blocked";
-      continue; // ເລີ່ມບ່າຍ — Check-In ໄດ້
+      afternoonLeave = true; // ເລີ່ມບ່າຍ — Check-In ໄດ້
+      continue;
     }
 
     // isoDate === endDate (isoDate > startDate)
     return endPeriod === "afternoon" ? "blocked" : "morning_leave";
   }
 
-  return "none";
-}
-
-// ຮັກສາ backward-compat ສຳລັບ getServerTime endpoint
-async function hasMorningLeaveEndingToday(
-  userUuid: string | undefined,
-  isoDate: string,
-): Promise<boolean> {
-  return (await getDayLeaveStatus(userUuid, isoDate)) === "morning_leave";
+  return afternoonLeave ? "afternoon_leave" : "none";
 }
 
 // ນະໂຍບາຍພິເສດ (specialPolicy) ທີ່ຄຸ້ມ uid ໃນວັນ isoDate, ລວມເປັນອັນດຽວແລ້ວ. query ດ້ວຍ
@@ -281,13 +311,14 @@ export const getServerTime = onCall(
       typeof request.data?.userUuid === "string"
         ? request.data.userUuid
         : undefined;
-    const morningLeaveEndToday = await hasMorningLeaveEndingToday(
-      userUuid,
-      isoDate,
-    );
-    const status = computeCheckInStatus(
+    const [dayLeaveStatus, times] = await Promise.all([
+      getDayLeaveStatus(userUuid, isoDate),
+      getAttendanceTimes(),
+    ]);
+    const status = computeBaseCheckInStatus(
       toMinuteOfDay(hour, minute),
-      morningLeaveEndToday,
+      checkInBaseCase(dayLeaveStatus),
+      times,
     );
     const isLate = status === "late";
 
@@ -567,17 +598,18 @@ async function sendAttendanceReminder(tag: string) {
   );
   const employeeDocs = await db.getAll(...employeeRefs);
 
-  // ຜູ້ທີ່ມີນະໂຍບາຍພິເສດມື້ນີ້ ໃຫ້ມາທັນຫຼັງ 08:15 — ບໍ່ແຈ້ງ "ໃກ້ຈະສາຍ" ຜິດໆ.
+  // ຜູ້ທີ່ມີນະໂຍບາຍພິເສດມື້ນີ້ ໃຫ້ມາທັນຫຼັງເວລາມາທັນປົກກະຕິ — ບໍ່ແຈ້ງ "ໃກ້ຈະສາຍ" ຜິດໆ.
   // ອ່ານ specialPolicy ທັງໝົດຄັ້ງດຽວ (ບໍ່ query ຕໍ່ຄົນ). ອ່ານບໍ່ໄດ້ → ແຈ້ງເຕືອນທຸກຄົນຄືເກົ່າ
   const lateMorningUids = new Set<string>();
   try {
+    const normalPresentUntil = (await getAttendanceTimes()).normal.presentUntil;
     const policySnap = await db.collection("specialPolicy").get();
     const policies = policySnap.docs.map(
       (d) => ({ id: d.id, ...(d.data() as Omit<SpecialPolicyLike, "id">) }),
     );
     for (const uid of userUids) {
       const policy = resolvePolicyTimes(pickActivePolicies(policies, uid, isoDate));
-      if (policy?.lateUntilMin != null && policy.lateUntilMin > 8 * 60 + 15) {
+      if (policy?.lateUntilMin != null && policy.lateUntilMin > normalPresentUntil) {
         lateMorningUids.add(uid);
       }
     }
@@ -1368,22 +1400,18 @@ type CheckInPayload = {
   policyChoice?: PolicyChoice;
 };
 
-// ອອກວຽກກ່ອນ 17:00 ຕ້ອງປ້ອນເຫດຜົນຢ່າງໜ້ອຍ 30 ຕົວອັກສອນ.
+// ອອກວຽກກ່ອນເວລາເລີກ (checkOutAt ຂອງກໍລະນີນັ້ນ ໃນ adminSettings/attendanceTimes) ຕ້ອງປ້ອນ
+// ເຫດຜົນຢ່າງໜ້ອຍ 30 ຕົວອັກສອນ.
 //
 // Enforced here, not in the browser, for the same reason check-in status is
 // (CLAUDE.md): the client can be edited or its clock changed. The dialog in
 // app/dashboard/attendance/page.tsx is a convenience; this is the rule.
-const EARLY_CHECKOUT_BEFORE_MINUTES = 17 * 60;
 const EARLY_CHECKOUT_REASON_MIN_CHARS = 30;
 
-// ແມ່ບ້ານ (roles/{rolesUid}.role.housekeeper) ເລີກວຽກ 16:30 ແທນ 17:00: ອອກ >= 16:30 ຄືອອກຕາມເວລາ,
-// < 16:30 ຕ້ອງມີເຫດຜົນ ແລະ ຖືກ mark earlyCheckOut (ນາທີນັບຈາກ 16:30).
+// ແມ່ບ້ານ (roles/{rolesUid}.role.housekeeper) ເລີກວຽກບໍ່ເກີນ 16:30: ອອກ >= ເວລານັ້ນຄືອອກຕາມເວລາ,
+// ກ່ອນນັ້ນຕ້ອງມີເຫດຜົນ ແລະ ຖືກ mark earlyCheckOut. ບໍ່ມີໃນໜ້າຕັ້ງຄ່າ admin.
 // ຕ້ອງກົງກັບ HOUSEKEEPER_CHECKOUT_CUTOFF_MINUTES ໃນ app/dashboard/attendance/page.tsx
 const HOUSEKEEPER_EARLY_CHECKOUT_BEFORE_MINUTES = 16 * 60 + 30;
-
-// ລາພັກຕອນບ່າຍ (ມື້ນັ້ນເຮັດວຽກແຕ່ເຊົ້າ) ເລີກວຽກ 12:30: ອອກ >= 12:30 ຄືອອກຕາມເວລາ.
-// ຕ້ອງກົງກັບ AFTERNOON_LEAVE_CHECKOUT_CUTOFF_MINUTES ໃນ app/dashboard/attendance/page.tsx
-const AFTERNOON_LEAVE_EARLY_CHECKOUT_BEFORE_MINUTES = 12 * 60 + 30;
 
 type CheckOutRoleFlags = { housekeeper: boolean; cLive: boolean };
 
@@ -1587,20 +1615,20 @@ export const recordCheckIn = onCall(
 
     // ນະໂຍບາຍພິເສດ — ເວລາ server ເທົ່ານັ້ນ. custom ໃນຊ່ວງເລືອກ ແຕ່ບໍ່ມີ policyChoice →
     // ປະຕິເສດ ໃຫ້ client ເປີດ popup ເລືອກແລ້ວສົ່ງໃໝ່ (ໂມງ client ອາດຕ່າງຈາກ server)
-    const specialPolicy = await getTodaySpecialPolicy(data.userUuid, isoDate);
+    const [specialPolicy, attendanceTimes] = await Promise.all([
+      getTodaySpecialPolicy(data.userUuid, isoDate),
+      getAttendanceTimes(),
+    ]);
     const clientChoice =
       data.policyChoice === "morning" || data.policyChoice === "evening"
         ? data.policyChoice
         : undefined;
     const checkInResult = resolveCheckIn(
       toMinuteOfDay(parseInt(hourStr, 10), parseInt(minuteStr, 10)),
-      dayLeaveStatus === "morning_leave"
-        ? "morningLeave"
-        : data.isOffsite
-          ? "offsite"
-          : "normal",
+      checkInBaseCase(dayLeaveStatus, data.isOffsite),
       specialPolicy,
       clientChoice,
+      attendanceTimes,
     );
     if (checkInResult.needsChoice) {
       throw new HttpsError(
@@ -1799,24 +1827,36 @@ export const recordCheckOut = onCall(
       .doc(attendanceId);
     const existingData = (await attendanceRef.get()).data();
 
-    // ອ່ານ role / ລາພັກ / ນະໂຍບາຍພິເສດ ສະເພາະເມື່ອກ່ອນ 17:00 — ຫຼັງນັ້ນທຸກຄົນອອກຕາມເວລາ
-    // (leaveFrom ຂອງນະໂຍບາຍກ່ອນ 17:00 ສະເໝີ ຈຶ່ງມີແຕ່ເລື່ອນເວລາເລີກໃຫ້ໄວຂຶ້ນ)
-    let cutoffMinutes = EARLY_CHECKOUT_BEFORE_MINUTES;
+    // ອ່ານ role / ລາພັກ / ນະໂຍບາຍພິເສດ ສະເພາະເມື່ອກ່ອນເວລາເລີກທີ່ຊ້າສຸດຂອງທຸກກໍລະນີ — ຫຼັງນັ້ນ
+    // ທຸກຄົນອອກຕາມເວລາ (leaveFrom ຂອງນະໂຍບາຍມີແຕ່ເລື່ອນເວລາເລີກໃຫ້ໄວຂຶ້ນ)
+    const attendanceTimes = await getAttendanceTimes();
+    const latestCheckOutAt = Math.max(
+      ...Object.values(attendanceTimes).map((row) => row.checkOutAt),
+    );
+    let cutoffMinutes = attendanceTimes.normal.checkOutAt;
     let isEarlyCheckOut = false;
-    if (checkOutMinuteOfDay < EARLY_CHECKOUT_BEFORE_MINUTES) {
+    if (checkOutMinuteOfDay < latestCheckOutAt) {
       const [roleFlags, afternoonLeave, specialPolicy] = await Promise.all([
         getCheckOutRoleFlags(data.userUuid),
         hasAfternoonLeaveOn(data.userUuid, isoDate),
         getTodaySpecialPolicy(data.userUuid, isoDate),
       ]);
+      // ເວລາເລີກຕາມກໍລະນີທີ່ບັນທຶກຕອນ check-in (morningLeaveDay / isOffsite)
+      const caseCheckOutAt = attendanceTimes[
+        existingData?.morningLeaveDay === true
+          ? "morningLeave"
+          : existingData?.isOffsite === true
+            ? "offsite"
+            : "normal"
+      ].checkOutAt;
       // CLive ອອກຕອນໃດກໍໄດ້ — ບໍ່ເຄີຍຖືວ່າອອກກ່ອນເວລາ (null = ບໍ່ມີເວລາເລີກ)
       const baseCutoff = roleFlags.cLive
         ? null
         : afternoonLeave
-          ? AFTERNOON_LEAVE_EARLY_CHECKOUT_BEFORE_MINUTES
+          ? attendanceTimes.afternoonLeave.checkOutAt
           : roleFlags.housekeeper
-            ? HOUSEKEEPER_EARLY_CHECKOUT_BEFORE_MINUTES
-            : EARLY_CHECKOUT_BEFORE_MINUTES;
+            ? Math.min(caseCheckOutAt, HOUSEKEEPER_EARLY_CHECKOUT_BEFORE_MINUTES)
+            : caseCheckOutAt;
       const storedChoice = existingData?.policyChoice;
       const cutoff = resolveCheckOutCutoff(
         baseCutoff,
@@ -2314,6 +2354,7 @@ type FormDoc = {
   status?: string;
   sections?: FormSection[];
   audienceKeys?: string[];
+  audienceExcludedUids?: string[];
   settings?: {
     allowEdit?: boolean;
     isQuiz?: boolean;
@@ -2321,10 +2362,12 @@ type FormDoc = {
     shuffleQuestions?: boolean;
     shuffleOptions?: boolean;
     draw?: unknown;
+    timeLimitMinutes?: number;
   };
   schedule?: FormSchedule;
   createdAt?: string;
   openedAt?: string;
+  closedAt?: string;
   notifiedAt?: string;
 };
 
@@ -2376,6 +2419,82 @@ const parseAnswerKey = (data: admin.firestore.DocumentData | undefined): AnswerK
   (data?.questions ?? {}) as AnswerKey;
 
 const formDraw = (form: FormDoc) => toDrawSettings(form.settings?.draw);
+
+// ຈັບເວລາຕອບ (ນາທີ, 0 = ບໍ່ຈັບ) — ເບິ່ງ attemptDeadline ໃນ ./forms.ts
+const formTimeLimit = (form: FormDoc) => toTimeLimitMinutes(form.settings?.timeLimitMinutes);
+
+// ເວລາທີ່ກົດ "ພ້ອມ" (startMyForm) — ເກັບຄັ້ງດຽວ, ພະນັກງານອ່ານ/ຂຽນເອງບໍ່ໄດ້ (rules catch-all)
+const attemptRef = (formRef: admin.firestore.DocumentReference, uid: string) =>
+  formRef.collection("attempts").doc(uid);
+
+const deadlineOf = (form: FormDoc, startedAt: string | undefined) =>
+  startedAt ? attemptDeadline(startedAt, formTimeLimit(form), form.schedule?.closeAt) : null;
+
+// ຮ່າງຄຳຕອບຂອງຟອມຈັບເວລາ — portal ຂຽນເອງທຸກຄັ້ງທີ່ຕອບ/ອອກຈາກແອັບ (rules: ເຈົ້າຂອງ, updatedAt = ເວລາ
+// server, attempt ຍັງບໍ່ສົ່ງ). cron syncFormSchedules ສົ່ງແທນຄົນທີ່ໝົດເວລາແລ້ວຍັງບໍ່ສົ່ງ
+const draftRef = (formRef: admin.firestore.DocumentReference, uid: string) =>
+  formRef.collection("drafts").doc(uid);
+
+// ກວດ + ຄິດຄະແນນ + ສ້າງ doc ຄຳຕອບ — submitFormResponse ແລະ cron (ສົ່ງຮ່າງແທນ) ໃຊ້ຮ່ວມກັນ.
+// mode: strict = ກວດຄົບ, partial = ບໍ່ບັງຄັບຂໍ້ required (ໝົດເວລາ), salvage = ຮ່າງ (ຕັດຂໍ້ຜິດຮູບແບບອອກ)
+function buildResponse(params: {
+  formId: string;
+  form: FormDoc;
+  caller: FormCaller;
+  existing: admin.firestore.DocumentData | undefined;
+  assignedIds: string[] | undefined;
+  rawAnswers: unknown;
+  answerKey: AnswerKey;
+  startedAt: string | undefined;
+  mode: "strict" | "partial" | "salvage";
+}) {
+  const { formId, form, caller, existing, assignedIds, rawAnswers, startedAt, mode } = params;
+  const sections = assignedIds ? filterSections(formSections(form), assignedIds) : formSections(form);
+
+  // ຂ້າມ section ຕາມຄຳຕອບ: ຄິດເສັ້ນທາງຄືນເອງຈາກຄຳຕອບ (ບໍ່ເຊື່ອ client) ແລ້ວກວດ/ຄິດຄະແນນສະເພາະ
+  // section ທີ່ຜ່ານ — ຄຳຕອບຂອງ section ທີ່ບໍ່ໄດ້ຜ່ານຖືກຕັດອອກ. ສຸ່ມແຍກແຕ່ລະຄົນ ບໍ່ໃຊ້ການຂ້າມ
+  const raw =
+    rawAnswers && typeof rawAnswers === "object" && !Array.isArray(rawAnswers) ? (rawAnswers as FormAnswers) : {};
+  const visited = assignedIds ? null : visitedSections(sections, raw);
+  const scope = visited ?? sections;
+
+  const answers =
+    mode === "salvage" ? salvageAnswers(scope, raw) : validateAnswers(scope, rawAnswers, { partial: mode === "partial" });
+  const score = isQuizForm(form) ? gradeAnswers(scope, answers, params.answerKey) : null;
+  const now = new Date().toISOString();
+  const emp = caller.data;
+  const submittedAt = (existing?.submittedAt as string | undefined) ?? now;
+
+  return {
+    score,
+    submittedAt,
+    updatedAt: now,
+    doc: {
+      formId,
+      uid: caller.uid,
+      answers,
+      // snapshot ຕອນຕອບ — ໜ້າຜົນ (admin) ໃຊ້ສະແດງຊື່/ພະແນກ ໂດຍບໍ່ຕ້ອງ join
+      employee: {
+        name: `${emp.firstNameLo ?? ""} ${emp.lastNameLo ?? ""}`.trim(),
+        jobTitle: emp.jobTitleLo || emp.jobTitle || "",
+        departmentUuid: caller.departmentUuid ?? "",
+        departmentTitle: emp.department?.title ?? "",
+        workLocationUuid: caller.workLocationUuid ?? "",
+        workLocationName: emp.workLocation?.nameLo ?? "",
+        employmentStatus: caller.employmentStatus ?? "",
+      },
+      // ຄະແນນຕອນສົ່ງ (ສະແດງໃຫ້ພະນັກງານ) — admin ຄິດຄືນຈາກເສີຍປັດຈຸບັນໃນໜ້າຜົນ
+      ...(score ? { score } : {}),
+      ...(assignedIds ? { assignedQuestionIds: assignedIds } : {}),
+      ...(visited ? { visitedSectionIds: visited.map((section) => section.id) } : {}),
+      // ຈັບເວລາ — ໜ້າຜົນ (admin) ສະແດງເວລາທີ່ໃຊ້
+      ...(startedAt ? { startedAt } : {}),
+      submittedAt,
+      updatedAt: now,
+      editCount: existing ? ((existing.editCount as number | undefined) ?? 0) + 1 : 0,
+    },
+  };
+}
 
 // ຊຸດຄຳຖາມທີ່ສຸ່ມໃຫ້ແຕ່ລະຄົນ (ສຸ່ມແຍກແຕ່ລະຄົນ) — ພະນັກງານອ່ານ/ຂຽນເອງບໍ່ໄດ້ (rules catch-all)
 const assignmentRef = (formRef: admin.firestore.DocumentReference, uid: string) =>
@@ -2440,7 +2559,10 @@ export const listMyForms = onCall(
       .collection("forms")
       .where("audienceKeys", "array-contains-any", employeeAudienceKeys(caller))
       .get();
-    const published = snap.docs.filter((d) => isVisibleForm(d.data() as FormDoc));
+    const published = snap.docs.filter((d) => {
+      const form = d.data() as FormDoc;
+      return isVisibleForm(form) && isInAudience(form.audienceKeys, caller, form.audienceExcludedUids);
+    });
     const responses = published.length
       ? await db.getAll(...published.map((d) => d.ref.collection("responses").doc(caller.uid)))
       : [];
@@ -2462,6 +2584,7 @@ export const listMyForms = onCall(
             : formSections(form).reduce((n, s) => n + (s.questions?.length ?? 0), 0),
           allowEdit: canEditResponse(form),
           isQuiz: isQuizForm(form),
+          timeLimitMinutes: formTimeLimit(form),
           openedAt: form.openedAt ?? form.schedule?.openAt ?? form.createdAt ?? "",
           submittedAt: (response?.submittedAt as string | undefined) ?? null,
           score:
@@ -2487,15 +2610,17 @@ export const getMyForm = onCall(
     const formId = requireFormId((request.data as { formId?: unknown })?.formId);
     const caller = await loadFormCaller(request.auth.uid);
     const formRef = admin.firestore().collection("forms").doc(formId);
-    const [formSnap, responseSnap] = await Promise.all([
+    const [formSnap, responseSnap, attemptSnap, draftSnap] = await Promise.all([
       formRef.get(),
       formRef.collection("responses").doc(caller.uid).get(),
+      attemptRef(formRef, caller.uid).get(),
+      draftRef(formRef, caller.uid).get(),
     ]);
     const form = formSnap.data() as FormDoc | undefined;
     const response = responseSnap.data();
 
     // ຍ້າຍພະແນກ/ສາຂາ ຫຼັງຕອບແລ້ວ ຍັງເບິ່ງຄຳຕອບຂອງຕົນໄດ້
-    if (!form || !isVisibleForm(form) || (!isInAudience(form.audienceKeys, caller) && !response)) {
+    if (!form || !isVisibleForm(form) || (!isInAudience(form.audienceKeys, caller, form.audienceExcludedUids) && !response)) {
       throw new HttpsError("not-found", "ບໍ່ພົບແບບຟອມ ຫຼື ທ່ານບໍ່ມີສິດຕອບແບບຟອມນີ້");
     }
     const state = formState(form);
@@ -2503,12 +2628,20 @@ export const getMyForm = onCall(
       throw new HttpsError("failed-precondition", "ແບບຟອມນີ້ຍັງບໍ່ເປີດຮັບຄຳຕອບ");
     }
 
+    // ຈັບເວລາ ແລະ ຍັງບໍ່ໄດ້ຕອບ: ກ່ອນກົດ "ພ້ອມ" ຫຼື ໝົດເວລາແລ້ວ → ບໍ່ສົ່ງຄຳຖາມ (ກັນເບິ່ງກ່ອນເລີ່ມນັບ)
+    const timeLimit = formTimeLimit(form);
+    const startedAt = attemptSnap.data()?.startedAt as string | undefined;
+    const deadline = timeLimit ? deadlineOf(form, startedAt) : null;
+    const nowMs = Date.now();
+    const expired = deadline !== null && nowMs >= deadline;
+    const hideQuestions = timeLimit > 0 && !response && (!startedAt || expired);
+
     // ສຸ່ມແຍກແຕ່ລະຄົນ: ສະແດງສະເພາະຊຸດຂອງຄົນນີ້ (ຕອບແລ້ວ → ຊຸດທີ່ເກັບໄວ້ໃນຄຳຕອບ)
-    let sections = formSections(form);
-    if (formDraw(form).enabled) {
+    let sections = hideQuestions ? [] : formSections(form);
+    if (!hideQuestions && formDraw(form).enabled) {
       const ids =
         (response?.assignedQuestionIds as string[] | undefined) ??
-        (state === "open" && isInAudience(form.audienceKeys, caller)
+        (state === "open" && isInAudience(form.audienceKeys, caller, form.audienceExcludedUids)
           ? await getOrCreateAssignment(formRef, form, caller.uid)
           : []);
       // section ທີ່ບໍ່ມີຂໍ້ໃດຖືກສຸ່ມໃຫ້ຄົນນີ້ — ບໍ່ສະແດງ (ບໍ່ໃຫ້ມີໜ້າເປົ່າ)
@@ -2538,6 +2671,24 @@ export const getMyForm = onCall(
         isQuiz,
         showResult,
         questionPoints,
+        // null = ບໍ່ຈັບເວລາ. serverNow ໃຫ້ portal ແກ້ໂມງເຄື່ອງທີ່ບໍ່ກົງ
+        timer: timeLimit
+          ? {
+              limitMinutes: timeLimit,
+              startedAt: startedAt ?? null,
+              deadline: deadline !== null ? new Date(deadline).toISOString() : null,
+              expired,
+              serverNow: new Date(nowMs).toISOString(),
+            }
+          : null,
+        // ຮ່າງທີ່ບັນທຶກໄວ້ (ຟອມຈັບເວລາ, ຍັງບໍ່ສົ່ງ) — ເປີດໃໝ່/ປ່ຽນເຄື່ອງ ຕອບຕໍ່ໄດ້
+        draft:
+          startedAt && !response && !expired && draftSnap.exists
+            ? {
+                answers: draftSnap.data()?.answers ?? {},
+                updatedAt: (draftSnap.data()?.updatedAt as admin.firestore.Timestamp | undefined)?.toDate().toISOString() ?? null,
+              }
+            : null,
         // ລຳດັບສຸ່ມຕໍ່ຄົນ (ຄົງທີ່) — ໜ້າຜົນຂອງ admin ໃຊ້ລຳດັບເດີມ
         sections: shuffleSectionsFor(sections, `${formSnap.id}:${caller.uid}`, {
           questions: form.settings?.shuffleQuestions === true,
@@ -2566,13 +2717,58 @@ export const getMyForm = onCall(
   },
 );
 
+// ກົດ "ພ້ອມ" ຂອງຟອມທີ່ຈັບເວລາ — ບັນທຶກ startedAt ຄັ້ງດຽວ (ກົດຊ້ຳ / ເປີດຫຼາຍເຄື່ອງ ໄດ້ເວລາເດີມ).
+// ຫຼັງຈາກນີ້ getMyForm ຈຶ່ງສົ່ງຄຳຖາມໃຫ້
+export const startMyForm = onCall(
+  { region: "asia-southeast1", cors: callableCorsOrigins, invoker: "public" },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Must be signed in");
+    }
+    const formId = requireFormId((request.data as { formId?: unknown })?.formId);
+    const caller = await loadFormCaller(request.auth.uid);
+    const db = admin.firestore();
+    const formRef = db.collection("forms").doc(formId);
+    const ref = attemptRef(formRef, caller.uid);
+
+    const startedAt = await db.runTransaction(async (tx) => {
+      const [formSnap, responseSnap, attemptSnap] = await Promise.all([
+        tx.get(formRef),
+        tx.get(formRef.collection("responses").doc(caller.uid)),
+        tx.get(ref),
+      ]);
+      const form = formSnap.data() as FormDoc | undefined;
+      if (!form || !isVisibleForm(form) || !isInAudience(form.audienceKeys, caller, form.audienceExcludedUids)) {
+        throw new HttpsError("not-found", "ບໍ່ພົບແບບຟອມ ຫຼື ທ່ານບໍ່ມີສິດຕອບແບບຟອມນີ້");
+      }
+      const existing = attemptSnap.data()?.startedAt as string | undefined;
+      if (existing) return existing;
+      if (formState(form) !== "open") {
+        throw new HttpsError("failed-precondition", "ແບບຟອມນີ້ບໍ່ໄດ້ເປີດຮັບຄຳຕອບ");
+      }
+      if (!formTimeLimit(form)) {
+        throw new HttpsError("failed-precondition", "ແບບຟອມນີ້ບໍ່ໄດ້ຈັບເວລາ");
+      }
+      if (responseSnap.exists) {
+        throw new HttpsError("already-exists", "ທ່ານໄດ້ຕອບແບບຟອມນີ້ແລ້ວ");
+      }
+      const now = new Date().toISOString();
+      // finalized: ສົ່ງແລ້ວ (ເອງ ຫຼື cron ສົ່ງແທນ) — cron ຫາສະເພາະອັນທີ່ຍັງ false
+      tx.set(ref, { uid: caller.uid, startedAt: now, finalized: false });
+      return now;
+    });
+
+    return { startedAt };
+  },
+);
+
 export const submitFormResponse = onCall(
   { region: "asia-southeast1", cors: callableCorsOrigins, invoker: "public" },
   async (request) => {
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "Must be signed in");
     }
-    const payload = request.data as { formId?: unknown; answers?: unknown };
+    const payload = request.data as { formId?: unknown; answers?: unknown; auto?: unknown };
     const formId = requireFormId(payload?.formId);
     const caller = await loadFormCaller(request.auth.uid);
     const db = admin.firestore();
@@ -2581,27 +2777,48 @@ export const submitFormResponse = onCall(
     const responseRef = formRef.collection("responses").doc(caller.uid);
 
     return db.runTransaction(async (tx) => {
-      const [formSnap, responseSnap, keySnap, assignmentSnap] = await Promise.all([
+      const [formSnap, responseSnap, keySnap, assignmentSnap, attemptSnap] = await Promise.all([
         tx.get(formRef),
         tx.get(responseRef),
         tx.get(answerKeyRef(formRef)),
         tx.get(assignmentRef(formRef, caller.uid)),
+        tx.get(attemptRef(formRef, caller.uid)),
       ]);
       const form = formSnap.data() as FormDoc | undefined;
-      if (!form || !isVisibleForm(form) || !isInAudience(form.audienceKeys, caller)) {
+      if (!form || !isVisibleForm(form) || !isInAudience(form.audienceKeys, caller, form.audienceExcludedUids)) {
         throw new HttpsError("not-found", "ບໍ່ພົບແບບຟອມ ຫຼື ທ່ານບໍ່ມີສິດຕອບແບບຟອມນີ້");
       }
+      const existing = responseSnap.data();
+      const nowMs = Date.now();
+      const timeLimit = formTimeLimit(form);
+      const startedAt = attemptSnap.data()?.startedAt as string | undefined;
+      const deadline = timeLimit ? deadlineOf(form, startedAt) : null;
+
+      // ໝົດເວລາ = deadline (ຈັບເວລາ) ຫຼື ເວລາປິດຟອມ (closeAt). portal ສົ່ງອັດຕະໂນມັດຕອນໝົດເວລາ —
+      // ມາຮອດຫຼັງຟອມປິດໜ້ອຍໜຶ່ງ ຍັງຮັບ (admin ກົດປິດເອງ = ບໍ່ຮັບ)
+      const closeMs = form.schedule?.closeAt ? new Date(form.schedule.closeAt).getTime() : NaN;
+      const endMs = deadline ?? (Number.isNaN(closeMs) ? null : closeMs);
       const state = formState(form);
-      if (state !== "open") {
+      const inGrace =
+        endMs !== null && state === "closed" && form.status !== "closed" && nowMs <= endMs + TIMER_GRACE_MS;
+      if (state !== "open" && !inGrace) {
         throw new HttpsError(
           "failed-precondition",
           state === "scheduled" ? "ແບບຟອມນີ້ຍັງບໍ່ເປີດຮັບຄຳຕອບ" : "ແບບຟອມນີ້ປິດຮັບຄຳຕອບແລ້ວ",
         );
       }
-      const existing = responseSnap.data();
       if (existing && !canEditResponse(form)) {
         throw new HttpsError("already-exists", "ທ່ານໄດ້ຕອບແບບຟອມນີ້ແລ້ວ");
       }
+      // ຕອບກ່ອນເປີດຈັບເວລາ (ບໍ່ມີ attempt) ແລ້ວແກ້ໄຂ — ບໍ່ຈັບເວລາການແກ້ໄຂ
+      if (timeLimit && !startedAt && !existing) {
+        throw new HttpsError("failed-precondition", "ກະລຸນາກົດ \"ເລີ່ມຕອບ\" ກ່ອນ");
+      }
+      if (deadline !== null && nowMs > deadline + TIMER_GRACE_MS) {
+        throw new HttpsError("failed-precondition", "ໝົດເວລາຕອບແລ້ວ");
+      }
+      // ໃກ້ໝົດ/ໝົດເວລາ: ສົ່ງອັດຕະໂນມັດໄດ້ ເຖິງຂໍ້ບັງຄັບຍັງບໍ່ໄດ້ຕອບ
+      const partial = endMs !== null && nowMs >= endMs - TIMER_PARTIAL_WINDOW_MS;
 
       // ສຸ່ມແຍກແຕ່ລະຄົນ: ກວດ ແລະ ຄິດຄະແນນສະເພາະຊຸດທີ່ໄດ້ຮັບ (ສ້າງຕອນ getMyForm)
       const draw = formDraw(form);
@@ -2611,49 +2828,28 @@ export const submitFormResponse = onCall(
       if (draw.enabled && !assignedIds) {
         throw new HttpsError("failed-precondition", "ກະລຸນາເປີດແບບຟອມໃໝ່ອີກຄັ້ງ");
       }
-      const sections = assignedIds ? filterSections(formSections(form), assignedIds) : formSections(form);
 
-      // ຂ້າມ section ຕາມຄຳຕອບ: ຄິດເສັ້ນທາງຄືນເອງຈາກຄຳຕອບ (ບໍ່ເຊື່ອ client) ແລ້ວກວດ/ຄິດຄະແນນສະເພາະ
-      // section ທີ່ຜ່ານ — ຄຳຕອບຂອງ section ທີ່ບໍ່ໄດ້ຜ່ານຖືກຕັດອອກ. ສຸ່ມແຍກແຕ່ລະຄົນ ບໍ່ໃຊ້ການຂ້າມ
-      const rawAnswers =
-        payload.answers && typeof payload.answers === "object" && !Array.isArray(payload.answers)
-          ? (payload.answers as FormAnswers)
-          : {};
-      const visited = draw.enabled ? null : visitedSections(sections, rawAnswers);
-      const scope = visited ?? sections;
-
-      const answers = validateAnswers(scope, payload.answers);
-      const score = isQuizForm(form)
-        ? gradeAnswers(scope, answers, parseAnswerKey(keySnap.data()))
-        : null;
-      const now = new Date().toISOString();
-      const emp = caller.data;
-      const submittedAt = (existing?.submittedAt as string | undefined) ?? now;
-
-      tx.set(responseRef, {
+      const { score, submittedAt, updatedAt: now, doc } = buildResponse({
         formId,
-        uid: caller.uid,
-        answers,
-        // snapshot ຕອນຕອບ — ໜ້າຜົນ (admin) ໃຊ້ສະແດງຊື່/ພະແນກ ໂດຍບໍ່ຕ້ອງ join
-        employee: {
-          name: `${emp.firstNameLo ?? ""} ${emp.lastNameLo ?? ""}`.trim(),
-          jobTitle: emp.jobTitleLo || emp.jobTitle || "",
-          departmentUuid: caller.departmentUuid ?? "",
-          departmentTitle: emp.department?.title ?? "",
-          workLocationUuid: caller.workLocationUuid ?? "",
-          workLocationName: emp.workLocation?.nameLo ?? "",
-          employmentStatus: caller.employmentStatus ?? "",
-        },
-        // ຄະແນນຕອນສົ່ງ (ສະແດງໃຫ້ພະນັກງານ) — admin ຄິດຄືນຈາກເສີຍປັດຈຸບັນໃນໜ້າຜົນ
-        ...(score ? { score } : {}),
-        ...(assignedIds ? { assignedQuestionIds: assignedIds } : {}),
-        ...(visited ? { visitedSectionIds: visited.map((section) => section.id) } : {}),
-        submittedAt,
-        updatedAt: now,
-        editCount: existing ? ((existing.editCount as number | undefined) ?? 0) + 1 : 0,
+        form,
+        caller,
+        existing,
+        assignedIds,
+        rawAnswers: payload.answers,
+        answerKey: parseAnswerKey(keySnap.data()),
+        startedAt,
+        mode: partial ? "partial" : "strict",
       });
+
+      // portal ສົ່ງເອງຕອນໝົດເວລາ (ຜູ້ໃຊ້ບໍ່ໄດ້ກົດ) → ໝາຍ "ລະບົບສົ່ງແທນ" — ເຊື່ອສະເພາະຕອນໃກ້/ໝົດເວລາແທ້
+      tx.set(responseRef, payload.auto === true && partial ? { ...doc, autoSubmitted: true } : doc);
       if (!existing) {
         tx.update(formRef, { responseCount: admin.firestore.FieldValue.increment(1) });
+      }
+      // ຈັບເວລາ: ສົ່ງແລ້ວ → cron ບໍ່ສົ່ງແທນ, ຮ່າງບໍ່ຕ້ອງໃຊ້ອີກ
+      if (attemptSnap.exists && attemptSnap.data()?.finalized !== true) {
+        tx.update(attemptSnap.ref, { finalized: true });
+        tx.delete(draftRef(formRef, caller.uid));
       }
 
       const showResult = formShowResult(form);
@@ -2695,7 +2891,7 @@ export const notifyFormOpened = onDocumentWritten(
         workLocationUuid: emp.workLocation?.uuid || undefined,
         departmentUuid: emp.department?.uuid || undefined,
         employmentStatus: emp.employmentStatus || undefined,
-      });
+      }, after.audienceExcludedUids);
     });
     if (audienceDocs.length === 0) return;
 
@@ -2737,5 +2933,95 @@ export const syncFormSchedules = onSchedule(
       changed += 1;
     }
     if (changed) console.log(`[form-schedule]: updated ${changed}/${snap.size} forms`);
+
+    await autoSubmitExpiredAttempts(now);
   },
 );
+
+// ຟອມຈັບເວລາ: ຄົນທີ່ໝົດເວລາ (+ ເວລາຜ່ອນຜັນ) ແລ້ວຍັງບໍ່ສົ່ງ (ປິດແອັບ, ແບັດໝົດ, ເນັດຫຼຸດ) → ສົ່ງຮ່າງແທນ.
+// ໃຊ້ສະເພາະຮ່າງທີ່ server ຮັບກ່ອນໝົດເວລາ (updatedAt ເປັນເວລາ server) — ຂຽນຫຼັງຈາກນັ້ນ = ບໍ່ນັບ.
+// ບໍ່ມີຮ່າງ → ບັນທຶກຄຳຕອບເປົ່າ (ໜ້າຜົນເຫັນວ່າເລີ່ມແລ້ວ ແຕ່ບໍ່ໄດ້ຕອບ)
+async function autoSubmitExpiredAttempts(now: Date) {
+  const db = admin.firestore();
+  const forms = await db.collection("forms").where("settings.timeLimitMinutes", ">", 0).get();
+  let submitted = 0;
+  for (const formDoc of forms.docs) {
+    const form = formDoc.data() as FormDoc;
+    if (!["open", "scheduled", "closed"].includes(form.status ?? "")) continue;
+    // ປິດແລ້ວດົນກວ່າເວລາຕອບ + 1 ຊົ່ວໂມງ — ບໍ່ມີໃຜເຫຼືອເວລາແລ້ວ, ບໍ່ຕ້ອງ query
+    const closedMs = form.status === "closed" && form.closedAt ? new Date(form.closedAt).getTime() : NaN;
+    if (now.getTime() - closedMs > (formTimeLimit(form) + 60) * 60 * 1000) continue;
+    const pending = await formDoc.ref.collection("attempts").where("finalized", "==", false).get();
+    for (const attempt of pending.docs) {
+      const deadline = deadlineOf(form, attempt.data().startedAt as string | undefined);
+      if (deadline === null || now.getTime() < deadline + TIMER_GRACE_MS) continue;
+      try {
+        if (await submitDraftFor(formDoc.ref, attempt.id)) submitted += 1;
+      } catch (err) {
+        console.error(`[form-auto-submit]: ${formDoc.id}/${attempt.id} failed`, err);
+      }
+    }
+  }
+  if (submitted) console.log(`[form-auto-submit]: submitted ${submitted} drafts`);
+}
+
+async function submitDraftFor(formRef: admin.firestore.DocumentReference, uid: string): Promise<boolean> {
+  const db = admin.firestore();
+  const aRef = attemptRef(formRef, uid);
+  let caller: FormCaller;
+  try {
+    caller = await loadFormCaller(uid);
+  } catch {
+    // ລາອອກ/ລຶບແລ້ວ — ບໍ່ສົ່ງແທນ, ບໍ່ຕ້ອງກວດອີກ
+    await aRef.update({ finalized: true, skipped: "employee-inactive" });
+    return false;
+  }
+
+  return db.runTransaction(async (tx) => {
+    const [formSnap, responseSnap, attemptSnap, draftSnap, keySnap, assignmentSnap] = await Promise.all([
+      tx.get(formRef),
+      tx.get(formRef.collection("responses").doc(uid)),
+      tx.get(aRef),
+      tx.get(draftRef(formRef, uid)),
+      tx.get(answerKeyRef(formRef)),
+      tx.get(assignmentRef(formRef, uid)),
+    ]);
+    const form = formSnap.data() as FormDoc | undefined;
+    const attempt = attemptSnap.data();
+    if (!form || !attempt || attempt.finalized === true) return false;
+    if (responseSnap.exists) {
+      tx.update(aRef, { finalized: true });
+      tx.delete(draftRef(formRef, uid));
+      return false;
+    }
+
+    const startedAt = attempt.startedAt as string;
+    const deadline = deadlineOf(form, startedAt) ?? 0;
+    // admin ກົດປິດຟອມເອງກ່ອນໝົດເວລາ → ນັບສະເພາະຮ່າງກ່ອນປິດ
+    const closedMs = form.status === "closed" && form.closedAt ? new Date(form.closedAt).getTime() : NaN;
+    const cutoff = Number.isNaN(closedMs) ? deadline : Math.min(deadline, closedMs);
+    const draft = draftSnap.data();
+    const draftAt = (draft?.updatedAt as admin.firestore.Timestamp | undefined)?.toMillis() ?? Infinity;
+    const rawAnswers = draft && draftAt <= cutoff + TIMER_GRACE_MS ? draft.answers : {};
+
+    const assignedIds = formDraw(form).enabled
+      ? ((assignmentSnap.data()?.questionIds as string[] | undefined) ?? [])
+      : undefined;
+    const { doc } = buildResponse({
+      formId: formRef.id,
+      form,
+      caller,
+      existing: undefined,
+      assignedIds,
+      rawAnswers,
+      answerKey: parseAnswerKey(keySnap.data()),
+      startedAt,
+      mode: "salvage",
+    });
+    tx.set(responseSnap.ref, { ...doc, autoSubmitted: true });
+    tx.update(formRef, { responseCount: admin.firestore.FieldValue.increment(1) });
+    tx.update(aRef, { finalized: true });
+    tx.delete(draftRef(formRef, uid));
+    return true;
+  });
+}

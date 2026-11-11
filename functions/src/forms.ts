@@ -6,7 +6,8 @@
 //   "all"            — ທົ່ວລະບົບ
 //   "g:{b}:{d}:{s}"  — ສາຂາ ∩ ພະແນກ ∩ ສະຖານະພະນັກງານ ("*" = ບໍ່ກອງ)
 //   "emp:{uid}"      — ລາຍບຸກຄົນ
-// ພະນັກງານມີສິດຕອບ ຖ້າ key ຂອງຕົນ (employeeAudienceKeys, ຄິດຈາກຂໍ້ມູນປັດຈຸບັນ) ກົງກັບ key ໃດໜຶ່ງ.
+// ພະນັກງານມີສິດຕອບ ຖ້າ key ຂອງຕົນ (employeeAudienceKeys, ຄິດຈາກຂໍ້ມູນປັດຈຸບັນ) ກົງກັບ key ໃດໜຶ່ງ
+// ແລະ ບໍ່ຢູ່ໃນ form.audienceExcludedUids (admin ຕັດອອກ — query ບໍ່ໄດ້, ກອງຫຼັງ query).
 
 import { HttpsError } from "firebase-functions/v2/https";
 
@@ -81,6 +82,31 @@ export function effectiveFormStatus(
   return "open";
 }
 
+// ---------- ຈັບເວລາຕອບ ----------
+// settings.timeLimitMinutes > 0 → ພະນັກງານກົດ "ພ້ອມ" (startMyForm) ກ່ອນຈຶ່ງເຫັນຄຳຖາມ; startedAt ເກັບຄັ້ງດຽວ
+// (forms/{id}/attempts/{uid}) — ອອກແລ້ວເຂົ້າໃໝ່ ເວລາຍັງນັບຕໍ່. ໝົດເວລາ = ຄົບເວລາຕອບ ຫຼື ຟອມປິດ ແລ້ວແຕ່ອັນໃດກ່ອນ
+// (ຟອມປິດ 17:00, ເລີ່ມ 16:50 → ໄດ້ 10 ນາທີ). ໝົດເວລາ (ລວມທັງຟອມທີ່ບໍ່ຈັບເວລາ ຕອນຮອດ closeAt) portal ສົ່ງ
+// ຄຳຕອບທີ່ຄ້າງໃຫ້ອັດຕະໂນມັດ (ຂໍ້ບັງຄັບທີ່ບໍ່ໄດ້ຕອບ ຍົກເວັ້ນ).
+// admin ມີສຳເນົາ parse (services/forms.ts) — ແກ້ໃຫ້ກົງກັນ.
+
+export const MAX_TIME_LIMIT_MINUTES = 24 * 60;
+// ຮັບຄຳຕອບຫຼັງໝົດເວລາໄດ້ອີກໜ້ອຍໜຶ່ງ — ເຄືອຂ່າຍຊ້າ ຕອນສົ່ງອັດຕະໂນມັດ
+export const TIMER_GRACE_MS = 60 * 1000;
+// ສົ່ງບໍ່ຄົບຂໍ້ບັງຄັບໄດ້ ເມື່ອເຫຼືອເວລາບໍ່ເກີນນີ້ (ໂມງເຄື່ອງຜູ້ໃຊ້ອາດໄວກວ່າ server ເລັກນ້ອຍ)
+export const TIMER_PARTIAL_WINDOW_MS = 15 * 1000;
+
+export function toTimeLimitMinutes(raw: unknown): number {
+  const n = Math.floor(Number(raw));
+  return n > 0 ? Math.min(n, MAX_TIME_LIMIT_MINUTES) : 0;
+}
+
+// ເວລາໝົດ (ms) ຂອງຄົນທີ່ເລີ່ມ startedAt — ບໍ່ເກີນເວລາປິດຟອມ
+export function attemptDeadline(startedAt: string, limitMinutes: number, closeAt?: string | null): number {
+  const byLimit = new Date(startedAt).getTime() + limitMinutes * 60 * 1000;
+  const close = closeAt ? new Date(closeAt).getTime() : NaN;
+  return Number.isNaN(close) ? byLimit : Math.min(byLimit, close);
+}
+
 export const SHORT_TEXT_MAX = 500;
 export const LONG_TEXT_MAX = 5000;
 export const DEFAULT_RATING_MAX = 5;
@@ -99,8 +125,9 @@ export function employeeAudienceKeys(emp: AudienceEmployee): string[] {
   return keys;
 }
 
-export function isInAudience(formKeys: unknown, emp: AudienceEmployee): boolean {
+export function isInAudience(formKeys: unknown, emp: AudienceEmployee, excludedUids?: unknown): boolean {
   if (!Array.isArray(formKeys)) return false;
+  if (Array.isArray(excludedUids) && excludedUids.includes(emp.uid)) return false;
   const mine = new Set(employeeAudienceKeys(emp));
   return formKeys.some((k) => typeof k === "string" && mine.has(k));
 }
@@ -315,8 +342,13 @@ export function visitedSections(sections: FormSection[], answers: FormAnswers): 
   return visited;
 }
 
-// ຄືນຄຳຕອບທີ່ສະອາດແລ້ວ (ຕັດ id ທີ່ບໍ່ມີໃນຟອມ ແລະ ຄຳຕອບຫວ່າງອອກ) ຫຼື throw invalid-argument
-export function validateAnswers(sections: FormSection[], raw: unknown): FormAnswers {
+// ຄືນຄຳຕອບທີ່ສະອາດແລ້ວ (ຕັດ id ທີ່ບໍ່ມີໃນຟອມ ແລະ ຄຳຕອບຫວ່າງອອກ) ຫຼື throw invalid-argument.
+// partial: ໝົດເວລາຕອບ (ຈັບເວລາ) — ບໍ່ບັງຄັບຂໍ້ required ແຕ່ຍັງກວດຮູບແບບຄຳຕອບ
+export function validateAnswers(
+  sections: FormSection[],
+  raw: unknown,
+  options: { partial?: boolean } = {},
+): FormAnswers {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     throw new HttpsError("invalid-argument", "ຮູບແບບຄຳຕອບບໍ່ຖືກຕ້ອງ");
   }
@@ -365,11 +397,29 @@ export function validateAnswers(sections: FormSection[], raw: unknown): FormAnsw
     }
 
     if (clean === undefined) {
-      if (q.required) invalid(q, "ກະລຸນາຕອບຄຳຖາມນີ້");
+      if (q.required && !options.partial) invalid(q, "ກະລຸນາຕອບຄຳຖາມນີ້");
       continue;
     }
     result[q.id] = clean;
   }
 
+  return result;
+}
+
+// ຮ່າງຄຳຕອບທີ່ portal ຂຽນເອງ (drafts/{uid}) — ບໍ່ເຊື່ອຮູບແບບ: ກວດເທື່ອລະຂໍ້, ຂໍ້ທີ່ຜິດຮູບແບບຖືກຕັດອອກ
+// ແທນທີ່ຈະປະຕິເສດທັງຊຸດ (ຂໍ້ບັງຄັບທີ່ບໍ່ໄດ້ຕອບ ບໍ່ບັງຄັບ). ໃຊ້ຕອນ cron ສົ່ງແທນຄົນທີ່ໝົດເວລາ
+export function salvageAnswers(sections: FormSection[], raw: unknown): FormAnswers {
+  const input = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const result: FormAnswers = {};
+  for (const q of questionsOf(sections)) {
+    try {
+      Object.assign(
+        result,
+        validateAnswers([{ id: "_", title: "", questions: [q] }], { [q.id]: input[q.id] }, { partial: true }),
+      );
+    } catch {
+      // ຂໍ້ນີ້ຮູບແບບຜິດ — ຂ້າມ
+    }
+  }
   return result;
 }

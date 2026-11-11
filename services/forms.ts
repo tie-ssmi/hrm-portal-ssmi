@@ -2,8 +2,9 @@
 // forms ໂດຍກົງ — ທຸກຢ່າງຜ່ານ callable listMyForms / getMyForm / submitFormResponse
 // (functions/src/index.ts), ເຊິ່ງກວດສິດຕອບຈາກຂໍ້ມູນພະນັກງານປັດຈຸບັນ ແລະ ກວດຄຳຕອບອີກຮອບ.
 
+import { doc, serverTimestamp, setDoc } from 'firebase/firestore'
 import { getFunctions, httpsCallable } from 'firebase/functions'
-import app from '@/lib/firebase'
+import app, { db } from '@/lib/firebase'
 
 let _fns: ReturnType<typeof getFunctions> | null = null
 function fns() {
@@ -59,9 +60,22 @@ export type MyFormSummary = {
   questionCount: number
   allowEdit: boolean
   isQuiz: boolean
+  // ຈັບເວລາຕອບ (ນາທີ), 0 = ບໍ່ຈັບ
+  timeLimitMinutes: number
   openedAt: string
   submittedAt: string | null
   score: QuizScore | null
+}
+
+// ຈັບເວລາຕອບ — startedAt null = ຍັງບໍ່ກົດ "ເລີ່ມຕອບ" (server ຍັງບໍ່ສົ່ງຄຳຖາມ).
+// deadline = ເລີ່ມ + ເວລາຕອບ ແຕ່ບໍ່ເກີນເວລາປິດຟອມ. clockOffsetMs = ໂມງ server − ໂມງເຄື່ອງ (ຄິດຕອນໄດ້ຮັບ)
+export type FormTimer = {
+  limitMinutes: number
+  startedAt: string | null
+  deadline: string | null
+  expired: boolean
+  serverNow: string
+  clockOffsetMs: number
 }
 
 export type MyForm = {
@@ -77,6 +91,9 @@ export type MyForm = {
     showResult: ShowResult
     // ຄະແນນຕໍ່ຂໍ້ (ສະເພາະຂໍ້ທີ່ນັບຄະແນນ)
     questionPoints: Record<string, number>
+    timer: FormTimer | null
+    // ຮ່າງທີ່ບັນທຶກໄວ້ຢູ່ server (ຟອມຈັບເວລາ, ເລີ່ມແລ້ວ ຍັງບໍ່ສົ່ງ)
+    draft: { answers: FormAnswers; updatedAt: string | null } | null
     sections: FormSection[]
   }
   response: {
@@ -167,13 +184,28 @@ export async function listMyForms(): Promise<MyFormSummary[]> {
 
 export async function getMyForm(formId: string): Promise<MyForm> {
   const fn = httpsCallable<{ formId: string }, MyForm>(fns(), 'getMyForm')
+  const data = (await fn({ formId })).data
+  const timer = data.form.timer
+  if (timer) timer.clockOffsetMs = new Date(timer.serverNow).getTime() - Date.now()
+  return data
+}
+
+export async function startMyForm(formId: string) {
+  const fn = httpsCallable<{ formId: string }, { startedAt: string }>(fns(), 'startMyForm')
   return (await fn({ formId })).data
 }
 
-export async function submitFormResponse(formId: string, answers: FormAnswers) {
+// auto = ສົ່ງເອງຕອນໝົດເວລາ (ບໍ່ແມ່ນຜູ້ໃຊ້ກົດ) — server ເຊື່ອສະເພາະຕອນໃກ້/ໝົດເວລາແທ້
+export async function submitFormResponse(formId: string, answers: FormAnswers, auto = false) {
   const fn = httpsCallable<
-    { formId: string; answers: FormAnswers },
+    { formId: string; answers: FormAnswers; auto: boolean },
     { submittedAt: string; updatedAt: string; score: QuizScore | null }
   >(fns(), 'submitFormResponse')
-  return (await fn({ formId, answers })).data
+  return (await fn({ formId, answers, auto })).data
+}
+
+// ບັນທຶກຮ່າງຂອງຟອມຈັບເວລາ (forms/{id}/drafts/{uid}) — ຂຽນ Firestore ໂດຍກົງ (ຖືກກວ່າເອີ້ນ function).
+// ໝົດເວລາແລ້ວຍັງບໍ່ສົ່ງ → cron syncFormSchedules ສົ່ງຮ່າງນີ້ແທນ. rules ບັງຄັບ updatedAt = ເວລາ server
+export function saveFormDraft(formId: string, uid: string, answers: FormAnswers) {
+  return setDoc(doc(db, 'forms', formId, 'drafts', uid), { uid, answers, updatedAt: serverTimestamp() })
 }

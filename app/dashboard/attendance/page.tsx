@@ -60,10 +60,12 @@ import {
   useTodaySpecialPolicy,
 } from "@/lib/use-attendance-queries";
 import { useOfficialHolidays } from "@/lib/use-official-holidays-query";
+import { useAttendanceTimes } from "@/lib/use-admin-settings-query";
 import { useTodayOTRequest } from "@/lib/use-attendance-ot-queries";
 import { appliesToLocation } from "@/services/officialHolidays";
 import { getVientianeIsoDate, getVientianeHourMinute } from "@/lib/server-time";
 import {
+  DEFAULT_ATTENDANCE_TIMES,
   isInCustomChoiceWindow,
   minutesToHhmm,
   resolveCheckOutCutoff,
@@ -537,12 +539,10 @@ const OffsiteDetailDialog = memo(function OffsiteDetailDialog({
 // ຢູ່ນີ້ພຽງກັນບໍ່ໃຫ້ຜູ້ໃຊ້ສົ່ງໄປແລ້ວຖືກປະຕິເສດເສຍໆ.
 const EARLY_CHECKOUT_REASON_MIN_CHARS = 30;
 
-// ເວລາເລີກວຽກ (ນາທີຂອງມື້) — ຕ້ອງກົງກັບ EARLY_CHECKOUT_BEFORE_MINUTES ໃນ functions/src/index.ts.
-// ແມ່ບ້ານ (rolePermissions.housekeeper) ເລີກ 16:30, ຄົນອື່ນ 17:00
-const CHECKOUT_CUTOFF_MINUTES = 17 * 60;
+// ເວລາເລີກວຽກມາຈາກ adminSettings/attendanceTimes (useAttendanceTimes). ແມ່ບ້ານ
+// (rolePermissions.housekeeper) ເລີກບໍ່ເກີນ 16:30 — ຕ້ອງກົງກັບ
+// HOUSEKEEPER_EARLY_CHECKOUT_BEFORE_MINUTES ໃນ functions/src/index.ts
 const HOUSEKEEPER_CHECKOUT_CUTOFF_MINUTES = 16 * 60 + 30;
-// ລາພັກຕອນບ່າຍ ເລີກ 12:30 — ຕ້ອງກົງກັບ AFTERNOON_LEAVE_EARLY_CHECKOUT_BEFORE_MINUTES
-const AFTERNOON_LEAVE_CHECKOUT_CUTOFF_MINUTES = 12 * 60 + 30;
 
 const formatCutoff = (minutes: number) =>
   `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}`;
@@ -708,6 +708,7 @@ export default function AttendancePage() {
   const { data: todayTrip = null, isLoading: isLoadingTrip } = useTodayTrip(user?.uuid, todayIso);
   const { data: specialPolicy = null, isLoading: isLoadingPolicy } =
     useTodaySpecialPolicy(user?.uuid, todayIso);
+  const { data: attendanceTimes = DEFAULT_ATTENDANCE_TIMES } = useAttendanceTimes();
   const checkInMutation = useCheckIn();
   const checkOutMutation = useCheckOut();
   // Approved OT request covering today that lists this user as a teammate
@@ -1038,7 +1039,8 @@ export default function AttendancePage() {
     ],
   );
 
-  // custom: ຖ້າຕອນນີ້ຢູ່ໃນຊ່ວງ 08:16..lateUntil ໃຫ້ເລືອກກ່ອນ check-in
+  // custom: ຖ້າຕອນນີ້ຢູ່ໃນຊ່ວງ ຫຼັງເວລາມາທັນ..lateUntil ໃຫ້ເລືອກກ່ອນ check-in
+  // ລຳດັບກໍລະນີກົງກັບ checkInBaseCase ໃນ functions/src/index.ts
   const handleCheckInClick = useCallback(() => {
     const { hour, minute } = getVientianeHourMinute();
     const baseCase: CheckInBaseCase =
@@ -1046,13 +1048,15 @@ export default function AttendancePage() {
         ? "morningLeave"
         : isOffsite
           ? "offsite"
-          : "normal";
-    if (isInCustomChoiceWindow(hour * 60 + minute, baseCase, specialPolicy)) {
+          : todayLeaveStatus === "afternoon_leave"
+            ? "afternoonLeave"
+            : "normal";
+    if (isInCustomChoiceWindow(hour * 60 + minute, baseCase, specialPolicy, attendanceTimes)) {
       setShowPolicyChoice(true);
       return;
     }
     handleAttendance("checkIn");
-  }, [handleAttendance, todayLeaveStatus, isOffsite, specialPolicy]);
+  }, [handleAttendance, todayLeaveStatus, isOffsite, specialPolicy, attendanceTimes]);
 
   const handleChoosePolicy = useCallback(
     (choice: PolicyChoice) => {
@@ -1063,16 +1067,24 @@ export default function AttendancePage() {
   );
 
   // ອອກກ່ອນເວລາເລີກຕ້ອງປ້ອນເຫດຜົນ; server ກວດຄືກັນ (recordCheckOut):
-  //   ລາພັກຕອນບ່າຍ 12:30 · ແມ່ບ້ານ 16:30 · ຄົນອື່ນ 17:00 · CLive ອອກຕອນໃດກໍໄດ້
-  //   ນະໂຍບາຍພິເສດ: ເອົາອັນທີ່ໄວກວ່າ ລະຫວ່າງເວລາເລີກ ກັບ leaveFrom (custom "morning" → ເວລາປົກກະຕິ)
+  //   checkOutAt ຂອງກໍລະນີ (ລາເຄິ່ງບ່າຍ / ລາເຄິ່ງເຊົ້າ / ອອກວຽກນອກ / ປົກກະຕິ) · ແມ່ບ້ານ ບໍ່ເກີນ 16:30 ·
+  //   CLive ອອກຕອນໃດກໍໄດ້ · ນະໂຍບາຍພິເສດ: ເອົາອັນທີ່ໄວກວ່າ ລະຫວ່າງເວລາເລີກ ກັບ leaveFrom
+  //   (custom "morning" → ເວລາປົກກະຕິ)
+  const caseCheckOutAt = attendanceTimes[
+    todayLeaveStatus === "morning_leave"
+      ? "morningLeave"
+      : todayAttendance?.isOffsite
+        ? "offsite"
+        : "normal"
+  ].checkOutAt;
   const baseCheckOutCutoffMinutes =
     user?.rolePermissions?.CLive === true
       ? null
       : todayLeaveStatus === "afternoon_leave"
-        ? AFTERNOON_LEAVE_CHECKOUT_CUTOFF_MINUTES
+        ? attendanceTimes.afternoonLeave.checkOutAt
         : user?.rolePermissions?.housekeeper === true
-          ? HOUSEKEEPER_CHECKOUT_CUTOFF_MINUTES
-          : CHECKOUT_CUTOFF_MINUTES;
+          ? Math.min(caseCheckOutAt, HOUSEKEEPER_CHECKOUT_CUTOFF_MINUTES)
+          : caseCheckOutAt;
   const checkOutCutoffMinutes = resolveCheckOutCutoff(
     baseCheckOutCutoffMinutes,
     specialPolicy,
@@ -1303,7 +1315,7 @@ export default function AttendancePage() {
           submittingType === "checkOut" || checkOutMutation.isPending
         }
         cutoffLabel={formatCutoff(
-          checkOutCutoffMinutes ?? CHECKOUT_CUTOFF_MINUTES,
+          checkOutCutoffMinutes ?? attendanceTimes.normal.checkOutAt,
         )}
         onConfirm={handleConfirmEarlyCheckOut}
         onCancel={() => setShowEarlyCheckOutConfirm(false)}

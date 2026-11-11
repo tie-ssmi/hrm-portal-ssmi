@@ -3,7 +3,8 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import app, { db, storage } from '@/lib/firebase'
 import { getVientianeIsoDate } from '@/lib/server-time'
-import { hhmmToMinutes } from '@/lib/special-policy'
+import { hhmmToMinutes, type AttendanceTimes } from '@/lib/special-policy'
+import { fetchAttendanceTimes } from '@/services/admin-settings'
 import type { AttendanceRecord } from '@/lib/types'
 
 let _fns: ReturnType<typeof getFunctions> | null = null
@@ -511,11 +512,10 @@ export type LateRankEntry = {
   penaltyMinutes: number
 }
 
-const LATE_THRESHOLD_MINUTES = 8 * 60 + 15        // 08:15 — normal day
-const MORNING_LEAVE_THRESHOLD_MINUTES = 12 * 60 + 30 // 12:30 — half-day morning leave
-const IMAGE_THRESHOLD_MINUTES = 9 * 60             // 09:00 — check-in with photo
-
+// ນາທີມາຊ້າ ນັບຈາກເວລາມາທັນ (presentUntil) ຂອງກໍລະນີ ໃນ adminSettings/attendanceTimes:
+// ລາເຄິ່ງເຊົ້າ · check-in ມີຮູບ (ອອກວຽກນອກ) · ປົກກະຕິ
 function checkInPenaltyMinutes(
+  times: AttendanceTimes,
   checkInTime: string | null | undefined,
   morningLeaveDay?: boolean,
   hasImage?: boolean,
@@ -525,10 +525,10 @@ function checkInPenaltyMinutes(
   const [hStr, mStr] = checkInTime.split(':')
   const total = parseInt(hStr, 10) * 60 + parseInt(mStr, 10)
   let threshold = morningLeaveDay
-    ? MORNING_LEAVE_THRESHOLD_MINUTES
+    ? times.morningLeave.presentUntil
     : hasImage
-      ? IMAGE_THRESHOLD_MINUTES
-      : LATE_THRESHOLD_MINUTES
+      ? times.offsite.presentUntil
+      : times.normal.presentUntil
   // ນະໂຍບາຍພິເສດ: ນັບຈາກ policyLateUntil (ເອົາອັນທີ່ຊ້າກວ່າ). custom ທີ່ເລືອກ "evening"
   // ຍອມນັບມາຊ້າແລ້ວ — ໃຊ້ເສັ້ນປົກກະຕິ. lateMorning ບໍ່ມີ policyChoice
   const policyLateUntil = hhmmToMinutes(policy?.policyLateUntil)
@@ -617,6 +617,7 @@ export async function fetchLateRankingForMonth(monthKey: string): Promise<LateRa
     snapDocs = snap.docs
   }
 
+  const attendanceTimes = await fetchAttendanceTimes()
   const map = new Map<string, LateRankEntry>()
   const latestDate = new Map<string, string>()
 
@@ -634,7 +635,7 @@ export async function fetchLateRankingForMonth(monthKey: string): Promise<LateRa
                  : uuidA || uuidB
     if (!mapKey) continue
 
-    const penalty = checkInPenaltyMinutes(data.checkInTime ?? null, data.morningLeaveDay, !!data.checkInImageURL, data)
+    const penalty = checkInPenaltyMinutes(attendanceTimes, data.checkInTime ?? null, data.morningLeaveDay, !!data.checkInImageURL, data)
     const recordDate = toIsoDateString(data)
     const existing = map.get(mapKey)
 

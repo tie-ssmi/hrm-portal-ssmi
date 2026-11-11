@@ -81,6 +81,8 @@ Both `approveDepartment` and `approveBranch` approve at the `departmentHead` slo
 
 Status is computed **server-side** in `functions/src/index.ts` (`recordCheckIn` Cloud Function) — the client's submitted `status` field is ignored. Client-side mirror is `lib/server-time.ts`.
 
+**Times are configurable** via `adminSettings/attendanceTimes` (edited in the admin repo, `system-setting/attendance-time.tsx`): rows `normal` / `offsite` / `morningLeave` / `afternoonLeave`, each `{ presentUntil, lateUntil, checkOutAt }` HH:mm, all inclusive (present ≤ presentUntil, late ≤ lateUntil, after that not_check_in; check-out before checkOutAt = early). Parsed by `parseAttendanceTimes` (`functions/src/special-policy.ts`, client mirror `lib/special-policy.ts`); missing/invalid values fall back to `DEFAULT_ATTENDANCE_TIMES` (the times in the table below). Server caches the doc 60 s (`getAttendanceTimes`); client reads it via `useAttendanceTimes`. Case order: morning leave > offsite > afternoon leave > normal. Housekeeper 16:30 stays hardcoded (min with the case's `checkOutAt`). The table below shows the defaults.
+
 | Condition | present | late | not_check_in |
 |---|---|---|---|
 | Normal | ≤ 08:15 | 08:16–09:59 | ≥ 10:00 |

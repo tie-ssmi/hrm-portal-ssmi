@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { HttpsError } from "firebase-functions/v2/https";
 import {
+  attemptDeadline,
   drawQuestionIds,
   effectiveFormStatus,
   drawSize,
@@ -15,7 +16,9 @@ import {
   visitedSections,
   seededShuffle,
   shuffleSectionsFor,
+  salvageAnswers,
   toShowResult,
+  toTimeLimitMinutes,
   validateAnswers,
   type FormSection,
 } from "./forms";
@@ -54,6 +57,13 @@ test("isInAudience: ສາຂາ ∩ ພະແນກ ∩ ສະຖານະ", ()
   assert.equal(isInAudience(["g:B1:D2:*"], emp), false);
   // ສະເພາະຝຶກງານ
   assert.equal(isInAudience(["g:*:*:intern"], emp), false);
+});
+
+test("isInAudience: ຕັດຄົນອອກ ຊະນະທຸກ key", () => {
+  assert.equal(isInAudience(["all"], emp, ["U1"]), false);
+  assert.equal(isInAudience(["g:B1:D1:*", "emp:U1"], emp, ["U1"]), false);
+  assert.equal(isInAudience(["all"], emp, ["U2"]), true);
+  assert.equal(isInAudience(["all"], emp, "U1"), true);
 });
 
 test("isInAudience: ທົ່ວລະບົບ / ລາຍບຸກຄົນ / ຂໍ້ມູນເສຍ", () => {
@@ -331,4 +341,41 @@ test("validateAnswers ກັບ visitedSections: ຂໍ້ບັງຄັບຂ�
   const answers = { trained: "yes", rate: 4, topic: "ບໍ່ຄວນສົ່ງມາ" };
   const clean = validateAnswers(visitedSections(branchSections, answers), answers);
   assert.deepEqual(clean, { trained: "yes", rate: 4 });
+});
+
+test("toTimeLimitMinutes: ຄ່າບໍ່ຖືກ/ສູນ = 0, ປັດລົງ, ບໍ່ເກີນ 24 ຊົ່ວໂມງ", () => {
+  assert.equal(toTimeLimitMinutes(undefined), 0);
+  assert.equal(toTimeLimitMinutes("abc"), 0);
+  assert.equal(toTimeLimitMinutes(-5), 0);
+  assert.equal(toTimeLimitMinutes(20.7), 20);
+  assert.equal(toTimeLimitMinutes(99999), 24 * 60);
+});
+
+test("attemptDeadline: ເລີ່ມ + ເວລາຕອບ, ແຕ່ບໍ່ເກີນເວລາປິດຟອມ", () => {
+  const start = "2026-11-02T09:00:00.000Z"; // 16:00 ເວລາລາວ
+  const at = (iso: string) => new Date(iso).getTime();
+  assert.equal(attemptDeadline(start, 20, null), at("2026-11-02T09:20:00.000Z"));
+  assert.equal(attemptDeadline(start, 20, "2026-11-04T10:00:00.000Z"), at("2026-11-02T09:20:00.000Z"));
+  // ຟອມປິດ 17:00, ເລີ່ມ 16:50 → ໄດ້ 10 ນາທີ
+  assert.equal(
+    attemptDeadline("2026-11-02T09:50:00.000Z", 20, "2026-11-02T10:00:00.000Z"),
+    at("2026-11-02T10:00:00.000Z"),
+  );
+});
+
+test("validateAnswers partial: ຂໍ້ບັງຄັບທີ່ບໍ່ໄດ້ຕອບ ຜ່ານ ແຕ່ຮູບແບບຜິດ ຍັງ throw", () => {
+  assert.deepEqual(validateAnswers(sections, {}, { partial: true }), {});
+  assert.throws(
+    () => validateAnswers(sections, { color: "nope" }, { partial: true }),
+    isHttpsError("invalid-argument"),
+  );
+});
+
+test("salvageAnswers: ເກັບຂໍ້ທີ່ຖືກ, ຕັດຂໍ້ຜິດຮູບແບບ/id ແປກປອມ, ບໍ່ບັງຄັບຂໍ້ required", () => {
+  assert.deepEqual(
+    salvageAnswers(sections, { name: " A ", color: "nope", food: ["a", "zzz"], score: 3, ghost: "x" }),
+    { name: "A", score: 3 },
+  );
+  assert.deepEqual(salvageAnswers(sections, null), {});
+  assert.deepEqual(salvageAnswers(sections, ["x"]), {});
 });

@@ -127,6 +127,7 @@ export default function FormsPage() {
                     )}
                     <p className="text-muted-foreground text-xs">
                       {form.questionCount} ຄຳຖາມ
+                      {form.timeLimitMinutes > 0 && ` · ⏱ ${form.timeLimitMinutes} ນາທີ`}
                       {form.submittedAt && ` · ຕອບເມື່ອ ${formatDate(form.submittedAt)}`}
                       {form.score && (
                         <span className="text-foreground font-medium">

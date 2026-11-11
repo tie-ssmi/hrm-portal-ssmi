@@ -16,6 +16,12 @@ export type LegalBasisCategory =
   | 'provinceInspection'
   | 'training'
 
+// Admin entries carry line breaks pasted from the source PDF; the request
+// forms show and save each clause as one line.
+export function legalBasisToReference(detail: string): string {
+  return detail.replace(/\s*\n\s*/g, ' ').trim()
+}
+
 // ກັ່ນຕອງດ້ວຍ where 2 ຂໍ້ ແລ້ວຮຽງໃນ JS — `where + where + orderBy` ຕ້ອງການ
 // composite index, ແລະ collection ນີ້ມີລາຍການຈຳນວນນ້ອຍ.
 // ການຮຽງຕົງກັບ getLegalBasisByCategory ຂອງ admin: doc ເກົ່າທີ່ບໍ່ມີ `order`

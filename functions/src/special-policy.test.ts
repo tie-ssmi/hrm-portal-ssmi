@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 
 import {
   computeBaseCheckInStatus,
+  DEFAULT_ATTENDANCE_TIMES,
+  parseAttendanceTimes,
   pickActivePolicies,
   resolveCheckIn,
   resolveCheckOutCutoff,
@@ -218,4 +220,55 @@ test("custom check-out: morning → normal cutoff, evening → Y", () => {
   // check-in ຫຼັງ X (ຫຼື ກ່ອນນະໂຍບາຍຖືກສ້າງ) → ບໍ່ມີ choice → ເລີກປົກກະຕິ
   assert.equal(resolveCheckOutCutoff(CUTOFF_NORMAL, custom(), undefined), CUTOFF_NORMAL);
   assert.equal(resolveCheckOutCutoff(null, custom(), "evening"), null);
+});
+
+// ---------------------------------------------------------------- adminSettings/attendanceTimes
+
+// doc ທີ່ບັນທຶກຈາກ admin ຕອນ 2026-10-23
+const SAVED_TIMES = {
+  afternoonLeave: { checkOutAt: "12:30", lateUntil: "09:59", presentUntil: "08:15" },
+  morningLeave: { checkOutAt: "17:00", lateUntil: "13:59", presentUntil: "12:30" },
+  normal: { checkOutAt: "17:00", lateUntil: "09:59", presentUntil: "08:15" },
+  offsite: { checkOutAt: "17:00", lateUntil: "10:00", presentUntil: "09:00" },
+  updatedAt: "2026-10-23T10:01:03.072Z",
+};
+
+test("attendanceTimes: missing doc → defaults (old hardcoded times)", () => {
+  assert.deepEqual(parseAttendanceTimes(undefined), DEFAULT_ATTENDANCE_TIMES);
+  assert.equal(computeBaseCheckInStatus(t("10:00"), "normal", parseAttendanceTimes(undefined)), "not_check_in");
+});
+
+test("attendanceTimes: values are inclusive (lateUntil + 1 = not_check_in)", () => {
+  const times = parseAttendanceTimes(SAVED_TIMES);
+  assert.equal(computeBaseCheckInStatus(t("08:15"), "normal", times), "present");
+  assert.equal(computeBaseCheckInStatus(t("09:59"), "normal", times), "late");
+  assert.equal(computeBaseCheckInStatus(t("10:00"), "normal", times), "not_check_in");
+  assert.equal(computeBaseCheckInStatus(t("09:00"), "offsite", times), "present");
+  assert.equal(computeBaseCheckInStatus(t("10:00"), "offsite", times), "late");
+  assert.equal(computeBaseCheckInStatus(t("10:01"), "offsite", times), "not_check_in");
+  assert.equal(computeBaseCheckInStatus(t("13:59"), "morningLeave", times), "late");
+  assert.equal(computeBaseCheckInStatus(t("14:00"), "morningLeave", times), "not_check_in");
+  assert.equal(times.afternoonLeave.checkOutAt, t("12:30"));
+  assert.equal(times.normal.checkOutAt, t("17:00"));
+});
+
+test("attendanceTimes: bad field → default for that field; bad order → default row", () => {
+  const times = parseAttendanceTimes({
+    normal: { presentUntil: "8:15", lateUntil: "09:30", checkOutAt: "16:00" },
+    offsite: { presentUntil: "11:00", lateUntil: "10:00", checkOutAt: "17:00" },
+  });
+  assert.deepEqual(times.normal, { presentUntil: t("08:15"), notCheckInFrom: t("09:31"), checkOutAt: t("16:00") });
+  assert.deepEqual(times.offsite, DEFAULT_ATTENDANCE_TIMES.offsite);
+});
+
+test("attendanceTimes: special policy + custom window use configured presentUntil", () => {
+  const times = parseAttendanceTimes({
+    normal: { presentUntil: "08:00", lateUntil: "09:59", checkOutAt: "17:00" },
+  });
+  const p = resolved({ lateUntil: "09:30" });
+  assert.equal(resolveCheckIn(t("09:30"), "normal", p, undefined, times).status, "present");
+  // custom: ຊ່ວງເລືອກເລີ່ມຫຼັງ 08:00 ແທນ 08:15
+  const c = resolved({ mode: "custom", lateUntil: "09:30", leaveFrom: "16:00" });
+  assert.equal(resolveCheckIn(t("08:05"), "normal", c, undefined, times).needsChoice, true);
+  assert.equal(resolveCheckIn(t("08:05"), "normal", c).needsChoice, false);
 });

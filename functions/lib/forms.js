@@ -7,10 +7,13 @@
 //   "all"            — ທົ່ວລະບົບ
 //   "g:{b}:{d}:{s}"  — ສາຂາ ∩ ພະແນກ ∩ ສະຖານະພະນັກງານ ("*" = ບໍ່ກອງ)
 //   "emp:{uid}"      — ລາຍບຸກຄົນ
-// ພະນັກງານມີສິດຕອບ ຖ້າ key ຂອງຕົນ (employeeAudienceKeys, ຄິດຈາກຂໍ້ມູນປັດຈຸບັນ) ກົງກັບ key ໃດໜຶ່ງ.
+// ພະນັກງານມີສິດຕອບ ຖ້າ key ຂອງຕົນ (employeeAudienceKeys, ຄິດຈາກຂໍ້ມູນປັດຈຸບັນ) ກົງກັບ key ໃດໜຶ່ງ
+// ແລະ ບໍ່ຢູ່ໃນ form.audienceExcludedUids (admin ຕັດອອກ — query ບໍ່ໄດ້, ກອງຫຼັງ query).
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.branchingQuestionOf = exports.SUBMIT_TARGET = exports.drawGroupKey = exports.OWN_GROUP = exports.isChoiceType = exports.DEFAULT_RATING_MAX = exports.LONG_TEXT_MAX = exports.SHORT_TEXT_MAX = void 0;
+exports.branchingQuestionOf = exports.SUBMIT_TARGET = exports.drawGroupKey = exports.OWN_GROUP = exports.isChoiceType = exports.DEFAULT_RATING_MAX = exports.LONG_TEXT_MAX = exports.SHORT_TEXT_MAX = exports.TIMER_PARTIAL_WINDOW_MS = exports.TIMER_GRACE_MS = exports.MAX_TIME_LIMIT_MINUTES = void 0;
 exports.effectiveFormStatus = effectiveFormStatus;
+exports.toTimeLimitMinutes = toTimeLimitMinutes;
+exports.attemptDeadline = attemptDeadline;
 exports.employeeAudienceKeys = employeeAudienceKeys;
 exports.isInAudience = isInAudience;
 exports.questionsOf = questionsOf;
@@ -25,6 +28,7 @@ exports.filterSections = filterSections;
 exports.nextSectionIndex = nextSectionIndex;
 exports.visitedSections = visitedSections;
 exports.validateAnswers = validateAnswers;
+exports.salvageAnswers = salvageAnswers;
 const https_1 = require("firebase-functions/v2/https");
 const reached = (iso, now) => {
     if (!iso)
@@ -43,6 +47,27 @@ function effectiveFormStatus(status, schedule, now) {
         return "closed";
     return "open";
 }
+// ---------- ຈັບເວລາຕອບ ----------
+// settings.timeLimitMinutes > 0 → ພະນັກງານກົດ "ພ້ອມ" (startMyForm) ກ່ອນຈຶ່ງເຫັນຄຳຖາມ; startedAt ເກັບຄັ້ງດຽວ
+// (forms/{id}/attempts/{uid}) — ອອກແລ້ວເຂົ້າໃໝ່ ເວລາຍັງນັບຕໍ່. ໝົດເວລາ = ຄົບເວລາຕອບ ຫຼື ຟອມປິດ ແລ້ວແຕ່ອັນໃດກ່ອນ
+// (ຟອມປິດ 17:00, ເລີ່ມ 16:50 → ໄດ້ 10 ນາທີ). ໝົດເວລາ (ລວມທັງຟອມທີ່ບໍ່ຈັບເວລາ ຕອນຮອດ closeAt) portal ສົ່ງ
+// ຄຳຕອບທີ່ຄ້າງໃຫ້ອັດຕະໂນມັດ (ຂໍ້ບັງຄັບທີ່ບໍ່ໄດ້ຕອບ ຍົກເວັ້ນ).
+// admin ມີສຳເນົາ parse (services/forms.ts) — ແກ້ໃຫ້ກົງກັນ.
+exports.MAX_TIME_LIMIT_MINUTES = 24 * 60;
+// ຮັບຄຳຕອບຫຼັງໝົດເວລາໄດ້ອີກໜ້ອຍໜຶ່ງ — ເຄືອຂ່າຍຊ້າ ຕອນສົ່ງອັດຕະໂນມັດ
+exports.TIMER_GRACE_MS = 60 * 1000;
+// ສົ່ງບໍ່ຄົບຂໍ້ບັງຄັບໄດ້ ເມື່ອເຫຼືອເວລາບໍ່ເກີນນີ້ (ໂມງເຄື່ອງຜູ້ໃຊ້ອາດໄວກວ່າ server ເລັກນ້ອຍ)
+exports.TIMER_PARTIAL_WINDOW_MS = 15 * 1000;
+function toTimeLimitMinutes(raw) {
+    const n = Math.floor(Number(raw));
+    return n > 0 ? Math.min(n, exports.MAX_TIME_LIMIT_MINUTES) : 0;
+}
+// ເວລາໝົດ (ms) ຂອງຄົນທີ່ເລີ່ມ startedAt — ບໍ່ເກີນເວລາປິດຟອມ
+function attemptDeadline(startedAt, limitMinutes, closeAt) {
+    const byLimit = new Date(startedAt).getTime() + limitMinutes * 60 * 1000;
+    const close = closeAt ? new Date(closeAt).getTime() : NaN;
+    return Number.isNaN(close) ? byLimit : Math.min(byLimit, close);
+}
 exports.SHORT_TEXT_MAX = 500;
 exports.LONG_TEXT_MAX = 5000;
 exports.DEFAULT_RATING_MAX = 5;
@@ -59,8 +84,10 @@ function employeeAudienceKeys(emp) {
     }
     return keys;
 }
-function isInAudience(formKeys, emp) {
+function isInAudience(formKeys, emp, excludedUids) {
     if (!Array.isArray(formKeys))
+        return false;
+    if (Array.isArray(excludedUids) && excludedUids.includes(emp.uid))
         return false;
     const mine = new Set(employeeAudienceKeys(emp));
     return formKeys.some((k) => typeof k === "string" && mine.has(k));
@@ -226,8 +253,9 @@ function visitedSections(sections, answers) {
     }
     return visited;
 }
-// ຄືນຄຳຕອບທີ່ສະອາດແລ້ວ (ຕັດ id ທີ່ບໍ່ມີໃນຟອມ ແລະ ຄຳຕອບຫວ່າງອອກ) ຫຼື throw invalid-argument
-function validateAnswers(sections, raw) {
+// ຄືນຄຳຕອບທີ່ສະອາດແລ້ວ (ຕັດ id ທີ່ບໍ່ມີໃນຟອມ ແລະ ຄຳຕອບຫວ່າງອອກ) ຫຼື throw invalid-argument.
+// partial: ໝົດເວລາຕອບ (ຈັບເວລາ) — ບໍ່ບັງຄັບຂໍ້ required ແຕ່ຍັງກວດຮູບແບບຄຳຕອບ
+function validateAnswers(sections, raw, options = {}) {
     var _a;
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
         throw new https_1.HttpsError("invalid-argument", "ຮູບແບບຄຳຕອບບໍ່ຖືກຕ້ອງ");
@@ -284,11 +312,26 @@ function validateAnswers(sections, raw) {
             }
         }
         if (clean === undefined) {
-            if (q.required)
+            if (q.required && !options.partial)
                 invalid(q, "ກະລຸນາຕອບຄຳຖາມນີ້");
             continue;
         }
         result[q.id] = clean;
+    }
+    return result;
+}
+// ຮ່າງຄຳຕອບທີ່ portal ຂຽນເອງ (drafts/{uid}) — ບໍ່ເຊື່ອຮູບແບບ: ກວດເທື່ອລະຂໍ້, ຂໍ້ທີ່ຜິດຮູບແບບຖືກຕັດອອກ
+// ແທນທີ່ຈະປະຕິເສດທັງຊຸດ (ຂໍ້ບັງຄັບທີ່ບໍ່ໄດ້ຕອບ ບໍ່ບັງຄັບ). ໃຊ້ຕອນ cron ສົ່ງແທນຄົນທີ່ໝົດເວລາ
+function salvageAnswers(sections, raw) {
+    const input = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+    const result = {};
+    for (const q of questionsOf(sections)) {
+        try {
+            Object.assign(result, validateAnswers([{ id: "_", title: "", questions: [q] }], { [q.id]: input[q.id] }, { partial: true }));
+        }
+        catch (_a) {
+            // ຂໍ້ນີ້ຮູບແບບຜິດ — ຂ້າມ
+        }
     }
     return result;
 }

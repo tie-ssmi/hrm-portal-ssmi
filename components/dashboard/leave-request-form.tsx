@@ -23,6 +23,8 @@ import {
   HelpCircle,
   Paperclip,
   Pencil,
+  Plus,
+  RotateCcw,
 } from "lucide-react";
 
 // ** shared components
@@ -93,7 +95,11 @@ import {
 } from "@/services/officialHolidays";
 import { calcLeaveDuration, getMaxLeaveEndDate } from "@/lib/leave-duration";
 import { fetchPoliciesForGender, resolveEmployeePolicyLimit } from "@/services/policies";
-import { fetchActiveLegalBasis } from "@/services/legalBasis";
+import {
+  fetchActiveLegalBasis,
+  legalBasisToReference,
+} from "@/services/legalBasis";
+import type { LegalBasisEntry } from "@/lib/types";
 import { fetchCurrentLeaveBalancesV2 } from "@/services/leave-balances";
 import { resolveEmployeeEmploymentStatus } from "@/lib/employment-status";
 import { getEmployees } from "@/services/employees";
@@ -131,6 +137,18 @@ function getVientianeDateStr(): string {
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
+}
+
+function sameList(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+// The "ອີງຕາມ" lines as saved on the leave doc, numbered in form order.
+function toLegalBasisEntries(lines: string[]): LegalBasisEntry[] {
+  return lines
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((detail, i) => ({ detail, order: i + 1 }));
 }
 
 function formatDuration(d: number): string {
@@ -275,11 +293,37 @@ export default function LeaveRequestForm() {
 
   // Regulation clauses printed on the leave doc. Snapshotted onto the request
   // at submit time so a later edit in admin never rewrites a filed request.
-  const { data: legalBasis = [] } = useQuery({
+  // The form starts from these and the user may edit, add or remove lines;
+  // what's in the form is what gets saved.
+  const { data: legalBasis, isSuccess: legalBasisLoaded } = useQuery({
     queryKey: ["legalBasis", "leave"],
     queryFn: () => fetchActiveLegalBasis("leave"),
     staleTime: 24 * 60 * 60 * 1000,
   });
+  const defaultReferences = useMemo(
+    () =>
+      (legalBasis ?? [])
+        .map((e) => legalBasisToReference(e.detail))
+        .filter(Boolean),
+    [legalBasis],
+  );
+  const [references, setReferences] = useState<string[]>([]);
+  // Fill the defaults once they load, unless the user already typed some.
+  const referencesTouchedRef = useRef(false);
+  useEffect(() => {
+    if (!legalBasisLoaded || referencesTouchedRef.current) return;
+    setReferences(defaultReferences);
+  }, [legalBasisLoaded, defaultReferences]);
+
+  function changeReferences(next: string[]) {
+    referencesTouchedRef.current = true;
+    setReferences(next);
+  }
+
+  function applyDefaultReferences() {
+    referencesTouchedRef.current = false;
+    setReferences(defaultReferences);
+  }
 
   const { data: leaveBalancesV2 = [] } = useQuery({
     queryKey: ["leaveBalanceV2", loggedInUserUuid],
@@ -703,6 +747,7 @@ export default function LeaveRequestForm() {
     setLeaveEndDate(undefined);
     setEndPeriod("afternoon");
     setLeaveReason("");
+    applyDefaultReferences();
     setDocUploadChoice(null);
     setDocFile(null);
   }
@@ -723,6 +768,10 @@ export default function LeaveRequestForm() {
     setLeaveEndDate(new Date(`${leave.endDate}T00:00:00`));
     setEndPeriod(leave.endPeriod ?? "afternoon");
     setLeaveReason(leave.reason ?? "");
+    // A request filed before "ອີງຕາມ" was saved starts from the defaults.
+    const savedReferences = leave["legal-basis"]?.map((e) => e.detail);
+    if (savedReferences?.length) changeReferences(savedReferences);
+    else applyDefaultReferences();
     setSelectedSuccessorUid(leave.successorUid ?? "");
     setDelegateResponsibilities(!!leave.taskDelegation?.responsibilities);
     setDelegateDocumentSigning(!!leave.taskDelegation?.documentSigning);
@@ -856,6 +905,7 @@ export default function LeaveRequestForm() {
       }
 
       const workLocationType = await fetchWorkLocationType(workLocationUuid);
+      const legalBasisEntries = toLegalBasisEntries(references);
 
       if (editingLeave) {
         // Approvals are rebuilt from the new duration — a 2-day request
@@ -877,6 +927,8 @@ export default function LeaveRequestForm() {
             endPeriod,
             duration: duration ?? undefined,
             reason: leaveReason,
+            "legal-basis":
+              legalBasisEntries.length > 0 ? legalBasisEntries : undefined,
             successorUid: selectedSuccessor?.uid,
             successorNameLo: selectedSuccessor
               ? [selectedSuccessor.firstNameLo, selectedSuccessor.lastNameLo]
@@ -951,7 +1003,7 @@ export default function LeaveRequestForm() {
           endPeriod,
           duration: duration ?? undefined,
           reason: leaveReason,
-          "legal-basis": legalBasis.length > 0 ? legalBasis : undefined,
+          "legal-basis": legalBasisEntries.length > 0 ? legalBasisEntries : undefined,
           departmentUid: departmentUuid || dept?.uuid,
           departmentNameLo: dept?.department,
           departmentNameEn: dept?.title,
@@ -1244,6 +1296,66 @@ export default function LeaveRequestForm() {
                   onChange={(e) => setLeaveReason(e.target.value)}
                   rows={3}
                 />
+              </Field>
+
+              <Field>
+                <FieldLabel>ອີງຕາມ</FieldLabel>
+                <div className="space-y-2">
+                  {references.map((ref, idx) => (
+                    <div key={idx} className="flex items-start gap-2">
+                      <Textarea
+                        value={ref}
+                        rows={1}
+                        className="min-h-9"
+                        placeholder={`ອີງຕາມ ${idx + 1}...`}
+                        onChange={(e) =>
+                          changeReferences(
+                            references.map((r, i) =>
+                              i === idx ? e.target.value : r,
+                            ),
+                          )
+                        }
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
+                        onClick={() =>
+                          changeReferences(
+                            references.filter((_, i) => i !== idx),
+                          )
+                        }
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ))}
+                  <div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => changeReferences([...references, ""])}
+                    >
+                      <Plus className="w-4 h-4 mr-1" />
+                      ເພີ່ມອີງຕາມ
+                    </Button>
+                    {defaultReferences.length > 0 &&
+                      !sameList(references, defaultReferences) && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="ml-2 text-muted-foreground"
+                          onClick={applyDefaultReferences}
+                        >
+                          <RotateCcw className="w-4 h-4 mr-1" />
+                          ໃຊ້ຕາມລະບຽບ
+                        </Button>
+                      )}
+                  </div>
+                </div>
               </Field>
             </div>
 

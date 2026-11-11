@@ -165,4 +165,49 @@ const custom = () => resolved({ mode: "custom", lateUntil: "09:30", leaveFrom: "
     strict_1.default.equal((0, special_policy_1.resolveCheckOutCutoff)(CUTOFF_NORMAL, custom(), undefined), CUTOFF_NORMAL);
     strict_1.default.equal((0, special_policy_1.resolveCheckOutCutoff)(null, custom(), "evening"), null);
 });
+// ---------------------------------------------------------------- adminSettings/attendanceTimes
+// doc ທີ່ບັນທຶກຈາກ admin ຕອນ 2026-10-23
+const SAVED_TIMES = {
+    afternoonLeave: { checkOutAt: "12:30", lateUntil: "09:59", presentUntil: "08:15" },
+    morningLeave: { checkOutAt: "17:00", lateUntil: "13:59", presentUntil: "12:30" },
+    normal: { checkOutAt: "17:00", lateUntil: "09:59", presentUntil: "08:15" },
+    offsite: { checkOutAt: "17:00", lateUntil: "10:00", presentUntil: "09:00" },
+    updatedAt: "2026-10-23T10:01:03.072Z",
+};
+(0, node_test_1.test)("attendanceTimes: missing doc → defaults (old hardcoded times)", () => {
+    strict_1.default.deepEqual((0, special_policy_1.parseAttendanceTimes)(undefined), special_policy_1.DEFAULT_ATTENDANCE_TIMES);
+    strict_1.default.equal((0, special_policy_1.computeBaseCheckInStatus)(t("10:00"), "normal", (0, special_policy_1.parseAttendanceTimes)(undefined)), "not_check_in");
+});
+(0, node_test_1.test)("attendanceTimes: values are inclusive (lateUntil + 1 = not_check_in)", () => {
+    const times = (0, special_policy_1.parseAttendanceTimes)(SAVED_TIMES);
+    strict_1.default.equal((0, special_policy_1.computeBaseCheckInStatus)(t("08:15"), "normal", times), "present");
+    strict_1.default.equal((0, special_policy_1.computeBaseCheckInStatus)(t("09:59"), "normal", times), "late");
+    strict_1.default.equal((0, special_policy_1.computeBaseCheckInStatus)(t("10:00"), "normal", times), "not_check_in");
+    strict_1.default.equal((0, special_policy_1.computeBaseCheckInStatus)(t("09:00"), "offsite", times), "present");
+    strict_1.default.equal((0, special_policy_1.computeBaseCheckInStatus)(t("10:00"), "offsite", times), "late");
+    strict_1.default.equal((0, special_policy_1.computeBaseCheckInStatus)(t("10:01"), "offsite", times), "not_check_in");
+    strict_1.default.equal((0, special_policy_1.computeBaseCheckInStatus)(t("13:59"), "morningLeave", times), "late");
+    strict_1.default.equal((0, special_policy_1.computeBaseCheckInStatus)(t("14:00"), "morningLeave", times), "not_check_in");
+    strict_1.default.equal(times.afternoonLeave.checkOutAt, t("12:30"));
+    strict_1.default.equal(times.normal.checkOutAt, t("17:00"));
+});
+(0, node_test_1.test)("attendanceTimes: bad field → default for that field; bad order → default row", () => {
+    const times = (0, special_policy_1.parseAttendanceTimes)({
+        normal: { presentUntil: "8:15", lateUntil: "09:30", checkOutAt: "16:00" },
+        offsite: { presentUntil: "11:00", lateUntil: "10:00", checkOutAt: "17:00" },
+    });
+    strict_1.default.deepEqual(times.normal, { presentUntil: t("08:15"), notCheckInFrom: t("09:31"), checkOutAt: t("16:00") });
+    strict_1.default.deepEqual(times.offsite, special_policy_1.DEFAULT_ATTENDANCE_TIMES.offsite);
+});
+(0, node_test_1.test)("attendanceTimes: special policy + custom window use configured presentUntil", () => {
+    const times = (0, special_policy_1.parseAttendanceTimes)({
+        normal: { presentUntil: "08:00", lateUntil: "09:59", checkOutAt: "17:00" },
+    });
+    const p = resolved({ lateUntil: "09:30" });
+    strict_1.default.equal((0, special_policy_1.resolveCheckIn)(t("09:30"), "normal", p, undefined, times).status, "present");
+    // custom: ຊ່ວງເລືອກເລີ່ມຫຼັງ 08:00 ແທນ 08:15
+    const c = resolved({ mode: "custom", lateUntil: "09:30", leaveFrom: "16:00" });
+    strict_1.default.equal((0, special_policy_1.resolveCheckIn)(t("08:05"), "normal", c, undefined, times).needsChoice, true);
+    strict_1.default.equal((0, special_policy_1.resolveCheckIn)(t("08:05"), "normal", c).needsChoice, false);
+});
 //# sourceMappingURL=special-policy.test.js.map

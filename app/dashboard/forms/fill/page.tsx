@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 
 import { useRouter } from "next/navigation";
 
 // ** assets / icons
-import { ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, FileQuestion, Lock, Star, X } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, Clock, FileQuestion, Lock, Star, Timer, X } from "lucide-react";
 
 // ** shared components
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -60,7 +60,7 @@ import { toast } from "sonner";
 
 // ** config / utils / types / hooks
 import { useAuth } from "@/lib/auth-context";
-import { useMyForm, useSubmitFormResponse } from "@/lib/use-form-queries";
+import { useMyForm, useStartMyForm, useSubmitFormResponse } from "@/lib/use-form-queries";
 import { cn } from "@/lib/utils";
 import {
   closesSoon,
@@ -70,6 +70,7 @@ import {
   LONG_TEXT_MAX,
   missingRequired,
   nextSectionIndex,
+  saveFormDraft,
   visitedSections,
   SHORT_TEXT_MAX,
   type FormAnswer,
@@ -108,6 +109,30 @@ function friendlyError(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback;
 }
 
+// ເວລາທີ່ເຫຼືອກ່ອນ endAt (ms), ອັບເດດທຸກວິນາທີ. null = ບໍ່ມີເວລາສິ້ນສຸດ.
+// offsetMs = ໂມງ server − ໂມງເຄື່ອງ — ເຄື່ອງທີ່ຕັ້ງໂມງຜິດ ຍັງນັບຖອຍຫຼັງຖືກ
+function useTimeLeft(endAt: string | null | undefined, offsetMs = 0): number | null {
+  const endMs = endAt ? new Date(endAt).getTime() : NaN;
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (Number.isNaN(endMs)) return;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [endMs]);
+  return Number.isNaN(endMs) ? null : Math.max(0, endMs - (now + offsetMs));
+}
+
+// ເຫຼືອເວລາຕອບບໍ່ເກີນນີ້ (ຟອມຈັບເວລາ) — ເນັ້ນສີເຕືອນ
+const TIMER_WARN_MS = 2 * 60 * 1000;
+
+// HH:MM:SS — ຊົ່ວໂມງບໍ່ຕັດທີ່ 24 (2 ມື້ = 48:00:00)
+function formatCountdown(ms: number): string {
+  const totalSeconds = Math.floor(ms / 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(Math.floor(totalSeconds / 3600))}:${pad(Math.floor((totalSeconds % 3600) / 60))}:${pad(totalSeconds % 60)}`;
+}
+
 function hasAnswer(value: FormAnswer | undefined): boolean {
   if (value === undefined || value === "") return false;
   if (typeof value === "string") return value.trim() !== "";
@@ -137,25 +162,36 @@ function sanitizeAnswers(sections: FormSection[], answers: FormAnswers): FormAns
   return result;
 }
 
-// ຮ່າງຄຳຕອບທີ່ຍັງບໍ່ໄດ້ສົ່ງ — ເກັບໃນເຄື່ອງນີ້ເທົ່ານັ້ນ, ອ່ານ/ຂຽນບໍ່ໄດ້ (private mode) ກໍບໍ່ເປັນຫຍັງ
+// ຮ່າງຄຳຕອບທີ່ຍັງບໍ່ໄດ້ສົ່ງ — ເກັບໃນເຄື່ອງນີ້, ອ່ານ/ຂຽນບໍ່ໄດ້ (private mode) ກໍບໍ່ເປັນຫຍັງ.
+// savedAt (ໂມງ server ໂດຍປະມານ) ໃຊ້ປຽບທຽບກັບຮ່າງໃນ server (ຟອມຈັບເວລາ) — ອັນໃໝ່ກວ່າຊະນະ
 const draftKey = (uid: string, formId: string) => `ssmi_form_draft_${uid}_${formId}`;
 
-function readDraft(key: string): FormAnswers | null {
+type LocalDraft = { answers: FormAnswers; savedAt: number };
+
+function readDraft(key: string): LocalDraft | null {
   try {
     const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as FormAnswers) : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<LocalDraft> & FormAnswers;
+    // ຮູບແບບເກົ່າ = object ຄຳຕອບລ້ວນ (ບໍ່ມີເວລາ)
+    return typeof parsed.savedAt === "number" && parsed.answers
+      ? { answers: parsed.answers, savedAt: parsed.savedAt }
+      : { answers: parsed as FormAnswers, savedAt: 0 };
   } catch {
     return null;
   }
 }
 
-function writeDraft(key: string, answers: FormAnswers) {
+function writeDraft(key: string, answers: FormAnswers, savedAt: number) {
   try {
-    localStorage.setItem(key, JSON.stringify(answers));
+    localStorage.setItem(key, JSON.stringify({ answers, savedAt }));
   } catch {
     /* ບໍ່ມີບ່ອນເກັບ — ຂ້າມ */
   }
 }
+
+// ພິມຂໍ້ຄວາມ: ບັນທຶກຮ່າງຂຶ້ນ server ຫຼັງຢຸດພິມເທົ່ານີ້ (ເລືອກ/ກົດ = ທັນທີ)
+const DRAFT_TEXT_DEBOUNCE_MS = 2000;
 
 function clearDraft(key: string) {
   try {
@@ -177,21 +213,36 @@ export default function FillFormPage() {
 
   const { data, isLoading, error } = useMyForm(uid, formId);
   const submit = useSubmitFormResponse(uid, formId ?? "");
+  const start = useStartMyForm(uid, formId ?? "");
 
   const [answers, setAnswers] = useState<FormAnswers>({});
   const [invalidIds, setInvalidIds] = useState<Set<string>>(new Set());
   // ມີການແກ້ໄຂທີ່ຍັງບໍ່ໄດ້ສົ່ງ — ໃຊ້ເຕືອນກ່ອນອອກ ແລະ ບັນທຶກຮ່າງ
   const [dirty, setDirty] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
-  const [submitted, setSubmitted] = useState<"new" | "edit" | null>(null);
+  // auto = ໝົດເວລາ (ຟອມຈັບເວລາ) ລະບົບສົ່ງໃຫ້
+  const [submitted, setSubmitted] = useState<"new" | "edit" | "auto" | null>(null);
   // Quiz: ຄະແນນທີ່ server ຄືນມາຕອນສົ່ງ (null = ບໍ່ແມ່ນ quiz ຫຼື admin ຕັ້ງບໍ່ໃຫ້ເຫັນ)
   const [submittedScore, setSubmittedScore] = useState<QuizScore | null>(null);
   // ໜ້າປັດຈຸບັນ (1 section = 1 ໜ້າ) — ໃຊ້ສະເພາະຕອນຕອບຟອມທີ່ມີຫຼາຍ section
   // ເສັ້ນທາງທີ່ຜ່ານມາ (index ຂອງ section) — ປຸ່ມ ກັບຄືນ ກັບໄປໜ້າກ່ອນໜ້າແທ້ (ຂ້າມ section ຕາມຄຳຕອບ)
   const [path, setPath] = useState<number[]>([0]);
 
+  // ຈັບເວລາ: ກ່ອນກົດ "ເລີ່ມຕອບ" server ບໍ່ສົ່ງຄຳຖາມ; ເລີ່ມແລ້ວນັບຖອຍຫຼັງຫາ deadline ແທນເວລາປິດຟອມ
+  const timer = data?.form.timer ?? null;
+  const needsStart = !!timer && !timer.startedAt && !data?.response && data?.form.status === "open";
+  const timerRunning = !!timer?.deadline;
+  const timeLeft = useTimeLeft(timerRunning ? timer?.deadline : data?.form.closeAt, timer?.clockOffsetMs ?? 0);
+  // ເວລາປິດຟອມ — ໜ້າ "ເລີ່ມຕອບ" ບອກວ່າຈະໄດ້ເວລາແທ້ຈັກນາທີ (ຟອມປິດກ່ອນຄົບເວລາຕອບ)
+  const closeLeft = useTimeLeft(needsStart ? data?.form.closeAt : null, timer?.clockOffsetMs ?? 0);
+  const timeUp = timeLeft === 0;
+
   const editable =
-    !!data && data.form.status === "open" && (!data.response || data.form.allowEdit);
+    !!data &&
+    data.form.status === "open" &&
+    (!data.response || data.form.allowEdit) &&
+    !needsStart &&
+    !timer?.expired;
   const storageKey = uid && formId ? draftKey(uid, formId) : null;
 
   // ໃສ່ຄຳຕອບເກົ່າ (ຫຼື ຮ່າງທີ່ຍັງບໍ່ໄດ້ສົ່ງ) ຄັ້ງດຽວ — ບໍ່ໃຫ້ refetch ຂຽນທັບສິ່ງທີ່ກຳລັງແກ້
@@ -199,7 +250,11 @@ export default function FillFormPage() {
   useEffect(() => {
     if (!data || hasPrefilledRef.current) return;
     hasPrefilledRef.current = true;
-    const draft = editable && storageKey ? readDraft(storageKey) : null;
+    // ຮ່າງໃນເຄື່ອງ vs ຮ່າງໃນ server (ຟອມຈັບເວລາ — ເຊັ່ນ ປ່ຽນເຄື່ອງ) → ໃຊ້ອັນໃໝ່ກວ່າ
+    const local = editable && storageKey ? readDraft(storageKey) : null;
+    const remote = editable ? data.form.draft : null;
+    const remoteAt = remote?.updatedAt ? new Date(remote.updatedAt).getTime() : 0;
+    const draft = local && (!remote || local.savedAt >= remoteAt) ? local.answers : (remote?.answers ?? null);
     if (draft) {
       setAnswers(sanitizeAnswers(data.form.sections, draft));
       setDirty(true);
@@ -210,8 +265,54 @@ export default function FillFormPage() {
   }, [data, editable, storageKey]);
 
   useEffect(() => {
-    if (dirty && storageKey) writeDraft(storageKey, answers);
-  }, [answers, dirty, storageKey]);
+    if (dirty && storageKey) writeDraft(storageKey, answers, Date.now() + (timer?.clockOffsetMs ?? 0));
+  }, [answers, dirty, storageKey, timer?.clockOffsetMs]);
+
+  // ຟອມຈັບເວລາ: ບັນທຶກຮ່າງຂຶ້ນ server ນຳ — ປິດແອັບແລ້ວບໍ່ກັບມາ cron ຍັງສົ່ງແທນໄດ້ (ເບິ່ງ firestore.rules
+  // drafts). ເລືອກ/ກົດ = ທັນທີ, ພິມ = ຫຼັງຢຸດພິມ, ອອກຈາກແອັບ/ແທັບ/ໜ້ານີ້ = ທັນທີ. ບັນທຶກສະເພາະເມື່ອປ່ຽນ
+  const remoteDraft = timerRunning && !data?.response && editable && !timeUp && !submitted && !!uid && !!formId;
+  const remoteDraftRef = useRef(remoteDraft);
+  const answersRef = useRef(answers);
+  useEffect(() => {
+    remoteDraftRef.current = remoteDraft;
+    answersRef.current = answers;
+  });
+  // ການປ່ຽນລ່າສຸດເປັນການເລືອກ/ກົດ (ບໍ່ແມ່ນພິມຂໍ້ຄວາມ) → ບັນທຶກທັນທີ
+  const saveNowRef = useRef(false);
+  const lastSavedRef = useRef("");
+  const flushDraftRef = useRef(() => {});
+  useEffect(() => {
+    flushDraftRef.current = () => {
+      if (!remoteDraftRef.current || !uid || !formId) return;
+      const json = JSON.stringify(answersRef.current);
+      if (json === lastSavedRef.current) return;
+      lastSavedRef.current = json;
+      // ລົ້ມ (ເນັດຫຼຸດ / ສົ່ງແລ້ວ) → ລອງໃໝ່ຮອບຕໍ່ໄປ; Firestore ເກັບຄິວໄວ້ສົ່ງຕອນເນັດກັບມາເອງ
+      saveFormDraft(formId, uid, answersRef.current).catch(() => {
+        lastSavedRef.current = "";
+      });
+    };
+  }, [uid, formId]);
+  useEffect(() => {
+    if (!remoteDraft || !dirty) return;
+    const handle = window.setTimeout(() => flushDraftRef.current(), saveNowRef.current ? 0 : DRAFT_TEXT_DEBOUNCE_MS);
+    return () => window.clearTimeout(handle);
+  }, [answers, remoteDraft, dirty]);
+  useEffect(() => {
+    if (!remoteDraft) return;
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") flushDraftRef.current();
+    };
+    const onPageHide = () => flushDraftRef.current();
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", onPageHide);
+      // ອອກຈາກໜ້ານີ້ພາຍໃນແອັບ (ກັບຄືນ) ຫຼື ໝົດເວລາ — ບັນທຶກສິ່ງທີ່ຄ້າງ
+      flushDraftRef.current();
+    };
+  }, [remoteDraft]);
 
   // ປິດແທັບ / reload ຕອນມີການແກ້ໄຂຄ້າງ → browser ຖາມຢືນຢັນ
   useEffect(() => {
@@ -223,6 +324,36 @@ export default function FillFormPage() {
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [dirty]);
+
+  const sendAnswers = (kind: "new" | "edit" | "auto") =>
+    submit.mutate({ answers, auto: kind === "auto" }, {
+      onSuccess: (result) => {
+        if (storageKey) clearDraft(storageKey);
+        setDirty(false);
+        setSubmittedScore(result.score);
+        setSubmitted(kind);
+        window.scrollTo({ top: 0 });
+      },
+      onError: (err) => toast.error(friendlyError(err, "ສົ່ງຄຳຕອບບໍ່ສຳເລັດ. ກະລຸນາລອງໃໝ່.")),
+    });
+
+  // ໝົດເວລາ (ເວລາຕອບຂອງຄົນນີ້ ຫຼື ເວລາປິດຟອມ) → ສົ່ງຄຳຕອບທີ່ຍັງບໍ່ໄດ້ສົ່ງໃຫ້ອັດຕະໂນມັດ (ຂໍ້ບັງຄັບທີ່ບໍ່ໄດ້ຕອບ
+  // server ຍົກເວັ້ນໃຫ້). ບໍ່ອີງ editable — refetch ຫຼັງໝົດເວລາ server ບອກ expired/closed ແລ້ວ ແຕ່ຄຳຕອບໃນໜ້າ
+  // ຍັງຢູ່ ແລະ ຍັງຢູ່ໃນເວລາຜ່ອນຜັນ. ເປີດໜ້າຫຼັງໝົດເວລາແລ້ວ (ບໍ່ເຄີຍເຫັນເວລາເຫຼືອ) → ບໍ່ສົ່ງ
+  const sawRunningRef = useRef(false);
+  useEffect(() => {
+    if (timeLeft !== null && timeLeft > 0) sawRunningRef.current = true;
+  }, [timeLeft]);
+  const autoSubmittedRef = useRef(false);
+  useEffect(() => {
+    if (!timeUp || !sawRunningRef.current || !dirty) return;
+    if (autoSubmittedRef.current || submitted || submit.isPending) return;
+    autoSubmittedRef.current = true;
+    toast.info("ໝົດເວລາ — ກຳລັງສົ່ງຄຳຕອບ");
+    sendAnswers("auto");
+    // ສົ່ງຄັ້ງດຽວຕອນໝົດເວລາ — ບໍ່ສົ່ງຊ້ຳທຸກຄັ້ງທີ່ຄຳຕອບປ່ຽນ
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeUp]);
 
   const leave = () => router.push("/dashboard/forms");
   const goBack = () => (dirty ? setConfirmLeave(true) : leave());
@@ -271,7 +402,11 @@ export default function FillFormPage() {
             <CheckCircle2 className="h-14 w-14 text-green-600 dark:text-green-500" />
           </EmptyMedia>
           <EmptyTitle className="text-xl">
-            {submitted === "edit" ? "ບັນທຶກການແກ້ໄຂແລ້ວ" : "ສົ່ງຄຳຕອບແລ້ວ"}
+            {submitted === "edit"
+              ? "ບັນທຶກການແກ້ໄຂແລ້ວ"
+              : submitted === "auto"
+                ? "ໝົດເວລາ — ສົ່ງຄຳຕອບແລ້ວ"
+                : "ສົ່ງຄຳຕອບແລ້ວ"}
           </EmptyTitle>
           <EmptyDescription>ຂອບໃຈທີ່ຕອບແບບຟອມ &quot;{form.title}&quot;</EmptyDescription>
           {submittedScore && (
@@ -311,6 +446,8 @@ export default function FillFormPage() {
   const visited = visitedSections(pages, answers);
   const scopeQuestions = branching ? formQuestions(visited) : questions;
   const scopeAnswered = scopeQuestions.filter((q) => hasAnswer(answers[q.id])).length;
+  // ລຳດັບຄຳຖາມ 1, 2, 3 … ຕໍ່ເນື່ອງທຸກ section
+  const questionNumber = new Map(formQuestions(pages).map((q, i) => [q.id, i + 1]));
 
   const scrollTop = () => window.scrollTo({ top: 0, behavior: "smooth" });
   const goNextPage = (index: number) => {
@@ -358,6 +495,8 @@ export default function FillFormPage() {
     });
 
   const setAnswer = (questionId: string, value: FormAnswer | undefined) => {
+    const type = questions.find((q) => q.id === questionId)?.type;
+    saveNowRef.current = type !== "shortText" && type !== "longText";
     setAnswers((prev) => {
       const next = { ...prev };
       if (value === undefined) delete next[questionId];
@@ -370,22 +509,24 @@ export default function FillFormPage() {
 
   const handleSubmit = () => {
     // ບັງຄັບຕອບ ສະເພາະ section ທີ່ຜ່ານ (server ຄິດເສັ້ນທາງ ແລະ ຕັດຄຳຕອບຂອງ section ອື່ນເອງ)
-    const missing = missingRequired(visited, answers);
+    // ໝົດເວລາ (ສົ່ງອັດຕະໂນມັດບໍ່ສຳເລັດ ແລ້ວກົດສົ່ງເອງ) — ບໍ່ບັງຄັບຂໍ້ທີ່ຍັງບໍ່ໄດ້ຕອບ, server ກວດເວລາຜ່ອນຜັນ
+    const missing = timeUp ? [] : missingRequired(visited, answers);
     if (missing.length > 0) {
       flagMissing(missing);
       return;
     }
-    submit.mutate(answers, {
-      onSuccess: (result) => {
-        if (storageKey) clearDraft(storageKey);
-        setDirty(false);
-        setSubmittedScore(result.score);
-        setSubmitted(response ? "edit" : "new");
-        window.scrollTo({ top: 0 });
-      },
-      onError: (err) => toast.error(friendlyError(err, "ສົ່ງຄຳຕອບບໍ່ສຳເລັດ. ກະລຸນາລອງໃໝ່.")),
-    });
+    sendAnswers(response ? "edit" : "new");
   };
+
+  const handleStart = () =>
+    start.mutate(undefined, {
+      onSuccess: () => scrollTop(),
+      onError: (err) => toast.error(friendlyError(err, "ເລີ່ມຕອບບໍ່ສຳເລັດ. ກະລຸນາລອງໃໝ່.")),
+    });
+
+  // ເວລາຕອບທີ່ຈະໄດ້ແທ້ ຖ້າເລີ່ມຕອນນີ້ (ms) — ໜ້ອຍກວ່າເວລາຕອບ ເມື່ອຟອມໃກ້ປິດ
+  const limitMs = (timer?.limitMinutes ?? 0) * 60 * 1000;
+  const availableMs = closeLeft === null ? limitMs : Math.min(limitMs, closeLeft);
 
   return (
     <div className="mx-auto max-w-2xl space-y-4 pb-8">
@@ -403,19 +544,22 @@ export default function FillFormPage() {
             <CardDescription className="whitespace-pre-wrap">{form.description}</CardDescription>
           )}
         </CardHeader>
-        {editable && (
+        {(editable || needsStart) && (
           <CardContent className="space-y-1">
             {form.isQuiz && (
               <p className="text-foreground text-sm">
                 📝 ແບບທົດສອບ · ຄະແນນເຕັມ {totalPoints} · ສົ່ງແລ້ວແກ້ໄຂຄຳຕອບບໍ່ໄດ້
               </p>
             )}
+            {timer && (
+              <p className="text-foreground text-sm">⏱ ຈັບເວລາຕອບ {timer.limitMinutes} ນາທີ</p>
+            )}
             {form.closeAt && (
               <p className={cn("text-sm", closesSoon(form.closeAt) ? "text-destructive font-medium" : "text-muted-foreground")}>
                 ⏰ ປິດຮັບຄຳຕອບ {formatFormDateTime(form.closeAt)}
               </p>
             )}
-            <p className="text-destructive text-xs">* ຈຳເປັນຕ້ອງຕອບ</p>
+            {editable && <p className="text-destructive text-xs">* ຈຳເປັນຕ້ອງຕອບ</p>}
           </CardContent>
         )}
       </Card>
@@ -431,13 +575,45 @@ export default function FillFormPage() {
         </Card>
       )}
 
-      {!editable && (
+      {needsStart && (
+        <Card className="py-6">
+          <CardContent className="space-y-4 text-center">
+            <Timer className="text-primary mx-auto h-12 w-12" aria-hidden="true" />
+            <div className="space-y-1">
+              <p className="text-muted-foreground text-sm">ເວລາຕອບ</p>
+              <p className="text-foreground font-mono text-3xl font-bold tabular-nums">
+                {formatCountdown(availableMs)}
+              </p>
+              {availableMs < limitMs && (
+                <p className="text-destructive text-sm font-medium">
+                  ແບບຟອມປິດ {formatFormDateTime(form.closeAt)} — ຖ້າເລີ່ມຕອນນີ້ ທ່ານຈະມີເວລາບໍ່ຄົບ {timer?.limitMinutes} ນາທີ
+                </p>
+              )}
+            </div>
+            <ul className="text-muted-foreground mx-auto max-w-md list-inside list-disc space-y-1 text-left text-sm">
+              <li>ກົດ &quot;ພ້ອມແລ້ວ ເລີ່ມຕອບ&quot; ຈຶ່ງເຫັນຄຳຖາມ ແລະ ເລີ່ມນັບເວລາ</li>
+              <li>ເລີ່ມແລ້ວ ເວລານັບຕໍ່ເນື່ອງ — ອອກຈາກໜ້ານີ້ ຫຼື ປິດແອັບ ເວລາກໍບໍ່ຢຸດ</li>
+              <li>ຄຳຕອບຖືກບັນທຶກໄວ້ຕະຫຼອດ — ໝົດເວລາ ລະບົບສົ່ງໃຫ້ອັດຕະໂນມັດ ເຖິງຈະປິດແອັບໄປແລ້ວ</li>
+            </ul>
+            <Button size="lg" onClick={handleStart} disabled={start.isPending || availableMs <= 0} className="sm:min-w-48">
+              {start.isPending && <Spinner className="mr-2" />}
+              ພ້ອມແລ້ວ ເລີ່ມຕອບ
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {!editable && !needsStart && (
         <Alert className="bg-muted">
           <Lock />
           <AlertDescription>
-            {form.status === "closed"
-              ? "ແບບຟອມນີ້ປິດຮັບຄຳຕອບແລ້ວ"
-              : `ທ່ານຕອບແລ້ວເມື່ອ ${formatDateTime(response?.submittedAt)} — ແບບຟອມນີ້ບໍ່ອະນຸຍາດໃຫ້ແກ້ໄຂຄຳຕອບ`}
+            {timer?.expired && !response
+              ? "ໝົດເວລາຕອບແລ້ວ — ທ່ານບໍ່ໄດ້ສົ່ງຄຳຕອບທັນເວລາ"
+              : form.status === "closed"
+                ? "ແບບຟອມນີ້ປິດຮັບຄຳຕອບແລ້ວ"
+                : timer?.expired
+                  ? `ທ່ານຕອບແລ້ວເມື່ອ ${formatDateTime(response?.submittedAt)} — ໝົດເວລາແກ້ໄຂແລ້ວ`
+                  : `ທ່ານຕອບແລ້ວເມື່ອ ${formatDateTime(response?.submittedAt)} — ແບບຟອມນີ້ບໍ່ອະນຸຍາດໃຫ້ແກ້ໄຂຄຳຕອບ`}
           </AlertDescription>
         </Alert>
       )}
@@ -449,6 +625,32 @@ export default function FillFormPage() {
 
       {editable && questions.length > 0 && (
         <div className="bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky top-0 z-10 -mx-1 px-1 py-2 backdrop-blur">
+          {/* ຢູ່ໃນແຖບ sticky — ເຫັນຕະຫຼອດ ທຸກໜ້າ (section) ແລະ ຕອນເລື່ອນ */}
+          {timeLeft !== null && (
+            <div
+              className={cn(
+                "mb-2 flex items-center justify-between rounded-md px-3 py-1.5 text-sm",
+                timeUp || (timerRunning ? timeLeft < TIMER_WARN_MS : closesSoon(form.closeAt))
+                  ? "bg-destructive/10 text-destructive"
+                  : "bg-muted text-muted-foreground",
+              )}
+            >
+              <span className="flex items-center gap-1.5">
+                <Clock className="h-4 w-4" aria-hidden="true" />
+                {timeUp
+                  ? timerRunning
+                    ? "ໝົດເວລາຕອບແລ້ວ"
+                    : "ໝົດເວລາຮັບຄຳຕອບແລ້ວ"
+                  : timerRunning
+                    ? "ເວລາຕອບທີ່ເຫຼືອ"
+                    : "ເວລາທີ່ເຫຼືອ"}
+              </span>
+              {/* aria-live ບໍ່ໃສ່ — ອ່ານທຸກວິນາທີລົບກວນ screen reader */}
+              <span className="font-mono text-base font-semibold tabular-nums">
+                {formatCountdown(timeLeft)}
+              </span>
+            </div>
+          )}
           <div className="text-muted-foreground mb-1.5 flex justify-between text-xs">
             {/* ມີການຂ້າມ → ບໍ່ຮູ້ຈຳນວນໜ້າທັງໝົດລ່ວງໜ້າ */}
             <span>{paged ? (branching ? `ໜ້າ ${path.length}` : `ໜ້າ ${path.length}/${pages.length}`) : "ຄວາມຄືບໜ້າ"}</span>
@@ -500,7 +702,7 @@ export default function FillFormPage() {
                 <CardContent>
                   <FieldSet data-invalid={invalid || undefined}>
                     <FieldLegend id={titleId} variant="label" className="text-foreground text-base font-medium">
-                      {q.title}
+                      <span className="tabular-nums">{questionNumber.get(q.id)}.</span> {q.title}
                       {q.required && (
                         <span className="text-destructive ml-1" aria-hidden="true">
                           *
@@ -597,7 +799,7 @@ function ReadOnlyAnswer({
     const correctIds = new Set(correct);
     return (
       <ul className="space-y-1.5 text-sm">
-        {(q.options ?? []).map((o) => {
+        {(q.options ?? []).map((o, i) => {
           const isCorrect = correctIds.has(o.id);
           const isPicked = picked.has(o.id);
           return (
@@ -616,7 +818,10 @@ function ReadOnlyAnswer({
               ) : (
                 <span className="h-4 w-4 shrink-0" aria-hidden="true" />
               )}
-              <span className={cn("text-foreground", isPicked && "font-medium")}>{o.label}</span>
+              <span className={cn("text-foreground", isPicked && "font-medium")}>
+                {q.type === "radio" && optionPrefix(i)}
+                {o.label}
+              </span>
               {isPicked && <span className="text-muted-foreground text-xs">(ທ່ານເລືອກ)</span>}
               {isCorrect && <span className="text-xs text-green-700 dark:text-green-400">ຖືກຕ້ອງ</span>}
             </li>
@@ -630,7 +835,11 @@ function ReadOnlyAnswer({
   if (!hasAnswer(value)) {
     return <p className="text-muted-foreground text-sm italic">ບໍ່ໄດ້ຕອບ</p>;
   }
-  const labelOf = (id: string) => q.options?.find((o) => o.id === id)?.label ?? id;
+  const labelOf = (id: string) => {
+    const i = q.options?.findIndex((o) => o.id === id) ?? -1;
+    if (i < 0) return id;
+    return (q.type === "radio" ? optionPrefix(i) : "") + q.options![i].label;
+  };
 
   if (q.type === "rating" && typeof value === "number") {
     return (
@@ -659,6 +868,12 @@ interface QuestionInputProps {
   describedBy?: string;
   invalid: boolean;
   onChange: (value: FormAnswer | undefined) => void;
+}
+
+// ຄຳນຳໜ້າຕົວເລືອກ ຄຳຕອບຂໍ້ດຽວ (radio): ກ. ຂ. ຄ. …
+const LAO_OPTION_LETTERS = "ກຂຄງຈສຊຍດຕຖທນບປຜຝພຟມຢຣລວຫອຮ";
+function optionPrefix(index: number) {
+  return `${LAO_OPTION_LETTERS[index] ?? index + 1}. `;
 }
 
 // ຕົວເລືອກ radio / checkbox ແບບ choice card ຂອງ shadcn (FieldLabel > Field) —
@@ -746,8 +961,8 @@ function QuestionInput({ question: q, value, labelledBy, describedBy, invalid, o
             onValueChange={onChange}
             className="gap-2"
           >
-            {options.map((o) => (
-              <OptionChoice key={o.id} htmlFor={`${q.id}-${o.id}`} label={o.label}>
+            {options.map((o, i) => (
+              <OptionChoice key={o.id} htmlFor={`${q.id}-${o.id}`} label={optionPrefix(i) + o.label}>
                 <RadioGroupItem value={o.id} id={`${q.id}-${o.id}`} />
               </OptionChoice>
             ))}

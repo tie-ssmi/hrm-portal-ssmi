@@ -4,7 +4,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { PWARegister } from "@/components/pwa-register";
 import "@/app/globals.css";
-// import { SnowfallEffect } from "@/components/snow";
+import { SnowfallEffect } from "@/components/snow";
 // import { RainEffect } from "@/components/rain-effect";
 export const metadata: Metadata = {
   title: "ພະນັກງານ SSMILaos | Smart system HRM for Staff | web portal",
@@ -66,7 +66,7 @@ export default function RootLayout({
         >
           <AuthProvider>
             <div>
-              {/* <SnowfallEffect /> */}
+              <SnowfallEffect />
               {/* <RainEffect /> */}
             </div>
             {children}

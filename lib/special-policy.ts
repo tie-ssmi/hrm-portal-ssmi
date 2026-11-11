@@ -5,8 +5,51 @@ export type SpecialPolicyMode = "lateMorning" | "earlyEvening" | "custom"
 export type PolicyChoice = "morning" | "evening"
 export type CheckInStatus = "present" | "late" | "not_check_in"
 
-// normal: ທັນ <= 08:15 · offsite: ທັນ < 09:00 · morningLeave: ລາພັກເຄິ່ງເຊົ້າ ທັນ <= 12:30
-export type CheckInBaseCase = "normal" | "offsite" | "morningLeave"
+// ກໍລະນີຂອງມື້ — ກົງກັບແຖວໃນ adminSettings/attendanceTimes
+export type CheckInBaseCase = "normal" | "offsite" | "morningLeave" | "afternoonLeave"
+
+// ເວລາ check in / out ເປັນນາທີຂອງມື້ ຕໍ່ກໍລະນີ:
+//   presentUntil   — ນາທີສຸດທ້າຍທີ່ຍັງນັບທັນ
+//   notCheckInFrom — ນາທີທຳອິດທີ່ນັບ "ບໍ່ check-in" (= lateUntil ຂອງ admin + 1)
+//   checkOutAt     — check-out ກ່ອນນີ້ = ອອກກ່ອນເວລາ
+export type AttendanceThresholds = {
+  presentUntil: number
+  notCheckInFrom: number
+  checkOutAt: number
+}
+export type AttendanceTimes = Record<CheckInBaseCase, AttendanceThresholds>
+
+// ໃຊ້ເມື່ອບໍ່ມີ doc ຫຼື ຄ່າຜິດຮູບແບບ — ເວລາເດີມກ່ອນມີໜ້າຕັ້ງຄ່າ
+export const DEFAULT_ATTENDANCE_TIMES: AttendanceTimes = {
+  normal: { presentUntil: 8 * 60 + 15, notCheckInFrom: 10 * 60, checkOutAt: 17 * 60 },
+  offsite: { presentUntil: 9 * 60 - 1, notCheckInFrom: 10 * 60, checkOutAt: 17 * 60 },
+  morningLeave: { presentUntil: 12 * 60 + 30, notCheckInFrom: 14 * 60 + 1, checkOutAt: 17 * 60 },
+  afternoonLeave: { presentUntil: 8 * 60 + 15, notCheckInFrom: 10 * 60, checkOutAt: 12 * 60 + 30 },
+}
+
+// adminSettings/attendanceTimes (ຕັ້ງຈາກ admin: ../HRM-System-SSMI services/attendanceTimes.ts) →
+// ນາທີ. ທຸກຄ່າ inclusive: ທັນ <= presentUntil, ສາຍ <= lateUntil, ຫຼັງນັ້ນ ບໍ່ check-in.
+// ຊ່ອງທີ່ບໍ່ມີ / ຜິດຮູບແບບ → default ຂອງຊ່ອງນັ້ນ; ແຖວທີ່ທັນ >= ບໍ່ check-in → default ທັງແຖວ
+export function parseAttendanceTimes(data: unknown): AttendanceTimes {
+  const doc = (data ?? {}) as Record<string, Record<string, unknown> | undefined>
+  const result = { ...DEFAULT_ATTENDANCE_TIMES }
+  for (const key of Object.keys(DEFAULT_ATTENDANCE_TIMES) as CheckInBaseCase[]) {
+    const row = doc[key]
+    const read = (field: string): number | undefined => {
+      const value = row?.[field]
+      return typeof value === "string" ? hhmmToMinutes(value) : undefined
+    }
+    const fallback = DEFAULT_ATTENDANCE_TIMES[key]
+    const lateUntil = read("lateUntil")
+    const parsed: AttendanceThresholds = {
+      presentUntil: read("presentUntil") ?? fallback.presentUntil,
+      notCheckInFrom: lateUntil != null ? lateUntil + 1 : fallback.notCheckInFrom,
+      checkOutAt: read("checkOutAt") ?? fallback.checkOutAt,
+    }
+    result[key] = parsed.presentUntil < parsed.notCheckInFrom ? parsed : fallback
+  }
+  return result
+}
 
 export type SpecialPolicyLike = {
   id: string
@@ -76,15 +119,13 @@ export function resolvePolicyTimes(policies: SpecialPolicyLike[]): ResolvedPolic
   }
 }
 
-// ເສັ້ນຕັດປົກກະຕິ (ບໍ່ມີນະໂຍບາຍ): presentUntil = ນາທີສຸດທ້າຍທີ່ຍັງນັບທັນ,
-// notCheckInFrom = ນາທີທຳອິດທີ່ນັບ "ບໍ່ check-in"
-export function baseCheckInThresholds(baseCase: CheckInBaseCase): {
-  presentUntil: number
-  notCheckInFrom: number
-} {
-  if (baseCase === "morningLeave") return { presentUntil: 12 * 60 + 30, notCheckInFrom: 14 * 60 + 1 }
-  if (baseCase === "offsite") return { presentUntil: 9 * 60 - 1, notCheckInFrom: 10 * 60 }
-  return { presentUntil: 8 * 60 + 15, notCheckInFrom: 10 * 60 }
+// ເສັ້ນຕັດປົກກະຕິ (ບໍ່ມີນະໂຍບາຍ) ຂອງກໍລະນີນັ້ນ
+export function baseCheckInThresholds(
+  baseCase: CheckInBaseCase,
+  times: AttendanceTimes = DEFAULT_ATTENDANCE_TIMES,
+): { presentUntil: number; notCheckInFrom: number } {
+  const { presentUntil, notCheckInFrom } = times[baseCase]
+  return { presentUntil, notCheckInFrom }
 }
 
 function statusFor(nowMin: number, presentUntil: number, notCheckInFrom: number): CheckInStatus {
@@ -93,8 +134,12 @@ function statusFor(nowMin: number, presentUntil: number, notCheckInFrom: number)
   return "not_check_in"
 }
 
-export function computeBaseCheckInStatus(nowMin: number, baseCase: CheckInBaseCase): CheckInStatus {
-  const { presentUntil, notCheckInFrom } = baseCheckInThresholds(baseCase)
+export function computeBaseCheckInStatus(
+  nowMin: number,
+  baseCase: CheckInBaseCase,
+  times?: AttendanceTimes,
+): CheckInStatus {
+  const { presentUntil, notCheckInFrom } = baseCheckInThresholds(baseCase, times)
   return statusFor(nowMin, presentUntil, notCheckInFrom)
 }
 
@@ -103,9 +148,10 @@ export function isInCustomChoiceWindow(
   nowMin: number,
   baseCase: CheckInBaseCase,
   policy: ResolvedPolicy | null,
+  times?: AttendanceTimes,
 ): boolean {
   if (!policy?.isCustom || policy.lateUntilMin == null) return false
-  const { presentUntil } = baseCheckInThresholds(baseCase)
+  const { presentUntil } = baseCheckInThresholds(baseCase, times)
   return nowMin > presentUntil && nowMin <= policy.lateUntilMin
 }
 
@@ -117,14 +163,15 @@ export function resolveCheckIn(
   baseCase: CheckInBaseCase,
   policy: ResolvedPolicy | null,
   clientChoice?: PolicyChoice | null,
+  times?: AttendanceTimes,
 ): { status: CheckInStatus; policyChoice?: PolicyChoice; needsChoice: boolean } {
-  const base = baseCheckInThresholds(baseCase)
+  const base = baseCheckInThresholds(baseCase, times)
   const baseStatus = statusFor(nowMin, base.presentUntil, base.notCheckInFrom)
 
   if (!policy) return { status: baseStatus, needsChoice: false }
 
   if (policy.isCustom) {
-    if (isInCustomChoiceWindow(nowMin, baseCase, policy)) {
+    if (isInCustomChoiceWindow(nowMin, baseCase, policy, times)) {
       if (clientChoice === "morning") {
         return { status: "present", policyChoice: "morning", needsChoice: false }
       }

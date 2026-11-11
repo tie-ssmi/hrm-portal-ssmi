@@ -8,6 +8,8 @@
 //   earlyEvening — check-out >= leaveFrom ບໍ່ຖືວ່າອອກກ່ອນເວລາ
 //   custom       — ມີທັງສອງ ແຕ່ 1 ມື້ໃຊ້ໄດ້ອັນດຽວ (policyChoice "morning" | "evening")
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.DEFAULT_ATTENDANCE_TIMES = void 0;
+exports.parseAttendanceTimes = parseAttendanceTimes;
 exports.hhmmToMinutes = hhmmToMinutes;
 exports.minutesToHhmm = minutesToHhmm;
 exports.pickActivePolicies = pickActivePolicies;
@@ -17,6 +19,37 @@ exports.computeBaseCheckInStatus = computeBaseCheckInStatus;
 exports.isInCustomChoiceWindow = isInCustomChoiceWindow;
 exports.resolveCheckIn = resolveCheckIn;
 exports.resolveCheckOutCutoff = resolveCheckOutCutoff;
+// ໃຊ້ເມື່ອບໍ່ມີ doc ຫຼື ຄ່າຜິດຮູບແບບ — ເວລາເດີມກ່ອນມີໜ້າຕັ້ງຄ່າ
+exports.DEFAULT_ATTENDANCE_TIMES = {
+    normal: { presentUntil: 8 * 60 + 15, notCheckInFrom: 10 * 60, checkOutAt: 17 * 60 },
+    offsite: { presentUntil: 9 * 60 - 1, notCheckInFrom: 10 * 60, checkOutAt: 17 * 60 },
+    morningLeave: { presentUntil: 12 * 60 + 30, notCheckInFrom: 14 * 60 + 1, checkOutAt: 17 * 60 },
+    afternoonLeave: { presentUntil: 8 * 60 + 15, notCheckInFrom: 10 * 60, checkOutAt: 12 * 60 + 30 },
+};
+// adminSettings/attendanceTimes (ຕັ້ງຈາກ admin: ../HRM-System-SSMI services/attendanceTimes.ts) →
+// ນາທີ. ທຸກຄ່າ inclusive: ທັນ <= presentUntil, ສາຍ <= lateUntil, ຫຼັງນັ້ນ ບໍ່ check-in.
+// ຊ່ອງທີ່ບໍ່ມີ / ຜິດຮູບແບບ → default ຂອງຊ່ອງນັ້ນ; ແຖວທີ່ທັນ >= ບໍ່ check-in → default ທັງແຖວ
+function parseAttendanceTimes(data) {
+    var _a, _b;
+    const doc = (data !== null && data !== void 0 ? data : {});
+    const result = Object.assign({}, exports.DEFAULT_ATTENDANCE_TIMES);
+    for (const key of Object.keys(exports.DEFAULT_ATTENDANCE_TIMES)) {
+        const row = doc[key];
+        const read = (field) => {
+            const value = row === null || row === void 0 ? void 0 : row[field];
+            return typeof value === "string" ? hhmmToMinutes(value) : undefined;
+        };
+        const fallback = exports.DEFAULT_ATTENDANCE_TIMES[key];
+        const lateUntil = read("lateUntil");
+        const parsed = {
+            presentUntil: (_a = read("presentUntil")) !== null && _a !== void 0 ? _a : fallback.presentUntil,
+            notCheckInFrom: lateUntil != null ? lateUntil + 1 : fallback.notCheckInFrom,
+            checkOutAt: (_b = read("checkOutAt")) !== null && _b !== void 0 ? _b : fallback.checkOutAt,
+        };
+        result[key] = parsed.presentUntil < parsed.notCheckInFrom ? parsed : fallback;
+    }
+    return result;
+}
 function hhmmToMinutes(value) {
     if (!value || !/^\d{2}:\d{2}$/.test(value))
         return undefined;
@@ -59,14 +92,10 @@ function resolvePolicyTimes(policies) {
         return null;
     return Object.assign(Object.assign(Object.assign({}, (lateUntilMin != null ? { lateUntilMin } : {})), (leaveFromMin != null ? { leaveFromMin } : {})), { isCustom: policies.some((p) => p.mode === "custom"), policyId: policies.map((p) => p.id).sort().join(",") });
 }
-// ເສັ້ນຕັດປົກກະຕິ (ບໍ່ມີນະໂຍບາຍ): presentUntil = ນາທີສຸດທ້າຍທີ່ຍັງນັບທັນ,
-// notCheckInFrom = ນາທີທຳອິດທີ່ນັບ "ບໍ່ check-in"
-function baseCheckInThresholds(baseCase) {
-    if (baseCase === "morningLeave")
-        return { presentUntil: 12 * 60 + 30, notCheckInFrom: 14 * 60 + 1 };
-    if (baseCase === "offsite")
-        return { presentUntil: 9 * 60 - 1, notCheckInFrom: 10 * 60 };
-    return { presentUntil: 8 * 60 + 15, notCheckInFrom: 10 * 60 };
+// ເສັ້ນຕັດປົກກະຕິ (ບໍ່ມີນະໂຍບາຍ) ຂອງກໍລະນີນັ້ນ
+function baseCheckInThresholds(baseCase, times = exports.DEFAULT_ATTENDANCE_TIMES) {
+    const { presentUntil, notCheckInFrom } = times[baseCase];
+    return { presentUntil, notCheckInFrom };
 }
 function statusFor(nowMin, presentUntil, notCheckInFrom) {
     if (nowMin <= presentUntil)
@@ -75,27 +104,27 @@ function statusFor(nowMin, presentUntil, notCheckInFrom) {
         return "late";
     return "not_check_in";
 }
-function computeBaseCheckInStatus(nowMin, baseCase) {
-    const { presentUntil, notCheckInFrom } = baseCheckInThresholds(baseCase);
+function computeBaseCheckInStatus(nowMin, baseCase, times) {
+    const { presentUntil, notCheckInFrom } = baseCheckInThresholds(baseCase, times);
     return statusFor(nowMin, presentUntil, notCheckInFrom);
 }
 // ຊ່ວງທີ່ custom ຕ້ອງໃຫ້ພະນັກງານເລືອກ: ຫຼັງເສັ້ນ "ທັນ" ປົກກະຕິ ຮອດ lateUntil
-function isInCustomChoiceWindow(nowMin, baseCase, policy) {
+function isInCustomChoiceWindow(nowMin, baseCase, policy, times) {
     if (!(policy === null || policy === void 0 ? void 0 : policy.isCustom) || policy.lateUntilMin == null)
         return false;
-    const { presentUntil } = baseCheckInThresholds(baseCase);
+    const { presentUntil } = baseCheckInThresholds(baseCase, times);
     return nowMin > presentUntil && nowMin <= policy.lateUntilMin;
 }
 // status ຂອງ check-in ເມື່ອມີນະໂຍບາຍ. clientChoice ໃຊ້ສະເພາະໃນຊ່ວງເລືອກຂອງ custom —
 // ນອກຊ່ວງນັ້ນ server ຕັດສິນເອງ ແລະ ບໍ່ສົນຄ່າທີ່ client ສົ່ງມາ.
 // needsChoice = true → ຢູ່ໃນຊ່ວງເລືອກ ແຕ່ client ບໍ່ໄດ້ສົ່ງ choice (status ທີ່ສົ່ງກັບຢ່າໃຊ້ບັນທຶກ)
-function resolveCheckIn(nowMin, baseCase, policy, clientChoice) {
-    const base = baseCheckInThresholds(baseCase);
+function resolveCheckIn(nowMin, baseCase, policy, clientChoice, times) {
+    const base = baseCheckInThresholds(baseCase, times);
     const baseStatus = statusFor(nowMin, base.presentUntil, base.notCheckInFrom);
     if (!policy)
         return { status: baseStatus, needsChoice: false };
     if (policy.isCustom) {
-        if (isInCustomChoiceWindow(nowMin, baseCase, policy)) {
+        if (isInCustomChoiceWindow(nowMin, baseCase, policy, times)) {
             if (clientChoice === "morning") {
                 return { status: "present", policyChoice: "morning", needsChoice: false };
             }

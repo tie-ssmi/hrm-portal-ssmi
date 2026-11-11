@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getMyForm,
   listMyForms,
+  startMyForm,
   submitFormResponse,
   type FormAnswers,
 } from '@/services/forms'
@@ -35,10 +36,20 @@ export function useMyForm(uid: string | undefined, formId: string | null) {
 export function useSubmitFormResponse(uid: string | undefined, formId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (answers: FormAnswers) => submitFormResponse(formId, answers),
+    mutationFn: ({ answers, auto }: { answers: FormAnswers; auto?: boolean }) =>
+      submitFormResponse(formId, answers, auto),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: formKeys.mine(uid ?? '') })
       queryClient.invalidateQueries({ queryKey: formKeys.detail(uid ?? '', formId) })
     },
+  })
+}
+
+// ກົດ "ເລີ່ມຕອບ" (ຟອມຈັບເວລາ) → ໂຫຼດຟອມໃໝ່ ເພື່ອໄດ້ຄຳຖາມ ແລະ ເວລາໝົດ
+export function useStartMyForm(uid: string | undefined, formId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => startMyForm(formId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: formKeys.detail(uid ?? '', formId) }),
   })
 }

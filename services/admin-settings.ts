@@ -1,5 +1,23 @@
 import { doc, getDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
+import {
+  DEFAULT_ATTENDANCE_TIMES,
+  parseAttendanceTimes,
+  type AttendanceTimes,
+} from '@/lib/special-policy'
+
+// adminSettings/attendanceTimes — ເວລາ check in / out ຕັ້ງຈາກ admin. server (recordCheckIn /
+// recordCheckOut) ອ່ານເອງ ແລະ ຕັດສິນຈິງ; ຢູ່ນີ້ໃຊ້ສະແດງຜົນ / dialog ອອກກ່ອນເວລາ / ຈັດອັນດັບມາຊ້າ.
+// ອ່ານບໍ່ໄດ້ → ເວລາເດີມ (default)
+export async function fetchAttendanceTimes(): Promise<AttendanceTimes> {
+  try {
+    const snap = await getDoc(doc(db, 'adminSettings', 'attendanceTimes'))
+    return parseAttendanceTimes(snap.data())
+  } catch (error) {
+    console.error('Error fetching adminSettings/attendanceTimes:', error)
+    return DEFAULT_ATTENDANCE_TIMES
+  }
+}
 
 // adminSettings/employeeSelfEdit — written by the admin repo (firestore.rules
 // restricts writes on this doc to isIT()), read here to decide whether the

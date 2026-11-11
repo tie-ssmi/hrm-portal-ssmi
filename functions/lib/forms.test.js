@@ -37,6 +37,12 @@ const emp = {
     // ສະເພາະຝຶກງານ
     strict_1.default.equal((0, forms_1.isInAudience)(["g:*:*:intern"], emp), false);
 });
+(0, node_test_1.test)("isInAudience: ຕັດຄົນອອກ ຊະນະທຸກ key", () => {
+    strict_1.default.equal((0, forms_1.isInAudience)(["all"], emp, ["U1"]), false);
+    strict_1.default.equal((0, forms_1.isInAudience)(["g:B1:D1:*", "emp:U1"], emp, ["U1"]), false);
+    strict_1.default.equal((0, forms_1.isInAudience)(["all"], emp, ["U2"]), true);
+    strict_1.default.equal((0, forms_1.isInAudience)(["all"], emp, "U1"), true);
+});
 (0, node_test_1.test)("isInAudience: ທົ່ວລະບົບ / ລາຍບຸກຄົນ / ຂໍ້ມູນເສຍ", () => {
     strict_1.default.equal((0, forms_1.isInAudience)(["all"], emp), true);
     strict_1.default.equal((0, forms_1.isInAudience)(["emp:U1"], emp), true);
@@ -281,5 +287,29 @@ const branchSections = [
     const answers = { trained: "yes", rate: 4, topic: "ບໍ່ຄວນສົ່ງມາ" };
     const clean = (0, forms_1.validateAnswers)((0, forms_1.visitedSections)(branchSections, answers), answers);
     strict_1.default.deepEqual(clean, { trained: "yes", rate: 4 });
+});
+(0, node_test_1.test)("toTimeLimitMinutes: ຄ່າບໍ່ຖືກ/ສູນ = 0, ປັດລົງ, ບໍ່ເກີນ 24 ຊົ່ວໂມງ", () => {
+    strict_1.default.equal((0, forms_1.toTimeLimitMinutes)(undefined), 0);
+    strict_1.default.equal((0, forms_1.toTimeLimitMinutes)("abc"), 0);
+    strict_1.default.equal((0, forms_1.toTimeLimitMinutes)(-5), 0);
+    strict_1.default.equal((0, forms_1.toTimeLimitMinutes)(20.7), 20);
+    strict_1.default.equal((0, forms_1.toTimeLimitMinutes)(99999), 24 * 60);
+});
+(0, node_test_1.test)("attemptDeadline: ເລີ່ມ + ເວລາຕອບ, ແຕ່ບໍ່ເກີນເວລາປິດຟອມ", () => {
+    const start = "2026-11-02T09:00:00.000Z"; // 16:00 ເວລາລາວ
+    const at = (iso) => new Date(iso).getTime();
+    strict_1.default.equal((0, forms_1.attemptDeadline)(start, 20, null), at("2026-11-02T09:20:00.000Z"));
+    strict_1.default.equal((0, forms_1.attemptDeadline)(start, 20, "2026-11-04T10:00:00.000Z"), at("2026-11-02T09:20:00.000Z"));
+    // ຟອມປິດ 17:00, ເລີ່ມ 16:50 → ໄດ້ 10 ນາທີ
+    strict_1.default.equal((0, forms_1.attemptDeadline)("2026-11-02T09:50:00.000Z", 20, "2026-11-02T10:00:00.000Z"), at("2026-11-02T10:00:00.000Z"));
+});
+(0, node_test_1.test)("validateAnswers partial: ຂໍ້ບັງຄັບທີ່ບໍ່ໄດ້ຕອບ ຜ່ານ ແຕ່ຮູບແບບຜິດ ຍັງ throw", () => {
+    strict_1.default.deepEqual((0, forms_1.validateAnswers)(sections, {}, { partial: true }), {});
+    strict_1.default.throws(() => (0, forms_1.validateAnswers)(sections, { color: "nope" }, { partial: true }), isHttpsError("invalid-argument"));
+});
+(0, node_test_1.test)("salvageAnswers: ເກັບຂໍ້ທີ່ຖືກ, ຕັດຂໍ້ຜິດຮູບແບບ/id ແປກປອມ, ບໍ່ບັງຄັບຂໍ້ required", () => {
+    strict_1.default.deepEqual((0, forms_1.salvageAnswers)(sections, { name: " A ", color: "nope", food: ["a", "zzz"], score: 3, ghost: "x" }), { name: "A", score: 3 });
+    strict_1.default.deepEqual((0, forms_1.salvageAnswers)(sections, null), {});
+    strict_1.default.deepEqual((0, forms_1.salvageAnswers)(sections, ["x"]), {});
 });
 //# sourceMappingURL=forms.test.js.map

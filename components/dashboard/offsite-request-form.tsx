@@ -27,6 +27,7 @@ import {
   Pencil,
   Plus,
   FileSpreadsheet,
+  RotateCcw,
 } from "lucide-react";
 
 // ** shared components
@@ -112,6 +113,11 @@ import type {
 
 // ** services
 import { hasNoOffsiteDecisionYet } from "@/services/offsite-approval";
+import {
+  fetchActiveLegalBasis,
+  legalBasisToReference,
+  type LegalBasisCategory,
+} from "@/services/legalBasis";
 import { logAudit, extractWorkLocationLog } from "@/services/audit-log";
 import {
   uploadAttachment,
@@ -159,6 +165,19 @@ const ACTIVITIES: {
     desc: "ລົງຢ້ຽມຢາມ, ຕິດຕາມ ແລະ ແລກປ່ຽນບົດຮຽນກັບສາຂາ",
   },
 ];
+
+// Which `legalBasis` category pre-fills "ອີງຕາມ" for each form type.
+const LEGAL_BASIS_CATEGORY: Record<FormType, LegalBasisCategory> = {
+  workOutside: "offsite",
+  overtime: "ot",
+  training: "training",
+  audit: "provinceInspection",
+  visit: "provinceIssueFollowUp",
+};
+
+function sameList(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
 
 const LAO_WEEKDAYS = [
   "ວັນອາທິດ",
@@ -534,6 +553,46 @@ export default function OffsiteRequestForm({
     },
     enabled: !!user,
   });
+
+  // "ອີງຕາມ" defaults for the chosen type, from the admin's legalBasis list.
+  const legalBasisCategory = formType ? LEGAL_BASIS_CATEGORY[formType] : null;
+  const { data: legalBasisEntries, isSuccess: legalBasisLoaded } = useQuery({
+    queryKey: ["legalBasis", legalBasisCategory],
+    queryFn: () => fetchActiveLegalBasis(legalBasisCategory!),
+    enabled: !!user && !!legalBasisCategory,
+    staleTime: 5 * 60 * 1000,
+  });
+  const defaultReferences = useMemo(
+    () =>
+      (legalBasisEntries ?? [])
+        .map((e) => legalBasisToReference(e.detail))
+        .filter(Boolean),
+    [legalBasisEntries],
+  );
+
+  // A new request gets the type's defaults. Switching type swaps them only
+  // while the list is still empty or exactly the last auto-fill — once the
+  // user adds, edits or removes a line, their list is kept. Edit mode keeps
+  // what was saved (the reset button below re-applies the defaults).
+  const autoFilledRefs = useRef<string[] | null>(null);
+  useEffect(() => {
+    if (initialData || !legalBasisLoaded) return;
+    setReferences((prev) => {
+      const untouched =
+        prev.every((r) => !r.trim()) ||
+        (autoFilledRefs.current !== null &&
+          sameList(prev, autoFilledRefs.current));
+      if (!untouched || sameList(prev, defaultReferences)) return prev;
+      autoFilledRefs.current = defaultReferences;
+      return defaultReferences;
+    });
+  }, [initialData, legalBasisLoaded, defaultReferences]);
+
+  function applyDefaultReferences() {
+    markDirty();
+    autoFilledRefs.current = defaultReferences;
+    setReferences(defaultReferences);
+  }
 
   // ─── Derived ────────────────────────────────────────────────────────────────
 
@@ -1441,9 +1500,11 @@ export default function OffsiteRequestForm({
               </FieldLabel>
               <div className="space-y-2">
                 {references.map((ref, idx) => (
-                  <div key={idx} className="flex gap-2">
-                    <Input
+                  <div key={idx} className="flex items-start gap-2">
+                    <Textarea
                       value={ref}
+                      rows={1}
+                      className="min-h-9"
                       onChange={(e) => updateReference(idx, e.target.value)}
                       placeholder={`ອີງຕາມ ${idx + 1}...`}
                     />
@@ -1458,15 +1519,30 @@ export default function OffsiteRequestForm({
                     </Button>
                   </div>
                 ))}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={addReference}
-                >
-                  <Plus className="w-4 h-4 mr-1" />
-                  ເພີ່ມອີງຕາມ
-                </Button>
+                <div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={addReference}
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    ເພີ່ມອີງຕາມ
+                  </Button>
+                  {defaultReferences.length > 0 &&
+                    !sameList(references, defaultReferences) && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="ml-2 text-muted-foreground"
+                        onClick={applyDefaultReferences}
+                      >
+                        <RotateCcw className="w-4 h-4 mr-1" />
+                        ໃຊ້ຕາມລະບຽບ
+                      </Button>
+                    )}
+                </div>
               </div>
             </Field>
             )}
